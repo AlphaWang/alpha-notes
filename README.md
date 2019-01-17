@@ -241,6 +241,91 @@ final?
 
 #### 类加载
 
+##### 生命周期
+
+###### 加载 Loading
+
+- 根据全限定名来获取二进制字节流 `Class Loader`；
+- 将字节流所代表的静态存储结构转化为方法区的运行时数据结构；
+- 生成java.lang.Class对象
+
+注意：数组类本身不通过类加载器创建，而是有JVM直接创建。
+
+###### 连接 Linking
+
+####### 验证 Verification
+
+- 文件格式验证：
+魔数开头、版本号、可能抛出`VerifyError`
+
+- 元数据验证：
+是否有父类、是否实现了接口中要求的方法
+
+- 字节码验证：
+通过数据流和控制流分析，确定程序语义是否合法
+
+- 符号引用验证：
+在讲符号引用转化为直接引用时进行（解析阶段），可能抛出`IllegalAccessError`, `NoSuchFieldError`, `NoSuchMethodError`
+
+####### 准备 Preparation
+
+在方法区中，为类变量分配内存，并设置初始值。
+
+####### 解析 Resolution
+
+将常量池中的`符号引用` 替换为 `直接引用`
+
+###### 初始化 Initialization
+
+初始化是执行类构造器<clinit>()方法的过程。
+- clinit包括类变量赋值动作、静态语句块。
+- clinit保证多线程环境中被加锁、同步 >> 可用来实现单例  
+
+5中情况必须立即对类进行初始化：
+- new, getstatic
+- 反射调用
+- 先触发父类初始化
+- main
+- java7 REF_getStatic ??
+
+反例：
+- `SubClass.staticValue` 通过子类引用父类静态字段，子类不会被初始化
+- `MyClass[]` 通过数组定义来引用类，不会触发类初始化
+- `MyCalss.CONSTANT_VALUE` 引用常量，不会触发类初始化
+
+
+###### 使用 Using
+
+###### 卸载 Unloading
+
+##### 双亲委派模型
+
+###### 类加载器
+
+####### Bootstrap ClassLoader
+
+/li
+
+####### Extension ClassLoader
+
+/lib/ext
+
+####### Application ClassLoader
+
+classpath
+
+
+
+####### 自定义：重写findClass, 而非loadClass
+
+###### 被破坏
+
+####### jdk1.2之前
+
+####### JNDI等SPI框架需要加载classpath代码
+
+####### OSGi: 网状
+
 ### GC
 
 #### 引用类型
@@ -1680,15 +1765,49 @@ InnoDB 引擎会在适当的时候，将这个操作记录更新到磁盘里
 
 ###### 两阶段提交
 
+redo log 先 prepare， 
+再写 binlog，
+最后commit redo log
+
 ###### InnoDB特有
 
 ###### 循环写: Write POS, Check Point
+
+###### 写入机制
+
+####### innodb_flush_log_at_trx_commit
+
+######## 0: 事务提交时，log写入redo log buffer
+
+######## 2: 事务提交时，log写入FS page cache
+
+######## 1: 事务提交时，log写入disk
+
+####### 后台线程，每1秒将redo log buffer， write到FS page cache，然后fsync持久化到磁盘
 
 ##### binlog
 
 ###### Server共有
 
 ###### 追加写
+
+###### 写入机制
+
+####### 事务执行中：把日志写到binlog cache
+
+####### 事务提交时：把binlog cache写到binlog 文件
+
+######## write: 写入文件系统的page cache
+
+######## fsync: 持久化到硬盘
+
+######## sysnc_binlog
+
+######### 0: 每次提交事务，只write不fsync
+
+######### 1: 每次提交事务，都fsync
+
+######### N: 每次提交事务，都write，累积N个后fsync
 
 #### 脏页：内存数据页跟磁盘数据页内容不一致
 
@@ -2014,6 +2133,50 @@ ALTER TABLE tbl_name WAIT N add column ...
 ###### analyze table t 其实不是重建表，只是对表的索引信息进行重新统计
 
 ###### optimize table = alter + analyze
+
+#### 主备
+
+##### 主备延迟
+
+###### 时间点：1. 主库完成一个事务写入binlog，2. 传给备库，3. 备库执行
+
+###### show slave status --> seconds_behind_master
+
+###### 原因
+
+####### 备库机器性能差
+
+####### 备库压力大：运营分析脚本 （用一主多从解决，或者输出到hadoop提供统计类查询的能力）
+
+####### 大事务
+
+######## 一次性用delete语句删除太多数据
+
+######## 大表DDL
+
+####### 备库的并行复制能力
+
+##### 主备切换策略
+
+###### 可靠性优先策略
+
+保证数据一致。
+- 判断备库seconds_behind_master, 如果小于阈值则继续；
+- 主库改成readonly；
+- 判断备库seconds_behind_master，如果为0，则把备库改成可读写 readonly=false.
+
+问题：步骤2之后，主备都是readonly，系统处于不可写状态。
+
+###### 可用性优先策略
+
+保证系统任意时刻都可写。
+
+- 直接把连接切到备库，并让备库可读写。
+- 再把主库改成readonly
+
+问题：
+若binlog_format=mixed，可能出现数据不一致；
+若binlog_format=row，主备同步可能报错，例如duplicate key error.
 
 ## 网络编程
 
