@@ -27,6 +27,38 @@
 如果`-Xss`设置过大，当创建大量线程时可能OOM.
 （每个线程都会创建一个栈）
 
+###### 栈桢 Stack Frame
+
+####### 局部变量表
+
+######## 存放方法参数、方法内定义的局部变量
+
+######## 容量以slot为最小单位
+
+######## 为了尽可能节省栈桢空间，局部变量表中的slot可以重用
+
+######## 局部变量无“准备阶段”，无初始值
+
+####### 操作数栈
+
+######## 存放算术运算操作数、调用其他方法的参数
+
+####### 动态连接
+
+####### 返回地址
+
+######## 正常完成出口 -Normal Method Invocation Completion
+
+######## 异常完成出口 -Abrupt Method Invocation Completion
+
+######## 方法退出时的操作
+
+######### 回复上层方法的局部变量表、操作数栈
+
+######### 把返回值压入调用者栈桢的操作数栈
+
+######### 调整PC寄存器的值，指向方法调用指令后面的一条指令
+
 ##### 本地方法栈
 
 ##### 方法区
@@ -2602,56 +2634,56 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
 
-## Spring Boot
+### Spring Boot
 
-### 模式注解
+#### 模式注解
 
-#### 派生性
+##### 派生性
 
-#### 层次性
+##### 层次性
 
-### 自动装配
+#### 自动装配
 
-#### 1.@EnableAutoConfiguration
+##### 1.@EnableAutoConfiguration
 
-#### 2. XXAutoConfiguration
+##### 2. XXAutoConfiguration
 
-##### 条件判断 @Conditional
+###### 条件判断 @Conditional
 
-##### 模式注解 @Configuration
+###### 模式注解 @Configuration
 
-##### @Enable模块：@EnableXX -> *ImportSelector -> *Configuration
+###### @Enable模块：@EnableXX -> *ImportSelector -> *Configuration
 
-#### 3.配置spring.factories (SpringFactoriesLoader)
+##### 3.配置spring.factories (SpringFactoriesLoader)
 
-### 源码
+#### 源码
 
-#### SpringApplication
+##### SpringApplication
 
-##### 准备阶段
+###### 准备阶段
 
-###### 配置 Spring Boot Bean 源		
+####### 配置 Spring Boot Bean 源		
 
-###### 推断Web应用类型
+####### 推断Web应用类型
 
 根据classpath
 
-###### 推断引导类
+####### 推断引导类
 
 根据 Main 线程执行堆栈判断实际的引导类
 
-###### 加载ApplicationContextInitializer
+####### 加载ApplicationContextInitializer
 
 spring.factorie
 
-###### 加载ApplicationListener
+####### 加载ApplicationListener
 
 spring.factories
 例如`ConfigFileApplicationListener`
 
-##### 运行阶段
+###### 运行阶段
 
-###### 加载监听器 SpringApplicationRunListeners
+####### 加载监听器 SpringApplicationRunListeners
 
 spring.factories
 getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, args))
@@ -2659,23 +2691,47 @@ getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, arg
 `EventPublishingRunListener` 
 --> `SimpleApplicationEventMulticaster`
 
-####### EventPublishingRunListener
+######## EventPublishingRunListener
 
-####### SimpleApplicationEventMulticaster
+######## SimpleApplicationEventMulticaster
 
-###### 运行监听器 SpringApplicationRunListeners
+####### 运行监听器 SpringApplicationRunListeners
 
 listeners.starting();
 
-###### 创建应用上下文 ConfigurableApplicationContext
+####### 创建应用上下文 ConfigurableApplicationContext
 
 createApplicationContext()
 - NONE: `AnnotationConfigApplicationContext`
 - SERVLET: `AnnotationConfigServletWebServerApplicationContext`
 - REACTIVE: `AnnotationConfigReactiveWebServerApplicationContext` 
 
-###### 创建Environment
+####### 创建Environment
 
 getOrCreateEnvironment()
 - SERVLET: `StandardServletEnvironment`
 - NONE, REACTIVE: `StandardEnvironment` 
+
+## 算法
+
+### 常见思路
+
+#### 递归
+
+##### 严格定义递归函数作用：参数、返回值、side-effect
+
+##### 先一般，后特殊
+
+##### 每次调用必须缩小问题规模
+
+##### 每次问题规模缩小程度必须为1
+
+#### 循环
+
+##### 定义循环不变式，循环体每次结束后保持循环不变式
+
+##### 先一般，后特殊
+
+##### 每次必须向前推进循环不变式中涉及的变量值
+
+##### 每次推进的规模必须为1
