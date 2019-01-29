@@ -2188,9 +2188,60 @@ ALTER TABLE tbl_name WAIT N add column ...
 
 ####### 备库的并行复制能力
 
-##### 主备切换策略
+###### 解决方案
 
-###### 可靠性优先策略
+####### 强制走主库
+
+####### sleep
+
+####### 判断主备无延迟
+
+######## 判断seconds_behind_master
+
+每次查询从库前，判断seconds_behind_master是否为0
+
+######## 对比位点
+
+show slave status
+- Master_Log_File <-> Read_Master_Log_Pos
+- Relay_Master_Log_File <-> Exec_Master_Log_Pos
+
+######## 对比GTID
+
+- Retrieved_Gtid_Set 备库收到的所有日志GTID
+- Executed_Gtid_Set 备库所有已执行完的GTID
+二者相同则表示备库接收到的日志都已经同步完成。
+
+####### 配合 semi-sync
+
+semi-sync
+- 事务提交时，主库把binlog发给从库；
+- 从库收到binlog后，返回ack;
+- 主库收到ack后，才给客户端返回事务完成的确认。
+
+问题：
+- 如果有多个从库，则还是可能有过期读。
+- 在持续延迟情况下，可能出现过度等待。
+
+####### 等主库位点
+
+- 更新完成后，执行 `show master status`获取当前主库执行到的file/pos.
+
+- 查询从库前， `select master_pos_wait(file, pos, timeout)` 查询从命令开始执行，到应用完file/pos表示的binlog位置，执行了多少事务。
+
+- 如果返回 >=0, 则在此从库查询；否则查询主库
+
+####### 等GTID
+
+- 主库更新后，返回GTID;
+- 从库查询 `select wait_for_executed_gtid_set(gtid_set, 1)`
+- 返回0则表示从库已执行该GTID.
+
+##### 主备切换
+
+###### 主备切换策略
+
+####### 可靠性优先策略
 
 保证数据一致。
 - 判断备库seconds_behind_master, 如果小于阈值则继续；
@@ -2199,7 +2250,7 @@ ALTER TABLE tbl_name WAIT N add column ...
 
 问题：步骤2之后，主备都是readonly，系统处于不可写状态。
 
-###### 可用性优先策略
+####### 可用性优先策略
 
 保证系统任意时刻都可写。
 
@@ -2209,6 +2260,38 @@ ALTER TABLE tbl_name WAIT N add column ...
 问题：
 若binlog_format=mixed，可能出现数据不一致；
 若binlog_format=row，主备同步可能报错，例如duplicate key error.
+
+###### 如何判断主库出问题
+
+####### select 1
+
+######## 问题场景：innodb_thread_concurrency小，新请求都处于等待状态
+
+innodb_thread_concurrency一般设为64~128.
+线程等待行锁时，并发线程计数会-1.
+
+####### 查表判断
+
+mysql> select * from mysql.health_check; 
+
+######## 问题场景：空间满了后，查询可以，但无法写入
+
+####### 更新判断
+
+update mysql.health_check set t_modified=now()
+
+######## 问题场景：主备库做相同更新，可能导致行冲突
+
+解决：多行数据 (server_id, now())
+
+####### 内部统计
+
+假定认为IO请求时间查过200ms则认为异常：
+```
+mysql> select event_name,MAX_TIMER_WAIT  FROM performance_schema.file_summary_by_event_name where event_name in ('wait/io/file/innodb/innodb_log_file','wait/io/file/sql/binlog') and MAX_TIMER_WAIT>200*1000000000;
+```
+
+######## 打开统计有性能损耗
 
 ## 网络编程
 
@@ -2735,3 +2818,13 @@ getOrCreateEnvironment()
 ##### 每次必须向前推进循环不变式中涉及的变量值
 
 ##### 每次推进的规模必须为1
+
+#### 二分
+
+##### [a, b) 前闭后开
+
+###### [a, b) + [b, c) = [a, c)
+
+###### b - a = len([a, b))
+
+###### [a, a) ==> empty range
