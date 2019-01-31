@@ -2166,6 +2166,36 @@ ALTER TABLE tbl_name WAIT N add column ...
 
 ###### optimize table = alter + analyze
 
+#### 误删恢复
+
+##### 误删行
+
+###### binlog_format=row + Flashback工具
+
+###### 预防
+
+####### sql_safe_updates=on
+
+保证delete语句必须有where, where里包含索引字段
+
+
+##### 误删库/表
+
+###### Flashback不起作用
+
+truncate /drop table 和 drop database, binlog里记录的是statement，所以无法通过Flashback恢复
+
+
+###### 全量备份 + 恢复实时binlog
+
+###### 延迟复制备库
+
+CHANGE MASTER TO MASTER_DELAY = N (秒)
+
+##### rm删除数据
+
+###### 重新选主
+
 #### 主备
 
 ##### 主备延迟
