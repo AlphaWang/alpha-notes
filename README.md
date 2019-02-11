@@ -1994,6 +1994,42 @@ SET max_length_for_sort_data = 16;
 
 ###### where id >= @X limit 1
 
+#### join
+
+##### NLJ
+
+###### Index Nested-Loop Join
+
+###### 先遍历t1 --> 对于每一行，去t2走树搜索
+
+####### 驱动表t1: 全表扫描
+
+####### 被驱动表t2: 树搜索，使用索引！
+
+###### 原则：应该让小表来做驱动表
+
+###### 什么是小表？
+
+####### 考虑条件过滤后、参与join的各个字段总数据量小
+
+##### SNJ
+
+###### Simple Nested-Loop Join
+
+###### 当被驱动表t2不能使用索引时，扫描行数很大
+
+##### BNL
+
+###### Block Nested-Loop Join
+
+###### 读取t1存入join_buffer --> 扫描t2，跟join_buffer数据作对比
+
+####### 如果join_buffer小，则分段存入，驱动表应该选小表
+
+####### 如果join_buffer足够，则驱动表大小无所谓
+
+###### 原则：要尽量避免BNL
+
 ### 索引
 
 #### 原理
