@@ -884,6 +884,18 @@ incrby age 5
 
 ####### setex k 60 v: 生存时间
 
+####### getset: 返回旧值
+
+####### append: 
+
+####### strlen:
+
+####### incr / decr
+
+####### mget / mset
+
+####### del
+
 ##### hash
 
 hset books java "think in java"
@@ -911,6 +923,20 @@ bgsave时不扩容，除非达到dict_force_resize_ratio
 ####### hashtable
 
 ####### ziplist
+
+###### 常用命令
+
+####### hget / hset name k v
+
+####### hdel
+
+####### hincrby
+
+####### hgetall name
+
+####### hvals name: 返回所有value
+
+####### hkeys name: 返回所有key
 
 ##### list
 
