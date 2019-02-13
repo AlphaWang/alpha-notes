@@ -890,7 +890,7 @@ incrby age 5
 
 ####### strlen:
 
-####### incr / decr
+####### incr / decr / incrby / decrby
 
 ####### mget / mset
 
@@ -928,9 +928,11 @@ bgsave时不扩容，除非达到dict_force_resize_ratio
 
 ####### hget / hset name k v
 
+####### hsetnx name k v
+
 ####### hdel
 
-####### hincrby
+####### hincrby / hincrbyfloat
 
 ####### hgetall name
 
@@ -957,6 +959,22 @@ rpush books python java golang
 ####### linkedlist
 
 ####### ziplist
+
+###### 常用命令
+
+####### lpush / rpop
+
+######## lpush list-name c b a
+
+####### rpush / lpop
+
+####### llen
+
+####### lrem : 删除
+
+####### lrange 2 3
+
+####### index 2
 
 ##### set
 
