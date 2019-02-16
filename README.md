@@ -944,9 +944,9 @@ bgsave时不扩容，除非达到dict_force_resize_ratio
 
 rpush books python java golang
 
-###### 早期：元素少时用 ziplist，元素多时用 linkedlist
+###### 内部编码
 
-###### 后期：quicklist
+####### 后期：quicklist
 
 `quicklist` 是 `ziplist` 和 `linkedlist` 的混合体，
 - 它将 `linkedlist` 按段切分，
@@ -954,11 +954,7 @@ rpush books python java golang
 
 
 
-###### 内部编码
-
-####### linkedlist
-
-####### ziplist
+####### 早期：元素少时用 ziplist，元素多时用 linkedlist
 
 ###### 常用命令
 
@@ -968,28 +964,76 @@ rpush books python java golang
 
 ####### rpush / lpop
 
+####### linsert key before|after v new-v
+
+####### lset key index v
+
 ####### llen
 
-####### lrem : 删除
+####### lrem key count v 
 
-####### lrange 2 3
+######## count = 0: 删除所有v
 
-####### index 2
+######## count > 0: 从左到右删除count个
+
+######## count < 0: 从右到左删除count个
+
+####### ltrim key start end: 修剪
+
+####### lrange key start end: 范围
+
+####### blop / brpop key timeout: 阻塞pop
+
+###### 应用
+
+####### lpush + lpop --> stack
+
+####### lpush + rpop --> queue
+
+####### lpush + ltrim --> capped collection
+
+####### lpush + brpop --> MQ
 
 ##### set
 
  sadd books python
  
 
-###### IntSet: 当元素都是整数并且个数较小时，使用 intset 来存储
-
-intset 是紧凑的数组结构，同时支持 16 位、32 位和 64 位整数。
-
 ###### 内部编码
 
 ####### hashtable
 
-####### intset
+####### IntSet: 当元素都是整数并且个数较小时，使用 intset 来存储
+
+intset 是紧凑的数组结构，同时支持 16 位、32 位和 64 位整数。
+
+###### 常用命令
+
+####### sadd key e
+
+####### srem key e
+
+####### scard: 集合大小
+
+####### sismember: 判断存在
+
+####### srandmember: 随机取元素
+
+####### smembers: 所有元素，慎用
+
+####### sdiff / sinter / sunion
+
+sdiff / sinter / sunion + store destkey
+将集合操作的结果存入destkey
+
+
+###### 应用
+
+####### sadd --> tagging
+
+####### spop / srandmember --> random item
+
+####### sadd + sinter --> social graph
 
 ##### zset
 
