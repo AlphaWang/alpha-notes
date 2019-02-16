@@ -2005,9 +2005,9 @@ redo log 先 prepare，
 
 ######### N: 每次提交事务，都write，累积N个后fsync
 
-#### 脏页：内存数据页跟磁盘数据页内容不一致
+##### 脏页：内存数据页跟磁盘数据页内容不一致
 
-##### flush: 写回磁盘
+###### flush: 写回磁盘
 
 #### count(*)
 
@@ -2043,6 +2043,28 @@ SET max_length_for_sort_data = 16;
 ###### order by rand()
 
 ###### where id >= @X limit 1
+
+#### group by
+
+##### 机制
+
+###### 内容少：内存临时表
+
+###### 内容多：磁盘临时表
+
+##### 优化
+
+###### 索引
+
+如果对列做运算，可用generated column机制实现列数据的关联更新。
+
+alter table t1 add column z int generated always as(id0), add index(z)
+
+
+###### 直接排序
+
+select SQL_BIG_RESULT .. from ..
+告知mysql结果很大，直接走磁盘临时表。
 
 #### join
 
@@ -2111,6 +2133,33 @@ SET max_length_for_sort_data = 16;
 ######## 加索引
 
 ######## 使用临时表
+
+#### 临时表
+
+##### 例子
+
+###### union
+
+(select 1000 as f)
+union
+(select id from t1 order by id desc limit 2);
+
+- 创建内存临时表，字段f,是主键；
+- 执行第一个子查询，放入1000；
+- 执行第二个子查询，获取的数据插入临时表 （主键去重）
+- 从临时表按行取出数据。
+
+NOTE: 如果是Union ALL则不会用临时表，因为无需去重，直接依次执行子查询即可。
+
+
+###### group by
+
+select id as m, 
+  count(*) as c,
+from t1 
+group by m;
+
+创建临时表：字段m, 
 
 ### 索引
 
