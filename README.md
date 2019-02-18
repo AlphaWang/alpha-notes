@@ -2053,6 +2053,18 @@ redo log 先 prepare，
 
 ###### flush: 写回磁盘
 
+#### insert
+
+##### insert ... select
+
+###### 常用于两个表拷贝
+
+###### 如果insert和select是同一个表，则可能造成循环写入
+
+##### insert into t ... on duplicate key update d=100
+
+###### 插入主键冲突的话，执行update d=100
+
 #### count(*)
 
 ##### count(字段) < count(id) < count(1) = count(*)
