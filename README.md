@@ -2059,6 +2059,8 @@ redo log 先 prepare，
 
 ###### 常用于两个表拷贝
 
+###### 对源表加锁 
+
 ###### 如果insert和select是同一个表，则可能造成循环写入
 
 ##### insert into t ... on duplicate key update d=100
