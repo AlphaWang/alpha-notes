@@ -2593,6 +2593,42 @@ CHANGE MASTER TO MASTER_DELAY = N (秒)
 
 ###### 重新选主
 
+#### 复制表数据
+
+##### 物理拷贝
+
+- create table r like t;
+- alter table r discard tablespace;
+- flush table t for export;
+- cp t.cfg r.cfg;
+  cp t.idb r.idb;
+- unlock tables;
+- alter table r import tablespaces;
+
+##### mysqldump
+
+mysqldump -h$host -P$port -u$user 
+--add-locks=0 
+--no-create-info 
+--single-transaction  
+--set-gtid-purged=OFF 
+db1 t 
+--where="a>900" 
+--result-file=/client_tmp/t.sql
+
+
+mysql -h127.0.0.1 -P13000  -uroot
+db2 
+-e "source /client_tmp/t.sql"
+
+执行INSERT语句，binlog记录的也是INSERT
+
+##### select ... into outfile
+
+select * from db1.t where a>900 into outfile '/server_tmp/t.csv';
+
+load data infile '/server_tmp/t.csv' into table db2.t;
+
 #### 主备
 
 ##### 主备延迟
