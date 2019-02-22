@@ -2785,6 +2785,42 @@ revoke all privileges on *.* from 'ua'@'%';
 
 ####### grant/revoke后没必要执行flush
 
+#### 分库分表
+
+##### 分区表
+
+CREATE TABLE `t` (
+  `ftime` datetime NOT NULL,
+  `c` int(11) DEFAULT NULL,
+  KEY (`ftime`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1
+
+PARTITION BY RANGE (YEAR(ftime))
+(PARTITION p_2017 VALUES LESS THAN (2017) ENGINE = InnoDB,
+ PARTITION p_2018 VALUES LESS THAN (2018) ENGINE = InnoDB,
+ PARTITION p_2019 VALUES LESS THAN (2019) ENGINE = InnoDB,
+PARTITION p_others VALUES LESS THAN MAXVALUE ENGINE = InnoDB);
+
+
+insert into t values('2017-4-1',1),('2018-4-1',1);
+
+
+###### 特点
+
+####### 缺点1：MySQL第一次打开分区表时，需要访问所有分区
+
+####### 缺点2：server层认为是同一张表，所有分区共用同一个 MDL 锁
+
+####### 引擎层认为是不同的表
+
+###### 场景
+
+####### 历史数据，按时间分区
+
+####### alter table drop partition清理历史数据
+
+##### mycat
+
 ## 网络编程
 
 ### Netty
