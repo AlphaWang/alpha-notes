@@ -1057,6 +1057,32 @@ skiplist提供指定 score 的范围来获取 value 列表的功能，二分查�
 
 ######## 元素个数较小时，用ziplist节约空间
 
+###### 常用命令
+
+####### zadd key score e
+
+####### zscore key e
+
+####### zrem key e
+
+######## zremrangebyrank key start end
+
+######## zremrangebyscore key min-score max-score
+
+####### zincrby key score e
+
+####### zcard
+
+####### zrange key start end [withscores]
+
+######## zrevrange
+
+######## zrangbyscore key min-score max-score
+
+####### zcount key min-score max-score
+
+####### zinterstore / zunionstore
+
 #### 原理
 
 ##### 通讯协议：RESP, Redis Serialization Protocal
