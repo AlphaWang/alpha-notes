@@ -2756,6 +2756,35 @@ mysql> select event_name,MAX_TIMER_WAIT  FROM performance_schema.file_summary_by
 
 ######## 打开统计有性能损耗
 
+#### 安全
+
+##### privilege
+
+###### create user
+
+create user 'user1'@'%' identified by 'pwd';
+
+####### 会插入mysql.user表
+
+###### grant privilege
+
+grant all privileges on *.* to 'ua'@'%' with grant option;
+
+- *.* 全局权限
+- db1.* 库权限
+- db1.t1 表权限
+- grant select(id), .. 列权限
+
+###### revoke privilege
+
+revoke all privileges on *.* from 'ua'@'%';
+
+###### flush privileges
+
+####### 作用: 清空acl_users数组，从mysql.user表重新读取数据
+
+####### grant/revoke后没必要执行flush
+
 ## 网络编程
 
 ### Netty
