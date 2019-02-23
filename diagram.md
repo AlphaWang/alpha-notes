@@ -3271,6 +3271,73 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
 
+### JPA
+
+#### 连接池
+
+##### Hikari
+
+##### c3p0
+
+##### alibaba druid
+
+https://github.com/alibaba/druid
+
+- 通过Filter, 支持自定义pei
+
+#### 事务
+
+##### 传播
+
+###### PROPAGATION_REQUIRED
+
+####### 当前有就用当前的，没有就新建
+
+###### PROPAGATION_SUPPORTS
+
+####### 当前有就用当前的，没有就算了
+
+###### PROPAGATION_MANDATORY
+
+####### 当前有就用当前的，没有就抛异常
+
+###### PROPAGATION_REQUIRES_NEW
+
+####### 无论有没有，都新建
+
+###### PROPAGATION_NOT_SUPPORTED
+
+####### 无论有没有，都不用
+
+###### PROPAGATION_NEVER
+
+####### 如果有，抛异常
+
+###### PROPAGATION_NESTED
+
+####### 如果有，则在当前事务里再起一个事务
+
+##### 隔离
+
+###### ISOLATION_READ_UNCOMMITTED
+
+- 脏读
+- 不可重复读
+- 幻读
+
+###### ISOLATION_READ_COMMITTED
+
+- 不可重复读
+- 幻读
+
+###### ISOLATION_REPEATABLE_READ
+
+- 幻读
+
+###### ISOLATION_SERIALIZABLE
+
+- 
+
 ### Spring Boot
 
 #### 模式注解
