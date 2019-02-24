@@ -3416,6 +3416,16 @@ getOrCreateEnvironment()
 - SERVLET: `StandardServletEnvironment`
 - NONE, REACTIVE: `StandardEnvironment` 
 
+#### 运维
+
+##### Actuator
+
+###### 解禁Endpoints
+
+####### management.endpoints.web.exposure.include=*
+
+####### 生产环境谨慎使用
+
 ## 算法
 
 ### 常见思路
