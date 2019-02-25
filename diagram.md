@@ -1536,6 +1536,28 @@ Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 
 
 ###### flushdb -> flushdb async
 
+##### 慢查询
+
+###### 配置
+
+####### slowlog-max-len
+
+######## 先进先出队列、固定长度、内存
+
+######## 默认10ms, 建议1ms
+
+####### slowlog-log-slower-than
+
+######## 建议1000
+
+###### 命令
+
+####### slowlog get [n]
+
+####### slowlog len
+
+####### slowlog reset
+
 ### ZooKeeper
 
 #### 特性
