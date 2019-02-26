@@ -755,88 +755,140 @@ help
 
 ## 并发
 
-### synchronized
+### 分工
 
-#### 三种使用方式：修饰实例方法、静态方法、代码块
+#### Executor / 线程池
 
-#### 原理
+##### execute() vs. submit()
 
-##### 同步块：Java对象头中有monitor对象；
-monitorenter指令：计数器+1
-monitorexit指令：计数器-1
+###### execute不需要返回值，无法判断任务是否执行成功
 
-##### 同步方法：ACC_SYNCHRONIZED 标识
+##### 构造参数
 
-#### Java6的优化
+##### 线程池大小设置
 
-##### 偏向锁，轻量级锁，自旋锁；
-锁消除，锁粗化
+###### CPU密集型任务：线程池尽可能小
 
-#### 对比ReentrantLock
+###### IO密集型任务：线程池尽可能大
 
-##### 依赖于JVM vs. 依赖于API
-
-##### Lock增加了高级功能：可中断等待，可实现公平锁
-
-##### 等待通知机制：wait/notify vs. condition
-
-##### 性能已不是选择标准
-
-#### 对比volatile
-
-##### volatile是线程同步的轻量级实现，只能修饰变量
-
-##### volatile只保证可见性，不保证原子性
-
-##### 对线程访问volatile字段不会发生阻塞，而sync会阻塞
-
-### 线程池
-
-#### execute() vs. submit()
-
-##### execute不需要返回值，无法判断任务是否执行成功
-
-#### 构造参数
-
-#### 线程池大小设置
-
-##### CPU密集型任务：线程池尽可能小
-
-##### IO密集型任务：线程池尽可能大
-
-##### 公式：
+###### 公式：
 最佳线程数目 = （（线程等待时间+线程CPU时间）/线程CPU时间 ）* CPU数目
 最佳线程数目 = （线程等待时间与线程CPU时间之比 + 1）* CPU数目
 
-### Atomic原子类
+#### Fork / Join
 
-#### 类型
+#### Future
 
-##### 基本类型：AtomicInteger, AtomicLong
+#### 模式
 
-##### 数组类型：AtomicIntegerArray, Atomic ReferenceArray
+##### Guarded Suspension模式
+
+##### Balking模式
+
+##### Thread-Per-Message模式
+
+##### 生产者消费者模式
+
+##### Worker Thread模式
+
+##### 两阶段终止模式
+
+### 协作
+
+#### Semaphore
+
+#### Monitor 管程
+
+##### Lock / Condition
+
+##### synchronized
+
+#### CountDownLatch
+
+#### CyclicBarrier
+
+#### Phaser
+
+#### Exchanger
+
+### 互斥
+
+#### 无锁
+
+##### 不变模式
+
+##### 线程本地存储
+
+##### CAS
+
+##### Copy-on-Write
+
+##### Atomic原子类
+
+###### 类型
+
+####### 基本类型：AtomicInteger, AtomicLong
+
+####### 数组类型：AtomicIntegerArray, Atomic ReferenceArray
 
 AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
-##### 引用类型：AtomicReference, AtomicStampedReference
+####### 引用类型：AtomicReference, AtomicStampedReference
 
-##### 对象属性修改：AtomicIntegerFieldUpdater, AtomicStampedReference
+####### 对象属性修改：AtomicIntegerFieldUpdater, AtomicStampedReference
 
-#### 原理
+###### 原理
 
-##### CAS + volatile
+####### CAS + volatile
 
 - 利用 `CAS` (compare and swap) + `volatile` 和 native 方法来保证原子操作，从而避免 `synchronized` 的高开销，执行效率大为提升。
 
 - CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。`UnSafe.objectFieldOffset()` 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址，返回值是 valueOffset。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
 
-### AQS
+#### 互斥锁
 
-#### condition
+##### synchronized
 
-##### 必须在排它锁中使用
+###### 三种使用方式：修饰实例方法、静态方法、代码块
 
-### Unsafe
+###### 原理
+
+####### 同步块：Java对象头中有monitor对象；
+monitorenter指令：计数器+1
+monitorexit指令：计数器-1
+
+####### 同步方法：ACC_SYNCHRONIZED 标识
+
+###### Java6的优化
+
+####### 偏向锁，轻量级锁，自旋锁；
+锁消除，锁粗化
+
+###### 对比ReentrantLock
+
+####### 依赖于JVM vs. 依赖于API
+
+####### Lock增加了高级功能：可中断等待，可实现公平锁
+
+####### 等待通知机制：wait/notify vs. condition
+
+####### 性能已不是选择标准
+
+###### 对比volatile
+
+####### volatile是线程同步的轻量级实现，只能修饰变量
+
+####### volatile只保证可见性，不保证原子性
+
+####### 对线程访问volatile字段不会发生阻塞，而sync会阻塞
+
+##### Lock
+
+###### condition
+
+####### 必须在排它锁中使用
+
+##### 读写锁
 
 ## 分布式
 
@@ -3447,6 +3499,8 @@ getOrCreateEnvironment()
 ####### management.endpoints.web.exposure.include=*
 
 ####### 生产环境谨慎使用
+
+### STOMP
 
 ## 算法
 
