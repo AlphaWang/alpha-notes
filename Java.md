@@ -1458,9 +1458,11 @@ wait 指令可以让异步复制变身同步复制，确保系统的强一致性
 
 ##### 分布式锁
 
-###### setnx + expire
+###### 命令
 
-###### set xx ex 5 nx
+####### setnx + expire
+
+####### set xx ex 5 nx
 
 ###### 集群问题
 
@@ -1479,22 +1481,28 @@ wait 指令可以让异步复制变身同步复制，确保系统的强一致性
 
 ##### 位图
 
-位图不是特殊的数据结构，它的内容其实就是普通的字符串，也就是 byte 数组。我们可以使用普通的 get/set 直接获取和设置整个位图的内容，也可以使用位图操作 getbit/setbit 等将 byte 数组看成「位数组」来处理。
+位图不是特殊的数据结构，它的内容其实就是普通的字符串，也就是 byte 数组。
 
-###### setbit k offset v
+我们可以使用普通的 get/set 直接获取和设置整个位图的内容，也可以使用位图操作 getbit/setbit 等将 byte 数组看成「位数组」来处理。
+
+###### type: string, 最大512M
+
+###### 命令
+
+####### setbit k offset v
 
 零存：`setbit s 4 1`
 整存：`set s <string>`
 
-###### getbit
+####### getbit
 
 整取：`get s`
 零取：`getbit s 1`
 
 
-###### bitcount k [start end] 统计
+####### bitcount k [start end] 统计
 
-###### bitop op destKey key1 key2 位运算
+####### bitop op destKey key1 key2 位运算
 
 op:
 - and
@@ -1502,21 +1510,31 @@ op:
 - not
 - xor
 
-###### bitpos k targetBit [start] [end] 查找
+####### bitpos k targetBit [start] [end] 查找
 
-###### bitfield操作多个位
-
-###### type=string, 最大512M
+####### bitfield操作多个位
 
 ##### HyperLogLog
 
 HyperLogLog 提供不精确的去重计数方案
 
-###### pfadd
+###### 极小空间完成独立数量统计
 
-###### pfcount
+###### type: string
 
-###### pfmerge
+###### 缺点
+
+####### 有错误率 0.81%
+
+####### 不能返回单条元素
+
+###### 命令
+
+####### 添加：pfadd key e1 e2...
+
+####### 计数：pfcount key
+
+####### 合并：pfmerge destKey sourceKey1 sourceKey2
 
 ##### 布隆过滤器
 
@@ -1542,13 +1560,23 @@ HyperLogLog 提供不精确的去重计数方案
 
 GeoHash 算法将二维的经纬度数据映射到一维的整数，这样所有的元素都将在挂载到一条线上，距离靠近的二维坐标映射到一维后的点之间距离也会很接近。
 
-###### geoadd
+###### 用于地理经纬度计算
 
-###### geodist
+###### type: zset
 
-###### geopos
+###### 命令
 
-###### geohash
+####### 添加：geoadd key longitude latitude member
+
+####### 获取：geopos key member
+
+####### 距离：geodist key member1 member2 [unit]
+
+####### 范围：georadius/georadiusbymember 
+
+####### 删除：zrem key member
+
+####### geohash
 
 ##### 搜索key
 
