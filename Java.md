@@ -765,6 +765,36 @@ help
 
 ##### 有序性问题：编译优化导致
 
+#### happens-before
+
+##### 含义：前一个操作的结果对后一个操作是可见的。
+
+##### 1. 程序顺序性规则
+
+与编译器重排序 冲突？
+
+###### 前面的操作 happens-before后续的任意操作
+
+##### 2. volatile变量规则
+
+###### 对volatile的写操作 happens-before后续对这个变量的读操作
+
+##### 3. 传递性
+
+##### 4. 管程中锁的规则
+
+- synchronized是Java对管程的实现。
+
+###### 对一个锁的解锁 happens-before 后续对这个锁的加锁
+
+##### 5. 线程start()规则
+
+###### thread-A call thread-B.start()，start()执行前A的操作 happens-before B中的任意操作
+
+##### 6. 线程join()规则
+
+###### thread-A call thread-B.join()，B中的任意操作 happens-before join方法操作的返回
+
 ### 分工
 
 #### Executor / 线程池
