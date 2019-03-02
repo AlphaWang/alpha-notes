@@ -3054,6 +3054,20 @@ NIO: 10000
 
 - 类比观影
 
+### nginx
+
+#### 应用场景
+
+##### 静态资源服务
+
+##### 反向代理服务
+
+##### API服务 -OpenResty
+
+#### tips
+
+##### `cp -r contrib/vim/* ~/.vim` 将vim语法高亮
+
 ## 微服务
 
 ### Spring Cloud
@@ -3434,7 +3448,7 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
 
-### JPA
+### Spring JPA
 
 #### 连接池
 
@@ -3500,6 +3514,34 @@ https://github.com/alibaba/druid
 ###### ISOLATION_SERIALIZABLE
 
 - 
+
+#### 注解
+
+##### 实体
+
+###### @Entity
+
+###### @MappedSuperclass
+
+####### 标注于父类
+
+###### @Table
+
+####### 表名
+
+##### 主键
+
+###### @Id
+
+####### @GeneratedValue
+
+####### @SequenceGenerator
+
+##### 映射
+
+###### @Column
+
+###### @JoinTable  @JoinColumn
 
 ### Spring Boot
 
