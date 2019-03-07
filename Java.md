@@ -893,6 +893,12 @@ AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
 ###### 三种使用方式：修饰实例方法、静态方法、代码块
 
+###### 加锁对象
+
+####### synchronized(obj)
+
+####### 如果要保护多个相关的资源，则要选择一个粒度更大的锁，使其覆盖所有资源
+
 ###### 原理
 
 ####### 同步块：Java对象头中有monitor对象；
@@ -935,11 +941,6 @@ monitorexit指令：计数器-1
 ## 分布式
 
 ### Redis
-
-#### AP: 最终一致性
-
-- Redis 的主从数据是 **异步同步** 的，所以分布式的 Redis 系统并不满足「一致性」要求。
-- Redis 保证「最终一致性」，从节点会努力追赶主节点，最终从节点的状态会和主节点的状态将保持一致。
 
 #### 数据类型
 
@@ -1178,6 +1179,11 @@ skiplist提供指定 score 的范围来获取 value 列表的功能，二分查�
 ####### zinterstore / zunionstore
 
 #### 原理
+
+##### AP: 最终一致性
+
+- Redis 的主从数据是 **异步同步** 的，所以分布式的 Redis 系统并不满足「一致性」要求。
+- Redis 保证「最终一致性」，从节点会努力追赶主节点，最终从节点的状态会和主节点的状态将保持一致。
 
 ##### 通讯协议：RESP, Redis Serialization Protocal
 
@@ -1438,16 +1444,73 @@ auto-aof-rewrite-min-size 64mb
 
 ##### 主从
 
-###### slaveof
+###### slave配置
+
+####### slaveof
 
 - 命令
-- pei'zhi
+- 配置
 
-###### slave-read-only yes
+####### slave-read-only yes
 
-##### Sentinel
+###### 查看主从状态：info replication
 
-######  Sentinel 集群可看成是一个 ZooKeeper 集群
+127.0.0.1:6379> info replication
+role:master
+connected_slaves:2
+slave0:ip=127.0.0.1,port=6380,state=online,offset=27806,lag=1
+slave1:ip=127.0.0.1,port=6381,state=online,offset=27806,lag=1
+master_repl_offset:27806
+repl_backlog_active:1
+repl_backlog_size:1048576
+repl_backlog_first_byte_offset:2
+repl_backlog_histlen:27805
+
+###### 主从复制流程
+
+####### 全量复制
+
+######## 1.【s -> m】psync runId offset
+
+首次：`psync ? -1`
+
+######## 2.【m -> s】+FULLRESYNC {runId} {offset}
+
+######## 3.【s】save masterInfo
+
+######## 4.【m】bgsave / write repl_back_buffer
+
+######## 5.【m -> s】send RDB
+
+######## 6.【m -> s】send buffer
+
+######## 7.【s】flush old data
+
+######## 8.【s】load RDB
+
+####### 部分复制
+
+######## 1.【s -> m】psync runId offset
+
+######## 2.【m -> s】CONTINUE
+
+######## 3.【m -> s】send partial data
+
+###### 问题
+
+####### 【m】bgsave时间开销
+
+####### 【m】RDB网络传输开销
+
+####### 【s】清空数据时间开销
+
+####### 【s】加载RDB时间开销
+
+####### 【s】可能的AOF重写时间
+
+##### sentinel
+
+######  sentinel 集群可看成是一个 ZooKeeper 集群
 
 ###### 消息丢失
 
@@ -2766,7 +2829,6 @@ select primaryKey（而不是*） from xx where indexColumn=
 应选A, 因为age占用空间geng'x
 
 ##### 索引下推
-
 
 (name, age)
 可以适用where name like `张%` AND age=10
