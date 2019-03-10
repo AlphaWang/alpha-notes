@@ -3055,27 +3055,51 @@ slave: maxmemory=2g
 
 #######  sentinel 集群可看成是一个 ZooKeeper 集群
 
-####### 1. 多个sentinel发现并确认master有问题
+####### 【1. 故障发现】多个sentinel发现并确认master有问题
 
-####### 2. 选举出一个sentinel作为领导
+####### 【2. 选主】选举出一个sentinel作为领导
 
-####### 3. 选出一个slave作为master, 并通知其余slave
+####### 【3. 选master】选出一个slave作为master, 并通知其余slave
 
-####### 4. 通知客户端主从变化
+####### 【4. 通知】通知客户端主从变化
 
-####### 5. 等待老的master复活成为新master的slave
+####### 【5. 老master】等待老的master复活成为新master的slave
 
 ###### 客户端流程
 
-####### 0. 预先知道sentinel节点集合、masterName
+####### 【0. sentinel集合】 预先知道sentinel节点集合、masterName
 
-####### 1. 遍历sentinel节点，获取一个可用节点
+####### 【1. 获取sentinel】遍历sentinel节点，获取一个可用节点
 
-####### 2. get-master-addr-by-name masterName, 获取master节点
+####### 【2. 获取master节点】get-master-addr-by-name masterName
 
-####### 3. role replication获取master节点角色信息
+####### 【3. role replication】获取master节点角色信息
 
-####### 4. 当节点有变动，sentinel会通知给客户端 （发布订阅）
+####### 【4. 变动通知】当节点有变动，sentinel会通知给客户端 （发布订阅）
+
+###### 原理
+
+####### 三个定时任务
+
+######## 每10秒，sentinel对m/s执行info
+
+######### 发现slave节点
+
+sentinel初始配置只关心master节点
+
+######### 确认主从关系
+
+######## 每2秒，sentinel通过master的channel交换信息
+
+######### master频道：__sentinel__:hello
+
+######### 交换对节点的看法、以及自身信息
+
+######## 每1秒，sentinel对其他sentinel和redis执行ping
+
+######### 心跳检测
+
+######### 失败判定依据
 
 ###### 消息丢失
 
