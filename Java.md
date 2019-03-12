@@ -885,6 +885,28 @@ help
 
 #### Exchanger
 
+#### wait / notify
+
+##### 机制
+
+###### 线程首先获取互斥锁；
+
+###### 当线程要求的条件不满足时，释放互斥锁，进入等待状态；
+
+###### 当条件满足后，通知等待的线程，重新获取互斥锁
+
+##### 实现
+
+###### 前提是先获取锁，所以wait/notify/notifyAll必须在synchronized内部调用
+
+否则会IllegalMonitorStateException
+
+###### wait 要在while循环内部调用
+
+因为被唤醒时表示`条件曾经满足`，但wait返回时条件可能出现变化。
+
+###### 尽量用notifyAll
+
 ### 互斥
 
 #### 无锁
@@ -2041,6 +2063,8 @@ ALTER TABLE tbl_name WAIT N add column ...
 
 #### 行锁
 
+##### MyISAM不支持行锁
+
 ##### 两阶段锁协议
 
 ###### 行锁是在需要的时候才加上的
@@ -2053,13 +2077,21 @@ ALTER TABLE tbl_name WAIT N add column ...
 
 ##### 死锁
 
-###### 等待超时: innodb_lock_wait_timeout
+###### 等待超时
+
+####### innodb_lock_wait_timeout
 
 ###### 死锁检测
 
- innodb_deadlock_detect=on, 主动回滚死锁链条中的某一个事务
+ 
+
+####### innodb_deadlock_detect=on
+
+####### 发现死锁后，主动回滚死锁链条中的某一个事务
 
 ####### 问题：耗费 CPU
+
+当更新热点行时，每个新来的线程都要判断会不会由于自己的加入导致死锁。
 
 ####### 解决：服务端并发控制
 
