@@ -3097,13 +3097,39 @@ slave: maxmemory=2g
 
 ####### 【1. 故障发现】多个sentinel发现并确认master有问题
 
+######## 主观下线
+
+相关配置
+```
+sentinel monitor myMaster <ip> <port> <quorum>
+sentinel down-after-milliseconds myMaster <timeout>
+```
+
+######## 客观下线
+
 ####### 【2. 选主】选举出一个sentinel作为领导
 
+######## 原因：只有一个sentinel节点完成故障转移
+
+######## 实现：通过sentinel is-master-down-by-addr命令竞争领导者
+
 ####### 【3. 选master】选出一个slave作为master, 并通知其余slave
+
+######## 选新 master 的原则
+
+######### 选slave-priority最高的
+
+######### 选复制偏移量最大的
+
+######### 选runId最小的
+
+######## 对这个slave执行slaveof no one
 
 ####### 【4. 通知】通知客户端主从变化
 
 ####### 【5. 老master】等待老的master复活成为新master的slave
+
+######## sentinel会保持对其关注
 
 ###### 客户端流程
 
@@ -3129,17 +3155,17 @@ sentinel初始配置只关心master节点
 
 ######### 确认主从关系
 
-######## 每2秒，sentinel通过master的channel交换信息
-
-######### master频道：__sentinel__:hello
-
-######### 交换对节点的看法、以及自身信息
-
 ######## 每1秒，sentinel对其他sentinel和redis执行ping
 
 ######### 心跳检测
 
 ######### 失败判定依据
+
+######## 每2秒，sentinel通过master的channel交换信息
+
+######### master频道：__sentinel__:hello
+
+######### 交换对节点的看法、以及自身信息
 
 ###### 消息丢失
 
@@ -3150,6 +3176,30 @@ sentinel初始配置只关心master节点
 ####### min-slaves-max-lag 10
 
 如果 10s 没有收到从节点的反馈，就意味着从节点同步不正常
+
+###### 运维
+
+####### 上下线节点
+
+######## 下线主节点
+
+######### sentinel failover <masterName>
+
+######## 下线从节点
+
+######### 考虑是否做清理、考虑读写分离
+
+######## 上线主节点
+
+######### sentinel failover进行替换
+
+######## 上线从节点
+
+######### slaveof
+
+######## 上线sentinel
+
+######### 参考其他sentinel节点启动
 
 ##### codis
 
