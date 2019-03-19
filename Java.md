@@ -829,6 +829,68 @@ help
 
 ###### 1. 互斥
 
+#### Thread
+
+##### 线程状态
+
+###### 初始
+
+####### New
+
+###### 可运行
+
+####### Runnable
+
+###### 运行
+
+####### Runnable
+
+###### 休眠
+
+####### Blocked
+
+######## 等待锁
+
+####### Waiting
+
+######## wait()
+
+######## join()
+
+######## LockSupport.park()
+
+####### Timed_Waiting
+
+######## sleep(ms)
+
+######## wait(timeout)
+
+######## join(ms)
+
+########  parkNanos/parkUntil
+
+###### 终止
+
+####### Terminated
+
+######## interrupt()
+
+######### 异常
+
+########## 如果处于Waiting/Timed_Waiting，interrupt()则会触发InterruptedException
+
+所以 wait(), join(), sleep()方法声明都有throws InterruptedException
+
+########## 如果处于Runnable状态，并阻塞在InterruptibleChannel上；则会触发ClosedByInterruptException
+
+########## 如果处于Runnable状态，并阻塞在Selector上；则Selector会立即返回
+
+######### 主动监测
+
+########## if isInterrupted()
+
+######## 不可用stop()!! 其不会释放锁
+
 ### 分工
 
 #### Executor / 线程池
