@@ -3333,17 +3333,13 @@ sentinel down-after-milliseconds myMaster <timeout>
 
 ####### 【4. 变动通知】当节点有变动，sentinel会通知给客户端 （发布订阅）
 
+######## JedisSentinelPool -> MasterListener --> sub "+switch-master"
+
+######## sentinel是配置中心，而非代理！
+
 ###### 原理
 
 ####### 三个定时任务
-
-######## 每10秒，sentinel对m/s执行info
-
-######### 发现slave节点
-
-sentinel初始配置只关心master节点
-
-######### 确认主从关系
 
 ######## 每1秒，sentinel对其他sentinel和redis执行ping
 
@@ -3356,6 +3352,14 @@ sentinel初始配置只关心master节点
 ######### master频道：__sentinel__:hello
 
 ######### 交换对节点的看法、以及自身信息
+
+######## 每10秒，sentinel对m/s执行info
+
+######### 发现slave节点
+
+sentinel初始配置只关心master节点
+
+######### 确认主从关系
 
 ###### 消息丢失
 
@@ -3390,6 +3394,18 @@ sentinel初始配置只关心master节点
 ######## 上线sentinel
 
 ######### 参考其他sentinel节点启动
+
+####### 高可用读写分离
+
+######## client关注slave节点资源池
+
+######## 关注三个消息
+
+######### +switch-master: 从节点晋升
+
+######### +convert-to-slave: 切换为从节点
+
+######### +sdown: 主观下线
 
 ##### codis
 
