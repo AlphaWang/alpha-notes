@@ -929,23 +929,27 @@ help
 
 ####### Terminated
 
-######## interrupt()
+######## 线程执行结束
 
-######### 异常
+######## 线程异常
 
-########## 如果处于Waiting/Timed_Waiting，interrupt()则会触发InterruptedException
+######### interrupt()
+
+########## 异常
+
+########### 如果处于Waiting/Timed_Waiting，interrupt()则会触发InterruptedException
 
 所以 wait(), join(), sleep()方法声明都有throws InterruptedException
 
-########## 如果处于Runnable状态，并阻塞在InterruptibleChannel上；则会触发ClosedByInterruptException
+########### 如果处于Runnable状态，并阻塞在InterruptibleChannel上；则会触发ClosedByInterruptException
 
-########## 如果处于Runnable状态，并阻塞在Selector上；则Selector会立即返回
+########### 如果处于Runnable状态，并阻塞在Selector上；则Selector会立即返回
 
-######### 主动监测
+########## 主动监测
 
-########## if isInterrupted()
+########### if isInterrupted()
 
-######## 不可用stop()!! 其不会释放锁
+######### 不可用stop()!! 其不会释放锁
 
 ### 分工
 
@@ -961,11 +965,11 @@ help
 
 ###### CPU密集型任务：线程池尽可能小
 
+####### CPU核数 + 1 
+
 ###### IO密集型任务：线程池尽可能大
 
-###### 公式：
-最佳线程数目 = （（线程等待时间+线程CPU时间）/线程CPU时间 ）* CPU数目
-最佳线程数目 = （线程等待时间与线程CPU时间之比 + 1）* CPU数目
+####### CPU核数 * (1 + IO耗时/CPU耗时 )
 
 #### Fork / Join
 
@@ -1985,6 +1989,12 @@ M阶B Tree:
 - 需要两次查找才能获取数据本身
 
 ##### 唯一索引 vs. 普通索引
+
+###### 性能
+
+####### 读取：类似
+
+####### 更新：普通索引好
 
 ###### 读取性能类似，写入性能 普通索引好
 
