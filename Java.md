@@ -1314,6 +1314,8 @@ NIO
 - NodeDataChanged
 - NodeChildrenChanged
 
+###### Curator 如何解决一次性watcher问题？
+
 ##### ACL
 
 ###### Scheme
@@ -2680,6 +2682,8 @@ insert into t values('2017-4-1',1),('2018-4-1',1);
 
 ### Memcached
 
+#### memcached是lazy clean up, 那么如何保证内存不被占满？
+
 ### Redis
 
 #### 数据类型
@@ -3325,8 +3329,6 @@ sentinel初始配置只关心master节点
 
 ######### 确认主从关系
 
-###### 流程
-
 ####### 故障转移流程
 
 ########  sentinel 集群可看成是一个 ZooKeeper 集群
@@ -3880,209 +3882,17 @@ NIO: 10000
 
 ##### 配额控制
 
+### 高可用
+
+#### 降级
+
+##### hystrix fallback 原理
+
+#### 熔断
+
+#### 限流
+
 ## Spring
-
-### Bean
-
-#### 生命周期
-
-#### 作用域
-
-##### singleton
-
-##### prototype
-
-每次getBean都会创建一个Bean，如果是cglib动态代理，则性能不佳
-
-
-##### request
-
-##### session
-
-##### globalSession
-
-##### 作用域依赖问题
-
-prototype --> request, 动态代理
-
-#### FactoryBean: 定制实例化Bean的逻辑
-
-#### 配置方式
-
-##### XML配置
-
-##### Groovy配置
-
-##### 注解配置
-
-###### @Component
-
-###### @Service
-
-##### Java类配置
-
-###### @Configuration
-
-###### @Import
-
-参考 `@EnableWebMvc`
-
-####### 还可以@Import(ImportSelector.class)
-
-更加灵活，可以增加条件分支，参考`@EnableCaching`
-
-###### @Bean
-
-#### 创建流程
-
-##### ResourceLoader: 装载配置文件 --> Resouce
-
-##### BeanDefinitionReader: 解析配置文件 --> BeanDefinition，并保存到BeanDefinitionRegistry
-
-##### BeanFactoryPostProcessor: 对BeanDefinition进行加工
-
-###### 对占位符<bean>进行解析
-
-###### 找出实现PropertyEditor的Bean, 注册到PropertyEditorResistry
-
-##### InstantiationStrategy: 进行Bean实例化
-
-###### SimpleInstantiationStrategy
-
-###### CglibSubclassingInstantiationStrategy
-
-##### BeanWapper: 实例化时封装
-
-###### Bean包裹器
-
-###### 属性访问器：属性填充
-
-###### 属性编辑器注册表
-
-属性编辑器：将外部设置值转换为JVM内部对应类型
-
-
-##### BeanPostProcessor
-
-### DI
-
-#### Bean Factory: IoC容器
-
-#### ApplicationContext: 应用上下文，Spring容器
-
-#### 依赖注入
-
-##### 属性注入
-
-##### 构造函数注入
-
-##### 工厂方法注入
-
-##### 注解默认采用byType自动装配策略
-
-#### 条件装配
-
-##### @Profile
-
-##### @Conditional
-
-例： OnPropertyCondition
-
-### AOP
-
-#### 术语
-
-##### JoinPoint 连接点
-
-AOP黑客攻击的候选锚点
-- 方法
-- 相对位置
-
-
-##### Pointcut 切点
-
-定位到某个类的某个方法
-
-##### Advice 增强
-
-- AOP黑客准备的木马
-- 以及方位信息
-
-
-##### Target 目标对象
-
-Advice增强逻辑的织入目标类
-
-##### Introduction 引介
-
-为类添加属性和方法，可继承 `DelegatingIntroductionInterceptor`
-
-##### Weaving 织入
-
-将Advice添加到目标类的具体连接点上的过程。
-
-##### Aspect 切面
-
-Aspect = Pointcut + Advice？
-
-
-#### 原理
-
-##### JDK动态代理
-
-##### CGLib动态代理
-
-###### 不要求实现接口
-
-###### 不能代理final 或 private方法
-
-###### 性能比JDK好，但是创建花费时间较长
-
-#### 用法
-
-##### 编程方式
-
-###### ProxyFactory.addAdvice / addAdvisor
-
-ProxyFactory.setTarget
-ProxyFactory.addAdvice
-ProxyFactory.getProxy() --> Target
-
-```
-public void addAdvice(int pos, Advice advice) {
-  this.addAdvisor(pos, new DefaultPointcutAdvisor(advice));
-}
-```
-
-###### 配置ProxyFactoryBean
-
-<bean class="aop.ProxyFactoryBean"
-p:target-ref="target"
-p:interceptorNames="advice or adviso">
-  
-  
-
-###### 自动创建代理
-
-基于BeanPostProcessor实现，在容器实例化Bean时 自动为匹配的Bean生成代理实例。
-
-
-####### BeanNameAutoProxyCreator
-
-基于Bean配置名规则
-
-####### DefaultAdvisorAutoProxyCreator
-
-基于Advisor匹配机制
-
-####### AnnotationAwareAspectJAutoPRoxyCreator
-
-##### AspectJ
-
-###### <aop:aspectj-autoproxy>
-
-- 自动为匹配`@AspectJ`切面的Bean创建代理，完成切面织入。
-- 底层通过 `AnnotationAwareAspectJAutoProxyCreator`实现。
 
 ### 外部属性文件
 
@@ -4156,7 +3966,211 @@ HTTP请求被处理
 
 ##### ctx.publishEvent()
 
-### SpringMVC
+### Spring Core
+
+#### Bean
+
+##### 生命周期
+
+##### 作用域
+
+###### singleton
+
+###### prototype
+
+每次getBean都会创建一个Bean，如果是cglib动态代理，则性能不佳
+
+
+###### request
+
+###### session
+
+###### globalSession
+
+###### 作用域依赖问题
+
+prototype --> request, 动态代理
+
+##### FactoryBean: 定制实例化Bean的逻辑
+
+##### 配置方式
+
+###### XML配置
+
+###### Groovy配置
+
+###### 注解配置
+
+####### @Component
+
+####### @Service
+
+###### Java类配置
+
+####### @Configuration
+
+####### @Import
+
+参考 `@EnableWebMvc`
+
+######## 还可以@Import(ImportSelector.class)
+
+更加灵活，可以增加条件分支，参考`@EnableCaching`
+
+####### @Bean
+
+##### 创建流程
+
+###### ResourceLoader: 装载配置文件 --> Resouce
+
+###### BeanDefinitionReader: 解析配置文件 --> BeanDefinition，并保存到BeanDefinitionRegistry
+
+###### BeanFactoryPostProcessor: 对BeanDefinition进行加工
+
+####### 对占位符<bean>进行解析
+
+####### 找出实现PropertyEditor的Bean, 注册到PropertyEditorResistry
+
+###### InstantiationStrategy: 进行Bean实例化
+
+####### SimpleInstantiationStrategy
+
+####### CglibSubclassingInstantiationStrategy
+
+###### BeanWapper: 实例化时封装
+
+####### Bean包裹器
+
+####### 属性访问器：属性填充
+
+####### 属性编辑器注册表
+
+属性编辑器：将外部设置值转换为JVM内部对应类型
+
+
+###### BeanPostProcessor
+
+#### DI
+
+##### Bean Factory: IoC容器
+
+##### ApplicationContext: 应用上下文，Spring容器
+
+##### 依赖注入
+
+###### 属性注入
+
+###### 构造函数注入
+
+###### 工厂方法注入
+
+###### 注解默认采用byType自动装配策略
+
+##### 条件装配
+
+###### @Profile
+
+###### @Conditional
+
+例： OnPropertyCondition
+
+#### AOP
+
+##### 术语
+
+###### JoinPoint 连接点
+
+AOP黑客攻击的候选锚点
+- 方法
+- 相对位置
+
+
+###### Pointcut 切点
+
+定位到某个类的某个方法
+
+###### Advice 增强
+
+- AOP黑客准备的木马
+- 以及方位信息
+
+
+###### Target 目标对象
+
+Advice增强逻辑的织入目标类
+
+###### Introduction 引介
+
+为类添加属性和方法，可继承 `DelegatingIntroductionInterceptor`
+
+###### Weaving 织入
+
+将Advice添加到目标类的具体连接点上的过程。
+
+###### Aspect 切面
+
+Aspect = Pointcut + Advice？
+
+
+##### 原理
+
+###### JDK动态代理
+
+###### CGLib动态代理
+
+####### 不要求实现接口
+
+####### 不能代理final 或 private方法
+
+####### 性能比JDK好，但是创建花费时间较长
+
+##### 用法
+
+###### 编程方式
+
+####### ProxyFactory.addAdvice / addAdvisor
+
+ProxyFactory.setTarget
+ProxyFactory.addAdvice
+ProxyFactory.getProxy() --> Target
+
+```
+public void addAdvice(int pos, Advice advice) {
+  this.addAdvisor(pos, new DefaultPointcutAdvisor(advice));
+}
+```
+
+####### 配置ProxyFactoryBean
+
+<bean class="aop.ProxyFactoryBean"
+p:target-ref="target"
+p:interceptorNames="advice or adviso">
+  
+  
+
+####### 自动创建代理
+
+基于BeanPostProcessor实现，在容器实例化Bean时 自动为匹配的Bean生成代理实例。
+
+
+######## BeanNameAutoProxyCreator
+
+基于Bean配置名规则
+
+######## DefaultAdvisorAutoProxyCreator
+
+基于Advisor匹配机制
+
+######## AnnotationAwareAspectJAutoPRoxyCreator
+
+###### AspectJ
+
+####### <aop:aspectj-autoproxy>
+
+- 自动为匹配`@AspectJ`切面的Bean创建代理，完成切面织入。
+- 底层通过 `AnnotationAwareAspectJAutoProxyCreator`实现。
+
+### Spring MVC
 
 #### 流程
 
@@ -4228,7 +4242,7 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
 
-### SpringData
+### Spring Data
 
 #### spring-data-jpa
 
@@ -4351,9 +4365,39 @@ https://github.com/alibaba/druid
 
 ##### Jedis
 
-###### JedisPoolConfig
+###### JedisPool
 
-###### JedisPool.getResource
+####### 基于Apache Common Pool
+
+####### JedisPoolConfig
+
+####### JedisPool.getResource
+
+######## internalPool.borrowObject()
+
+###### JedisSentinelPool
+
+####### 监控、通知、自动故障转移、服务发现
+
+####### MasterListener
+
+###### JedisCluster
+
+####### JedisSlotBasedConnectionHandler
+
+######## getConnection: 随机
+
+######## getConnectionFromSlot: 基于slot选择
+
+####### JedisClusterInfoCache
+
+####### 不支持读slave
+
+##### Lettuce
+
+##### RedisTemplate
+
+##### Repository
 
 ### Spring Boot
 
@@ -4442,6 +4486,22 @@ getOrCreateEnvironment()
 ####### management.endpoints.web.exposure.include=*
 
 ####### 生产环境谨慎使用
+
+### Spring Cache
+
+#### 标注
+
+##### @EnableCaching
+
+##### @Cacheable
+
+##### @CacheEvict
+
+##### @CachePut
+
+##### @Caching
+
+##### @CacheConfig
 
 ### STOMP
 
