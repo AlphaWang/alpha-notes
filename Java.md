@@ -1071,6 +1071,10 @@ help
 
 ##### 不变模式
 
+##### 线程封闭
+
+###### 不和其他线程共享变量
+
 ##### 线程本地存储
 
 ###### ThreadLocal
@@ -1785,10 +1789,6 @@ redo log 先 prepare，
 
 ###### 插入主键冲突的话，执行update d=100
 
-#### count(*)
-
-##### count(字段) < count(id) < count(1) = count(*)
-
 #### order by
 
 ##### sort_buffer
@@ -1841,6 +1841,10 @@ alter table t1 add column z int generated always as(id0), add index(z)
 
 select SQL_BIG_RESULT .. from ..
 告知mysql结果很大，直接走磁盘临时表。
+
+#### count(*)
+
+##### count(字段) < count(id) < count(1) = count(*)
 
 #### join
 
@@ -2159,7 +2163,7 @@ select primaryKey（而不是*） from xx where indexColumn=
 
 ###### 扫描行数
 
-####### 区分度：cardinality
+####### 判断扫描行数的依据：区分度cardinality
 
 `show index`可查
 
@@ -2169,13 +2173,13 @@ select primaryKey（而不是*） from xx where indexColumn=
 
 ###### 是否排序
 
-###### 是否回表
+###### 是否回表：主键索引无需回表
 
-##### 选择非最优时
+##### 索引选择非最优时如何补救
 
 ###### force index强行选择一个索引
 
-select * from t force index(a)
+select * from t force index(a) where...
 
 ###### 修改语句，引导使用希望的索引
 
@@ -3445,50 +3449,40 @@ sentinel down-after-milliseconds myMaster <timeout>
 
 ##### cluster
 
-###### 跳转：MOVED
+###### 创建
 
-当客户端向一个错误的节点发出了指令，该节点会向客户端发送MOVED，告诉客户端去连正确的节点。 
- GET x
- -MOVED 3999 127.0.0.1:6381
+####### 原生
 
-###### 读写分离: READONLY 命令
+######## 配置文件：cluster-enabled yes
 
-- 默认情况下，某个slot对应的节点一定是一个master节点。客户端通过`MOVED`消息得知的集群拓扑结构也只会将请求路由到各个master中。
+cluster-enabled yes
+cluster-config-file "xx.conf"
+cluster-require-full-coverage no
+cluster-node-timeout 15000
 
-- 即便客户端将读请求直接发送到slave上，slave也会回复MOVED到master的响应。
+######## 启动: redis-server *.conf
 
-- 为此，Redis Cluster引入了 `READONLY` 命令，客户端向slave发送READONLY命令后，slave对于读操作将不再返回moved，而是直接处理。
+######## gossip通讯：cluster meet ip port
 
-###### 主从切换: gossip PFAIL / FAIL
+######## 分配槽(仅对master)：cluster addslots {0...5461}
 
-###### Failover: Master选举
+######## 配置从节点：cluster replicate node-id
 
-如果B已被集群公认为是FAIL状态了，则其slave会发起竞选，期望成为新的master。
+####### 脚本
 
-- 在竞选前，slave间会协商优先级，优先级高的slave更有可能更早地发起选举。优先级最重要的决定因素是`slave最后一次同步master信息的时间`，越新表示这个slave数据越新，竞选优先级越高。
+######## 安装ruby
 
-- slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
+######## 安装rubygem redis
 
-###### 一致性: 保证朝着epoch值更大的信息收敛
+######## 安装redis-trib.rb
 
-保证朝着epoch值更大的信息收敛: 每一个Node都保存了集群的配置信息`clusterState`。
+####### 验证
 
-- `currentEpoch`表示集群中的最大版本号，集群信息每更新一次，版本号自增。
-- nodes列表，表示集群所有节点信息。包括该信息的版本epoch、slots、slave列表
+######## cluster nodes
 
-配置信息通过Redis Cluster Bus交互(PING / PONG, Gossip)。
-- 当某个节点率先知道信息变更时，将currentEpoch自增使之成为集群中的最大值。
-- 当收到比自己大的currentEpoch，则更新自己的currentEpoch使之保持最新。
-- 当收到的Node epoch大于自身内部的值，说明自己的信息太旧、则更新为收到的消息。
+######## cluster info
 
-
-###### 配置
-
-####### cluster-enabled yes
-
-####### 分配槽：cluster addslots {0...5461}
-
-####### 配置从节点：cluster replicate master-hash
+######## cluster slot
 
 ###### 特性
 
@@ -3568,7 +3562,54 @@ wait 指令可以让异步复制变身同步复制，确保系统的强一致性
 
 ######### remove
 
+###### 伸缩
+
+####### 扩容
+
+######## 准备新节点
+
+######## 加入集群：meet
+
+######## 迁移槽和数据
+
 ###### 原理
+
+####### 跳转：MOVED
+
+当客户端向一个错误的节点发出了指令，该节点会向客户端发送MOVED，告诉客户端去连正确的节点。 
+ GET x
+ -MOVED 3999 127.0.0.1:6381
+
+####### 读写分离: READONLY 命令
+
+- 默认情况下，某个slot对应的节点一定是一个master节点。客户端通过`MOVED`消息得知的集群拓扑结构也只会将请求路由到各个master中。
+
+- 即便客户端将读请求直接发送到slave上，slave也会回复MOVED到master的响应。
+
+- 为此，Redis Cluster引入了 `READONLY` 命令，客户端向slave发送READONLY命令后，slave对于读操作将不再返回moved，而是直接处理。
+
+####### 主从切换: gossip PFAIL / FAIL
+
+####### Failover: Master选举
+
+如果B已被集群公认为是FAIL状态了，则其slave会发起竞选，期望成为新的master。
+
+- 在竞选前，slave间会协商优先级，优先级高的slave更有可能更早地发起选举。优先级最重要的决定因素是`slave最后一次同步master信息的时间`，越新表示这个slave数据越新，竞选优先级越高。
+
+- slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
+
+####### 一致性: 保证朝着epoch值更大的信息收敛
+
+保证朝着epoch值更大的信息收敛: 每一个Node都保存了集群的配置信息`clusterState`。
+
+- `currentEpoch`表示集群中的最大版本号，集群信息每更新一次，版本号自增。
+- nodes列表，表示集群所有节点信息。包括该信息的版本epoch、slots、slave列表
+
+配置信息通过Redis Cluster Bus交互(PING / PONG, Gossip)。
+- 当某个节点率先知道信息变更时，将currentEpoch自增使之成为集群中的最大值。
+- 当收到比自己大的currentEpoch，则更新自己的currentEpoch使之保持最新。
+- 当收到的Node epoch大于自身内部的值，说明自己的信息太旧、则更新为收到的消息。
+
 
 #### 应用
 
@@ -4501,7 +4542,7 @@ getOrCreateEnvironment()
 
 ##### @Caching
 
-##### @CacheConfig
+##### @CacheConfig(cacheNames = "")
 
 ### STOMP
 
