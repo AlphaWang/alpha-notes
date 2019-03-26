@@ -2139,6 +2139,23 @@ select primaryKey（而不是*） from xx where indexColumn=
 
 ###### 字符串索引的最左M个字符
 
+####### 字符串类型：用前缀索引，并定义好长度，即可既节省空间、又不用额外增加太多查询成本
+
+如何定义长度:
+alter table t add index i_2(email(6))
+
+
+####### 如何找到合适的长度：区分度
+
+select 
+count(distinct email) as L,
+count(distinct left(email, 4)) as L4,
+count(distinct left(email, 5)) as L5,
+...
+from User;
+
+假设可接受的损失比是5%，则找出不小于L*95%的值
+
 ###### 联合索引的最左N个字段
 
 ###### 联合索引的顺序：如果调整顺序可以少维护一个索引，则用该顺序；如不能，则考虑空间优先
@@ -2149,6 +2166,12 @@ select primaryKey（而不是*） from xx where indexColumn=
 
 应选A, 因为age占用空间geng'x
 
+###### 缺点
+
+####### 前缀索引可能增加扫描行数
+
+####### 无法利用覆盖索引
+
 ##### 索引下推
 
 (name, age)
@@ -2157,44 +2180,52 @@ select primaryKey（而不是*） from xx where indexColumn=
 直接过滤掉不满足条件age!=10的记录，减少`回表次数`。
 
 
-#### 优化器选择索引
+#### 索引失效的情况
 
-##### 标准
+##### 优化器选择索引
 
-###### 扫描行数
+###### 标准
 
-####### 判断扫描行数的依据：区分度cardinality
+####### 扫描行数
+
+######## 判断扫描行数的依据：区分度cardinality
 
 `show index`可查
 
-####### analyze table t 重新统计索引信息
+######## 区分度通过采样统计得出
 
-###### 是否使用临时表
+######## analyze table t 重新统计索引信息
 
-###### 是否排序
+####### 是否使用临时表
 
-###### 是否回表：主键索引无需回表
+####### 是否排序
 
-##### 索引选择非最优时如何补救
+####### 是否回表：主键索引无需回表
 
-###### force index强行选择一个索引
+###### 选错索引的情况
+
+####### 为了避免回表，使用了主键索引；而实际上用where条件中的索引会更快
+
+###### 索引选择非最优时如何补救
+
+####### force index强行选择一个索引
 
 select * from t force index(a) where...
 
-###### 修改语句，引导使用希望的索引
+####### 修改语句，引导使用希望的索引
 
 order by b limit 1 --> index b
 order by b, a limit 1 --> index a
 
-###### 新建合适的索引
+####### 新建合适的索引
 
-#### 索引失效的情况
+##### 查询语句导致索引失效
 
-##### 条件字段函数操作: where month(t_date) = 7
+###### 条件字段函数操作: where month(t_date) = 7
 
-##### 隐式类型转换: where tradeid = 123 , tradeid is varchar
+###### 隐式类型转换: where tradeid = 123 , tradeid is varchar
 
-##### 隐式字符编码转换:  utf8 --> utf8mb4
+###### 隐式字符编码转换:  utf8 --> utf8mb4
 
 ### 锁
 
@@ -3568,9 +3599,39 @@ wait 指令可以让异步复制变身同步复制，确保系统的强一致性
 
 ######## 准备新节点
 
-######## 加入集群：meet
+######## 加入集群
+
+######### meet
+
+######### redis-trib.rb add-node
+
+redis-trib.rb add-node new_host:new_port existing_host:existing_port --slave --master-id
 
 ######## 迁移槽和数据
+
+######### 手工
+
+########## 1_对目标节点：cluster setslot {slot} importing {sourceNodeId}
+
+########## 2_对源节点：cluster setslot {slot} migrating {targetNodeId}
+
+########## 3_对源节点循环执行：cluster getkeysinslot {slot} {count}，每次获取count个键
+
+########## 4_对源节点循环执行：migrate {targetIp} {targetPort} key 0 {timeout}
+
+0: db0
+
+
+########## 5_对所有主节点：cluster setslot {slot} node {targetNodeId}
+
+######### pipeline migrate
+
+######### redis-trib.rb reshard
+
+redis-trib.rb reshard host:port
+--from
+--to
+--slots
 
 ###### 原理
 
