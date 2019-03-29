@@ -3490,6 +3490,16 @@ sentinel down-after-milliseconds myMaster <timeout>
 - 因为增加了 Proxy 作为中转层，所有在网络开销上要比单个 Redis 大。
 - 集群配置中心使用 zk 来实现，意味着在部署上增加了 zk 运维的代价
 
+####### 不支持事务
+
+####### rename 操作也很危险
+
+####### 为了支持扩容，单个 key 对应的 value 不宜过大
+
+####### 网络开销更大
+
+####### 需要运维zk
+
 ##### cluster
 
 ###### 创建
