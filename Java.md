@@ -4568,9 +4568,29 @@ https://github.com/alibaba/druid
 
 ##### Lettuce
 
+###### 支持读写分离
+
+####### 只读主、只读从
+
+####### 优先读主、优先读从
+
+####### LettuceClientConfigurationBuilderCustomizer -> readFrom(ReadFrom.MASTER_PREFERRED)
+
 ##### RedisTemplate
 
 ##### Repository
+
+###### @EnableRedisRepository
+
+###### @RedisHash
+
+####### Class级别：@RedisHash(value = "springbucks-coffee", timeToLive = 60)
+
+###### @Id
+
+###### @Index
+
+####### 二级索引，自动创建另一套key-value
 
 ### Spring Boot
 
