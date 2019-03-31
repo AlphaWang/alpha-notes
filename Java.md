@@ -4556,13 +4556,23 @@ https://github.com/alibaba/druid
 
 ###### JedisCluster
 
-####### JedisSlotBasedConnectionHandler
+####### 配置
 
-######## getConnection: 随机
+######## JedisSlotBasedConnectionHandler
 
-######## getConnectionFromSlot: 基于slot选择
+######### getConnection: 随机
 
-####### JedisClusterInfoCache
+######### getConnectionFromSlot: 基于slot选择
+
+######## JedisClusterInfoCache
+
+####### 技巧
+
+######## 单例：内置了所有节点的连接池
+
+######## 无需手动借还连接池
+
+######## 合理设置commons-pool
 
 ####### 不支持读slave
 
