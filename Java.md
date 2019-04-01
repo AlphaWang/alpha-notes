@@ -1607,81 +1607,6 @@ Producer会监听`Broker的新增与减少`、`Topic的新增与减少`、`Broke
 
 ## MySql
 
-### ETL
-
-### 逻辑架构
-
-#### Server层
-
-##### 连接器
-
-管理连接，权限验证
-
-
-###### 推荐用长连接
-
-####### 问题：长期积累可能OOM
-
-因为执行过程中临时使用的内存是管理在连接对象里，直到连接断开才释放
-
-####### 优化
-
-######## 定期断开长连接
-
-######## 每次执行比较大的操作后，执行mysql_reset_connection 重新初始化连接
-
-##### 查询缓存
-
-###### 表更新后，缓存即失效
-
-###### 8.0 不再支持查询缓存
-
-##### 分析器
-
-###### 词法分析
-
-###### 语法分析
-
-##### 优化器
-
-###### 生成执行计划
-
-###### 选择索引
-
-###### 选择表连接顺序
-
-##### 执行器
-
-###### 判断权限
-
-###### 操作引擎
-
-#### 存储引擎
-
-##### InnoDB
-
-###### 事务
-
-InnoDB每一条SQL语言都默认封装成事务，自动提交，这样会影响速度，所以最好把多条SQL语言放在begin和commit之间，组成一个事务；
-
-
-
-###### 不保存表的具体行数
-
-##### MyISAM
-
-###### 不支持事务
-
-###### 不支持行锁
-
-###### 不支持外键
-
-###### 保存了整个表的行数
-
-###### 支持全文索引
-
-##### Memory
-
 ### 原理
 
 #### 更新
@@ -2432,6 +2357,79 @@ ALTER TABLE tbl_name WAIT N add column ...
 ####### 解决：脏读、不可重复读、幻读
 
 ### 运维
+
+#### 逻辑架构
+
+##### Server层
+
+###### 连接器
+
+管理连接，权限验证
+
+
+####### 推荐用长连接
+
+######## 问题：长期积累可能OOM
+
+因为执行过程中临时使用的内存是管理在连接对象里，直到连接断开才释放
+
+######## 优化
+
+######### 定期断开长连接
+
+######### 每次执行比较大的操作后，执行mysql_reset_connection 重新初始化连接
+
+###### 查询缓存
+
+####### 表更新后，缓存即失效
+
+####### 8.0 不再支持查询缓存
+
+###### 分析器
+
+####### 词法分析
+
+####### 语法分析
+
+###### 优化器
+
+####### 生成执行计划
+
+####### 选择索引
+
+####### 选择表连接顺序
+
+###### 执行器
+
+####### 判断权限
+
+####### 操作引擎
+
+##### 存储引擎
+
+###### InnoDB
+
+####### 事务
+
+InnoDB每一条SQL语言都默认封装成事务，自动提交，这样会影响速度，所以最好把多条SQL语言放在begin和commit之间，组成一个事务；
+
+
+
+####### 不保存表的具体行数
+
+###### MyISAM
+
+####### 不支持事务
+
+####### 不支持行锁
+
+####### 不支持外键
+
+####### 保存了整个表的行数
+
+####### 支持全文索引
+
+###### Memory
 
 #### 连接池
 
@@ -3243,7 +3241,7 @@ auto-aof-rewrite-min-size 64mb
 
 ##### 主从
 
-###### slave配置
+###### 配置
 
 ####### slaveof
 
@@ -3252,7 +3250,7 @@ auto-aof-rewrite-min-size 64mb
 
 ####### slave-read-only yes
 
-###### 查看主从状态：info replication
+####### 查看主从状态：info replication
 
 127.0.0.1:6379> info replication
 role:master
@@ -3623,40 +3621,42 @@ wait 指令可以让异步复制变身同步复制，确保系统的强一致性
 
 ######### remove
 
-###### 伸缩
+###### 原理
 
-####### 扩容
+####### 伸缩
 
-######## 准备新节点
+######## 扩容
 
-######## 加入集群
+######### 准备新节点
 
-######### meet
+######### 加入集群
 
-######### redis-trib.rb add-node
+########## meet
+
+########## redis-trib.rb add-node
 
 redis-trib.rb add-node new_host:new_port existing_host:existing_port --slave --master-id
 
-######## 迁移槽和数据
+######### 迁移槽和数据
 
-######### 手工
+########## 手工
 
-########## 1_对目标节点：cluster setslot {slot} importing {sourceNodeId}
+########### 1_对目标节点：cluster setslot {slot} importing {sourceNodeId}
 
-########## 2_对源节点：cluster setslot {slot} migrating {targetNodeId}
+########### 2_对源节点：cluster setslot {slot} migrating {targetNodeId}
 
-########## 3_对源节点循环执行：cluster getkeysinslot {slot} {count}，每次获取count个键
+########### 3_对源节点循环执行：cluster getkeysinslot {slot} {count}，每次获取count个键
 
-########## 4_对源节点循环执行：migrate {targetIp} {targetPort} key 0 {timeout}
+########### 4_对源节点循环执行：migrate {targetIp} {targetPort} key 0 {timeout}
 
 0: db0
 
 
-########## 5_对所有主节点：cluster setslot {slot} node {targetNodeId}
+########### 5_对所有主节点：cluster setslot {slot} node {targetNodeId}
 
-######### pipeline migrate
+########## pipeline migrate
 
-######### redis-trib.rb reshard
+########## redis-trib.rb reshard
 
 redis-trib.rb reshard host:port
 --from
@@ -3665,58 +3665,127 @@ redis-trib.rb reshard host:port
 
 host:port是任一个节点的
 
-####### 收缩
+######## 收缩
 
-######## 迁移槽
+######### 迁移槽
 
-######## 忘记节点
+######### 忘记节点
 
-######### cluster forget {downNodeId}
+########## cluster forget {downNodeId}
 
-######### redis-trib.rb del-node
+########## redis-trib.rb del-node
 
 redis-trib.rb del-node ip:port {downNodeId}
 
-######## 关闭节点
+######### 关闭节点
 
-####### 迁移slot过程中如何同时提供服务？--> ask
+######## 迁移slot过程中如何同时提供服务？--> ask
 
-######## 0.先尝试访问源节点
+######### 0.先尝试访问源节点
 
-######## 1.源节点返回ASK转向
+######### 1.源节点返回ASK转向
 
-######## 2.向新节点发送asking命令
+######### 2.向新节点发送asking命令
 
 在迁移没有完成之前，这个槽位还是不归新节点管理的，它会向客户端返回一个`-MOVED`重定向指令告诉它去源节点去执行。如此就会形成 `重定向循环`。
 asking指令的目标就是打开目标节点的选项，告诉它下一条指令不能不理，而要当成自己的槽位来处理。
 
-######## 3.向新节点发送命令
+######### 3.向新节点发送命令
 
-###### 客户端路由
+####### 故障转移
 
-####### moved
+######## 故障发现
 
-######## 1.向任意节点发送命令
+######### 通过ping/pong发现故障
 
-######## 2.节点计算槽和对应节点
+######### 主观下线
 
-######## 3.如果指向自身，则执行命令并返回结果
+- node1 发送ping消息
+- node2 回复pong消息
+- node1 收到pong，并更新与node2的`最后通信时间`
+- cron定时任务：如果最后通信时间超过node-timeout，则标记为`pfail`
 
-######## 4.如果不指向自身，则回复-moved (moved slot ip:port)
+######### 客观下线
 
-######## 5.客户端重定向发送命令
+- 接受ping
+- 消息解析：其他pfail节点 + 主节点发送消息
+- 维护故障链表
+- 尝试客观下线：计算有效下线报告数量
+- if > 槽节点总数一半，则更新为客观下线；
+-并向集群广播下线节点的fail消息。
 
-####### tips
+########## 当半数以上主节点都标记其为pfail
 
-######## redis-cli -c 会自动跳转到新节点
+######## 故障恢复
 
-######## moved vs. ask
+######### 资格检查
 
-######### 都是客户端重定向
+每个从节点：检查与主节点断线时间；
+- if > `cluster-node-timeout` * `cluster-slave-validity-factor`，则取消资格
 
-######### moved: 表示slot确实不在当前节点（或已确定迁移）
+######### 准备选举时间
 
-######### ask: 表示slot在迁移中
+offset越大，则延迟选举时间越短
+
+
+- slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
+
+######### 选举投票
+
+收集选票，if > N/2 + 1，则可替换zhu'jie'dian
+
+######### 替换主节点
+
+1. slaveof no one
+2. clusterDelSlot撤销故障主节点负责的槽；
+3. clusterAddSlot把这些槽分配给自己；
+4. 向集群广播pong消息，表明已经替换了故障jie
+
+###### 客户端
+
+####### 客户端路由
+
+######## moved
+
+######### 1.向任意节点发送命令
+
+######### 2.节点计算槽和对应节点
+
+######### 3.如果指向自身，则执行命令并返回结果
+
+######### 4.如果不指向自身，则回复-moved (moved slot ip:port)
+
+######### 5.客户端重定向发送命令
+
+######## tips
+
+######### redis-cli -c 会自动跳转到新节点
+
+######### moved vs. ask
+
+########## 都是客户端重定向
+
+########## moved: 表示slot确实不在当前节点（或已确定迁移）
+
+########## ask: 表示slot在迁移中
+
+####### 批量操作
+
+######## 问题：mget/mset必须在同一个槽
+
+######## 实现
+
+######### 串行 mget
+
+######### 串行IO
+
+########## 客户端先做聚合，crc32 -> node，然后串行pipeline
+
+######### 并行IO
+
+########## 客户端先做聚合，然后并行pipeline
+
+######### hash_tag
 
 ###### 原理
 
@@ -3727,16 +3796,6 @@ asking指令的目标就是打开目标节点的选项，告诉它下一条指�
 - 即便客户端将读请求直接发送到slave上，slave也会回复MOVED到master的响应。
 
 - 为此，Redis Cluster引入了 `READONLY` 命令，客户端向slave发送READONLY命令后，slave对于读操作将不再返回moved，而是直接处理。
-
-####### 主从切换: gossip PFAIL / FAIL
-
-####### Failover: Master选举
-
-如果B已被集群公认为是FAIL状态了，则其slave会发起竞选，期望成为新的master。
-
-- 在竞选前，slave间会协商优先级，优先级高的slave更有可能更早地发起选举。优先级最重要的决定因素是`slave最后一次同步master信息的时间`，越新表示这个slave数据越新，竞选优先级越高。
-
-- slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
 
 ####### 一致性: 保证朝着epoch值更大的信息收敛
 
