@@ -4669,6 +4669,42 @@ https://github.com/alibaba/druid
 
 ####### 二级索引，自动创建另一套key-value
 
+##### Converter
+
+###### @WritingConverter
+
+###### @ReadingConverter
+
+###### byte[]与对象互转
+
+#### reactor
+
+##### Operators
+
+###### publisher / subscriber
+
+###### onNext() / onComplete() / onError()
+
+###### Flux[0..N] / Mono[0..1]
+
+##### Backpressure
+
+###### Subscription
+
+###### onRequest() / onCancel() / onDispose()
+
+##### Schedulers
+
+###### immediate() / single() / newSingle()
+
+###### elastic() / parallel() / newParallel()
+
+##### 错误处理
+
+###### onError / onErrorReturn / onErrorResume
+
+###### doOnError / doFinally
+
 ### Spring Boot
 
 #### 模式注解
