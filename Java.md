@@ -1,4 +1,4 @@
-# Java
+# Java架构知识图谱
 
 ## JVM
 
@@ -2451,7 +2451,11 @@ InnoDB每一条SQL语言都默认封装成事务，自动提交，这样会影�
 
 #### 收缩表空间
 
-##### 空洞：delete 只是标记记录为可复用，磁盘文件大小不会变
+##### 空洞
+
+###### 删除数据导致空洞：只是标记记录为可复用，磁盘文件大小不会变
+
+###### 插入数据导致空洞：索引数据页分裂
 
 ##### 重建表
 
@@ -2461,7 +2465,7 @@ InnoDB每一条SQL语言都默认封装成事务，自动提交，这样会影�
 
 ####### temp table
 
-###### alter table t engine=innodb,ALGORITHM=inplace;
+###### alter table t engine=innodb,ALGORITHM=inplace; 
 
 ####### Online DDL: 同时接受更新
 
