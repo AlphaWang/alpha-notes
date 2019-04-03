@@ -1065,6 +1065,110 @@ help
 
 ###### wait不抛异常
 
+#### Condition
+
+##### Condition实现了管程模型里的条件变量
+
+##### await() / signal() / signalAll()
+
+##### 示例
+
+###### 使用Condition实现阻塞队列
+
+``` java
+public class BlockedQueue<T>{
+  final Lock lock =
+    new ReentrantLock();
+  // 条件变量：队列不满  
+  final Condition notFull =
+    lock.newCondition();
+  // 条件变量：队列不空  
+  final Condition notEmpty =
+    lock.newCondition();
+
+  // 入队
+  void enq(T x) {
+    lock.lock();
+    try {
+      while (队列已满){
+        // 等待队列不满
+        notFull.await();
+      }  
+      // 省略入队操作...
+      // 入队后, 通知可出队
+      notEmpty.signal();
+    }finally {
+      lock.unlock();
+    }
+  }
+  // 出队
+  void deq(){
+    lock.lock();
+    try {
+      while (队列已空){
+        // 等待队列不空
+        notEmpty.await();
+      }  
+      // 省略出队操作...
+      // 出队后，通知可入队
+      notFull.signal();
+    }finally {
+      lock.unlock();
+    }  
+  }
+}
+```
+
+
+###### 使用Condition实现异步转同步
+
+``` java
+// 创建锁与条件变量
+private final Lock lock 
+    = new ReentrantLock();
+private final Condition done 
+    = lock.newCondition();
+
+// 调用方通过该方法等待结果
+Object get(int timeout){
+  long start = System.nanoTime();
+  lock.lock();
+  try {
+	while (!isDone()) {
+	  done.await(timeout);
+      long cur=System.nanoTime();
+	  if (isDone() || 
+          cur-start > timeout){
+	    break;
+	  }
+	}
+  } finally {
+	lock.unlock();
+  }
+  if (!isDone()) {
+	throw new TimeoutException();
+  }
+  return returnFromResponse();
+}
+// RPC 结果是否已经返回
+boolean isDone() {
+  return response != null;
+}
+// RPC 结果返回时调用该方法   
+private void doReceived(Response res) {
+  lock.lock();
+  try {
+    response = res;
+    if (done != null) {
+      done.signal();
+    }
+  } finally {
+    lock.unlock();
+  }
+}
+
+```
+
 ### 互斥
 
 #### 无锁
@@ -1134,7 +1238,23 @@ monitorexit指令：计数器-1
 
 ####### 依赖于JVM vs. 依赖于API
 
-####### Lock增加了高级功能：可中断等待，可实现公平锁
+####### Lock增加了高级功能
+
+######## 能够响应中断
+
+######### lockInterruptibly()
+
+######## 支持超时
+
+######### tryLock(timeout)
+
+######## 非阻塞地获取锁
+
+######### tryLock()
+
+######## 可实现公平锁
+
+######### ReentrantLock(boolean fair)
 
 ####### 等待通知机制：wait/notify vs. condition
 
@@ -1153,6 +1273,14 @@ monitorexit指令：计数器-1
 ###### condition
 
 ####### 必须在排它锁中使用
+
+###### 最佳实践
+
+####### 永远只在更新对象的成员变量时加锁
+
+####### 永远只在访问可变的成员变量时加锁
+
+####### 永远不在调用其他对象的方法时加锁
 
 ##### 读写锁
 
@@ -2459,13 +2587,13 @@ InnoDB每一条SQL语言都默认封装成事务，自动提交，这样会影�
 
 ##### 重建表
 
-###### alter table t engine=innodb,ALGORITHM=copy;
+###### alter table t engine=innodb, ALGORITHM=copy;
 
 ####### 原表不能同时接受更新
 
 ####### temp table
 
-###### alter table t engine=innodb,ALGORITHM=inplace; 
+###### alter table t engine=innodb, ALGORITHM=inplace; 
 
 ####### Online DDL: 同时接受更新
 
