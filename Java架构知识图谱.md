@@ -4971,6 +4971,12 @@ https://github.com/alibaba/druid
 
 ###### doOnError / doFinally
 
+##### 配置
+
+###### ReactiveRedisConnection / ReactiveRedisTemplate
+
+###### ReactiveMongoDatabaseFactory / ReactiveMongoTemplate
+
 ### Spring Boot
 
 #### 模式注解
