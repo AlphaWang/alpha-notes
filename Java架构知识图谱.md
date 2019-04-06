@@ -4945,6 +4945,16 @@ https://github.com/alibaba/druid
 
 #### reactor
 
+```java
+Flux.fromIterable(list)
+  .publishOn(Schedulers.single())
+  .doOnComplete(..)
+  .flatMap(..)
+  .concatWith()
+  .onErrorResume(..)
+  .subscribe()..;
+```
+
 ##### Operators
 
 ###### publisher / subscriber
@@ -4976,6 +4986,16 @@ https://github.com/alibaba/druid
 ###### ReactiveRedisConnection / ReactiveRedisTemplate
 
 ###### ReactiveMongoDatabaseFactory / ReactiveMongoTemplate
+
+```java
+mongoTemplate.insertAll(list)
+  .publishOn(Schedulers.elastic())
+  .doOnNext(log..)
+  .doOnComplete(..)
+  .doOnFinally(..)
+  .count()
+  .subscribe();
+```
 
 ### Spring Boot
 
