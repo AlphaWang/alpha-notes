@@ -4620,9 +4620,29 @@ prototype --> request, 动态代理
 
 #### DI
 
-##### Bean Factory: IoC容器
+##### Bean Factory
 
-##### ApplicationContext: 应用上下文，Spring容器
+###### IoC容器
+
+###### 子类
+
+####### DefaultListableBeanFactory
+
+##### ApplicationContext
+
+###### 应用上下文，Spring容器
+
+###### 结合POJO、Configuration Metadata
+
+###### 子类
+
+####### ClassPathXmlApplicationContext
+
+####### FileSystemXmlApplicationContext
+
+####### AnnotationConfigApplicationContext
+
+##### WebApplicationContext
 
 ##### 依赖注入
 
@@ -4674,6 +4694,7 @@ Advice增强逻辑的织入目标类
 ###### Weaving 织入
 
 将Advice添加到目标类的具体连接点上的过程。
+(连接切面与目标对象 创建代理的过程)
 
 ###### Aspect 切面
 
@@ -4810,6 +4831,28 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
 
+#### 原理
+
+##### WebApplicationContext
+
+###### Servlet WebApplicationContext
+
+WEB相关bean，继承自RootXxx
+
+####### Controllers
+
+####### ViewResolver
+
+####### HandlerMapping
+
+###### Root WebApplicationContext
+
+middle-tier serv
+
+####### Services
+
+####### Repositories
+
 ### Spring Data
 
 #### spring-data-jpa
@@ -4906,6 +4949,16 @@ https://github.com/alibaba/druid
 ####### @Column
 
 ####### @JoinTable  @JoinColumn
+
+##### reactive
+
+###### @EnableR2dbcRepositories
+
+###### ReactiveCrudRepository
+
+####### 返回值都是Mono或Flux
+
+####### 自定义的查询需要自己写@Query
 
 #### spring-data-mongodb
 
