@@ -1922,7 +1922,19 @@ redo log 先 prepare，
 
 ##### count(*)
 
-###### count(字段) < count(id) < count(1) = count(*)
+###### MyISAM把总行数存在磁盘上，count(*)效率奇高
+
+###### 效率：count(字段) < count(id) < count(1) = count(*)
+
+count(字段)：满足条件的数据行里，字段不为null的总个数；
+
+count(主键id)：引擎遍历表，取出id返回给server；server判断是否为空，按行累加；
+
+count(1)：引擎遍历表，但不取值，server层对于返回的每一行 放入数字1；
+
+count(*)：并不会取出全部字段，*肯定不是null,直接按行累加。
+
+
 
 ##### join
 
