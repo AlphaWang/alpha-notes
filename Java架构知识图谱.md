@@ -1363,6 +1363,135 @@ try {
 
 ####### 读锁不能newCondition 
 
+###### StampedLock
+
+####### 加锁解锁
+
+######## 加锁后返回stamp，解锁时需要传入这个stamp
+
+######## writeLock() / unlockWrite(stamp)
+
+######## readLock() / unlockRead(stamp)
+
+######## validate(stamp)
+
+######### 判断是否已被修改
+
+####### 锁的降级升级
+
+######## 降级：tryConvertToReadLock()
+
+######## 升级：tryConvertToWriteLock()
+
+####### 支持三种锁模式
+
+######## 写锁
+
+######### 类似WriteLock
+
+######## 悲观读锁
+
+######### 类似ReadLock
+
+######## 乐观读
+
+######### tryOptimisticRead()
+
+
+```java
+class Point {
+
+  private int x, y;
+  
+  final StampedLock sl = new StampedLock();
+    
+  // 计算到原点的距离  
+  int distanceFromOrigin() {
+    // 乐观读
+    long stamp =  sl.tryOptimisticRead();
+    // 读入局部变量，
+    // 读的过程数据可能被修改
+    int curX = x, curY = y;
+    
+    // 判断执行读操作期间，
+    // 是否存在写操作，如果存在，
+    // 则 sl.validate 返回 false
+    if (!sl.validate(stamp)){
+      // 升级为悲观读锁
+      stamp = sl.readLock();
+      try {
+        curX = x;
+        curY = y;
+      } finally {
+        // 释放悲观读锁
+        sl.unlockRead(stamp);
+      }
+    }
+    return Math.sqrt(
+      curX * curX + curY * curY);
+  }
+}
+
+```
+
+######### 允许一个线程同时获取写锁
+
+########## 而在ReadWriteLock中，当多个线程同时读的同时，写操作会被阻塞
+
+######### stamp 类似数据库乐观锁中的version
+
+####### 注意事项
+
+######## 不支持重入
+
+######## 不支持newCondition
+
+####### 示例
+
+######## 读模板
+
+
+```java
+final StampedLock sl = 
+  new StampedLock();
+
+// 乐观读
+long stamp = 
+  sl.tryOptimisticRead();
+// 读入方法局部变量
+......
+// 校验 stamp
+if (!sl.validate(stamp)){
+
+  // 升级为悲观读锁
+  stamp = sl.readLock();
+  try {
+    // 读入方法局部变量
+    .....
+  } finally {
+    // 释放悲观读锁
+    sl.unlockRead(stamp);
+  }
+}
+// 使用方法局部变量执行业务操作
+......
+
+```
+
+######## 写模板
+
+
+```java
+long stamp = sl.writeLock();
+try {
+  // 写共享变量
+  ......
+} finally {
+  sl.unlockWrite(stamp);
+}
+
+```
+
 ###### 最佳实践
 
 ####### 永远只在更新对象的成员变量时加锁
