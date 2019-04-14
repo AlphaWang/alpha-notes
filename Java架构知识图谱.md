@@ -5242,6 +5242,18 @@ p:interceptorNames="advice or adviso">
 
 ###### 通过ViewResolver解析视图名到真实视图对象
 
+###### 接口
+
+####### AbstractCachingViewResolver
+
+####### UrlBasedViewResolver
+
+####### FreeMarkerViewResolver
+
+####### ContentNegotiatingViewResolver
+
+####### InternalResourceViewResolver
+
 #### 自动装配
 
 ##### Spring SPI
@@ -5283,11 +5295,13 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 
 ####### @RequestParam
 
-####### MultipartFile
+####### @RequestParam MultipartFile
 
 ######## MultipartResolver
 
 ######## 支持类型 multipart/form-data
+
+######### consumes = MediaType.MULTIPART_FORM_DATA_VALUE
 
 ###### 入参原理
 
@@ -5295,6 +5309,8 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
+
+####### Converter
 
 ###### 校验
 
@@ -5307,6 +5323,8 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 ####### 入参配置
 
 ######## @Valid
+
+######### 校验失败返回400 + errors
 
 ######## BindingResult
 
