@@ -5218,6 +5218,12 @@ p:interceptorNames="advice or adviso">
 
 ##### DispatcherServlet
 
+###### request.setAttribute
+
+####### localResolver
+
+####### themeResolver
+
 ##### HandlerMapping
 
 ###### 通过HandlerMapping找到处理请求的Handler
@@ -5229,6 +5235,8 @@ p:interceptorNames="advice or adviso">
 ###### HttpMessageConverter
 
 ####### MappingJackson2HttpMessageConverter
+
+####### 例如构造RequestBody / ResponseBody
 
 ##### ViewResolver
 
@@ -5256,29 +5264,53 @@ p:interceptorNames="advice or adviso">
 
 ##### 入参
 
-###### @RequestParam
+###### 入参种类
 
-###### @RequestHeader
-
-###### @CookieValue
-
-###### @MatrixVariable
-
-###### HttpServletRequest / HttpSession
-
-###### WebRequest
-
-###### ModelMap / Map
+####### ModelMap / Map
 
 SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法入参为Map/Model，则会将隐含模型的引用传递给这些入参。
 
 
-##### 入参原理
+####### WebRequest
 
-###### HttpMessageConverter
+####### HttpServletRequest / HttpSession
+
+####### @MatrixVariable
+
+####### @CookieValue
+
+####### @RequestHeader
+
+####### @RequestParam
+
+####### MultipartFile
+
+######## MultipartResolver
+
+######## 支持类型 multipart/form-data
+
+###### 入参原理
+
+####### HttpMessageConverter
 
 - MappingJackson2HttpMessageConverter
 - ByteArrayHttpMessageConverter
+
+###### 校验
+
+####### POJO配置
+
+######## @NotEmpty
+
+######## @NotNull
+
+####### 入参配置
+
+######## @Valid
+
+######## BindingResult
+
+######### 调用bindingResult.hasErrors() 对校验失败情况进行处理
 
 #### 原理
 
@@ -5301,6 +5333,12 @@ middle-tier serv
 ####### Services
 
 ####### Repositories
+
+###### AOP
+
+####### 父子context的aop是独立的
+
+####### 要想同时拦截父子：父Apspect @Bean, 子 <aop:aspectj-autoproxy/>
 
 ### Spring Data
 
