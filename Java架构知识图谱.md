@@ -1320,6 +1320,56 @@ AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
 - CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。`UnSafe.objectFieldOffset()` 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址，返回值是 valueOffset。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
 
+##### 并发容器
+
+###### 同步容器
+
+####### Collections.synchronizedList / Set / Map
+
+####### Vector / Stack / Hashtable
+
+###### List
+
+####### CopyOnWriteArrayList
+
+###### Map
+
+####### ConcurrentHashMap
+
+######## 无序
+
+####### ConcurrentSkipListMap
+
+######## 有序
+
+######## 跳表，性能高
+
+###### Set
+
+####### CopyOnWriteArraySet
+
+####### ConcurrentSkipListSet
+
+###### Queue
+
+####### 单端阻塞队列
+
+######## ArrayBlockingQueue
+
+######## LinkedBlockingQueue
+
+####### 双端阻塞队列
+
+######## LinkedBlockingDeque
+
+####### 单端非阻塞队列
+
+######## ConcurrentLinkedQueue
+
+####### 双端非阻塞队列
+
+######## ConcurrentLinkedDeque
+
 #### 互斥锁
 
 ##### synchronized
