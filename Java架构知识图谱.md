@@ -991,8 +991,6 @@ help
 
 ### 协作
 
-#### Semaphore
-
 #### Monitor 管程
 
 ##### 概念
@@ -1021,7 +1019,120 @@ help
 
 #### CountDownLatch
 
+##### 场景：一个线程等待多个线程
+
+##### 计数器不能循环再利用
+
+##### 方法
+
+```java
+
+// 创建 2 个线程的线程池
+Executor executor = Executors.newFixedThreadPool(2);
+
+while(存在未对账订单){
+  // 计数器初始化为 2
+  CountDownLatch latch = new CountDownLatch(2);
+    
+  // 查询未对账订单
+  executor.execute(()-> {
+    pos = getPOrders();
+    latch.countDown();
+  });
+  
+  // 查询派送单
+  executor.execute(()-> {
+    dos = getDOrders();
+    latch.countDown();
+  });
+  
+  // 等待两个查询操作结束
+  latch.await();
+  
+  // 执行对账操作
+  diff = check(pos, dos);
+  // 差异写入差异库
+  save(diff);
+}
+
+
+```
+
+###### countDown()
+
+###### await()
+
 #### CyclicBarrier
+
+##### 场景：一组线程之间互相等待
+
+##### 计数器会循环利用：当减到0后，会自动重置到初始值
+
+##### 可以设置回调函数
+
+##### 方法
+
+```java
+
+// 订单队列
+Vector<P> pos;
+// 派送单队列
+Vector<D> dos;
+
+// 执行回调的线程池 
+Executor executor = Executors.newFixedThreadPool(1);
+final CyclicBarrier barrier =
+  new CyclicBarrier(2, ()->{
+    executor.execute(()-> check());
+  });
+  
+void check(){
+  P p = pos.remove(0);
+  D d = dos.remove(0);
+  // 执行对账操作
+  diff = check(p, d);
+  // 差异写入差异库
+  save(diff);
+}
+  
+void checkAll(){
+
+  // 循环查询订单库
+  Thread T1 = new Thread(()->{
+    while(存在未对账订单){
+      // 查询订单库
+      pos.add(getPOrders());
+      // 等待
+      barrier.await();
+    }
+  }
+  T1.start(); 
+  
+  // 循环查询运单库
+  Thread T2 = new Thread(()->{
+    while(存在未对账订单){
+      // 查询运单库
+      dos.add(getDOrders());
+      // 等待
+      barrier.await();
+    }
+  }
+  T2.start();
+}
+
+```
+
+###### await()
+
+#### Semaphore
+
+##### 场景：限流器，不允许多于N个线程同时进入临界区
+
+##### 方法
+
+###### acquire()
+
+###### release()
 
 #### Phaser
 
@@ -1499,8 +1610,6 @@ try {
 ####### 永远只在访问可变的成员变量时加锁
 
 ####### 永远不在调用其他对象的方法时加锁
-
-##### 读写锁
 
 ## 分布式
 
