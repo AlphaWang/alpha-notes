@@ -4799,6 +4799,70 @@ Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 
 
 ####### slowlog reset
 
+##### 推荐
+
+###### kv设计
+
+####### key设计
+
+######## 可读性、可管理型
+
+######## 简洁性
+
+######### string长度会影响encoding
+
+########## embstr
+
+########## int
+
+########## raw
+
+########## 通过 `object encoding k` 验证
+
+######## 排除特殊字符
+
+####### value设计
+
+######## 拒绝bigkey
+
+######### 最佳实践
+
+########## string < 10K
+
+########## hash,list,set元素不超过5000
+
+######### bigkey的危害
+
+########## 网络阻塞
+
+########## redis阻塞
+
+########## 集群节点数据不均衡
+
+########## 频繁序列化
+
+######### bigkey的发现
+
+########## 应用异常
+
+########### JedisConnectionException
+
+############ read time out
+
+############ could not get a resource from the pool
+
+########## redis-cli --bigkeys
+
+########## scan + debug object k
+
+########## 主动报警：网络流量监控，客户端监控
+
+########## 内核热点key问题优化
+
+######## 选择合适的数据结构
+
+######## 过期设计
+
 ### MongoDb
 
 #### 常用命令
@@ -5253,6 +5317,26 @@ p:interceptorNames="advice or adviso">
 ####### ContentNegotiatingViewResolver
 
 ####### InternalResourceViewResolver
+
+###### 源码
+
+####### DispatcherServlet
+
+######## initStrategies()
+
+######### initViewResolvers()
+
+######### 初始化所有 ViewResolver.class 
+
+######## doDispatch()
+
+######### applyDefaultViewName()
+
+######### processDispatchResult()
+
+########## 异常处理
+
+########## render
 
 #### 自动装配
 
