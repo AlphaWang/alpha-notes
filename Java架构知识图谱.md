@@ -1302,15 +1302,89 @@ private void doReceived(Response res) {
 
 ###### 类型
 
-####### 基本类型：AtomicInteger, AtomicLong
+####### 基本类型 
 
-####### 数组类型：AtomicIntegerArray, Atomic ReferenceArray
+######## AtomicLong
+
+######## AtomicInteger
+
+######## AutomicBoolean
+
+####### 数组类型
 
 AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
-####### 引用类型：AtomicReference, AtomicStampedReference
+######## AtomicIntegerArray
 
-####### 对象属性修改：AtomicIntegerFieldUpdater, AtomicStampedReference
+######## AtomicReferenceArray
+
+####### 引用类型
+
+######## AtomicReference
+
+######## AtomicStampedReference
+
+boolean compareAndSet(
+  V expectedReference,
+  V newReference,
+  int expectedStamp,
+  int newStamp) 
+
+
+######### 解决ABA问题
+
+######### 增加版本号stamp
+
+######## AtomicMarkableReference
+
+boolean compareAndSet(
+  V expectedReference,
+  V newReference,
+  boolean expectedMark,
+  boolean newMark)
+
+
+######### 解决ABA问题
+
+######### 将版本号简化为boolean
+
+####### 对象属性修改
+
+######## AtomicIntegerFieldUpdater
+
+######## AtomicReferenceFieldUpdater
+
+######## 注意
+
+######### 对象属性必须是volatile
+
+######### 示例
+
+```java
+public static <U>
+AtomicXXXFieldUpdater<U> 
+newUpdater(
+  Class<U> tclass, //类信息
+  String fieldName)
+  
+
+boolean compareAndSet(
+  T obj, //对象信息
+  int expect, 
+  int update)
+```
+
+####### 累加器
+
+######## LongAdder
+
+######## LongAccumulator
+
+######## 注意
+
+######### 不支持compareAndSet
+
+######### 性能更好
 
 ###### 原理
 
@@ -1318,7 +1392,66 @@ AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
 - 利用 `CAS` (compare and swap) + `volatile` 和 native 方法来保证原子操作，从而避免 `synchronized` 的高开销，执行效率大为提升。
 
-- CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。`UnSafe.objectFieldOffset()` 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址，返回值是 valueOffset。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
+- CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。
+
+
+`UnSafe.objectFieldOffset()` 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址，返回值是 valueOffset。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
+
+######## 只有 currentValue == expectedValue，才会将其更新为newValue
+
+######## 简单示例代码：自旋
+
+
+```java
+class SimulatedCAS {
+  volatile int count;
+  // 实现 count+=1
+  addOne() {
+    do {
+      newValue = count+1; //①
+    } while (count !=
+      cas(count,newValue) //②
+  }
+  
+  // 模拟实现 CAS，仅用来帮助理解
+  synchronized int cas (
+    int expect, int newValue){
+
+    int curValue = count;
+    if(curValue == expect){
+      count= newValue;
+    }
+    return curValue;
+  }
+}
+``
+
+
+######## 真实示例代码：Unsafe.getAndAddLong()
+
+```java
+public final long getAndAddLong(
+  Object o, long offset, long delta){
+  long v;
+  do {
+    // 读取内存中的值
+    v = getLongVolatile(o, offset);
+  } while (!compareAndSwapLong(
+      o, offset, v, v + delta));
+  return v;
+}
+
+// 原子性地将变量更新为 x
+// 条件是内存中的值等于 expected
+// 更新成功则返回 true
+native boolean compareAndSwapLong(
+  Object o, long offset, 
+  long expected,
+  long x);
+
+```
+
+####### ABA 问题
 
 ##### 并发容器
 
