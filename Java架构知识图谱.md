@@ -4946,115 +4946,172 @@ Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 
 
 ####### slowlog reset
 
-##### 推荐
+#### 开发规范
 
-###### kv设计
+##### kv设计
 
-####### key设计
+###### key设计
 
-######## 可读性、可管理型
+####### 可读性、可管理型
 
-######## 简洁性
+####### 简洁性
 
-######### string长度会影响encoding
+######## string长度会影响encoding
 
-########## embstr
+######### embstr
 
-########## int
+######### int
 
-########## raw
+######### raw
 
-########## 通过 `object encoding k` 验证
+######### 通过 `object encoding k` 验证
 
-######## 排除特殊字符
+####### 排除特殊字符
 
-####### value设计
+###### value设计
 
-######## 拒绝bigkey
+####### 拒绝bigkey
 
-######### 最佳实践
+######## 最佳实践
 
-########## string < 10K
+######### string < 10K
 
-########## hash,list,set元素不超过5000
+######### hash,list,set元素不超过5000
 
-######### bigkey的危害
+######## bigkey的危害
 
-########## 网络阻塞
+######### 网络阻塞
 
-########## redis阻塞
+######### redis阻塞
 
-########## 集群节点数据不均衡
+######### 集群节点数据不均衡
 
-########## 频繁序列化
+######### 频繁序列化
 
-######### bigkey的发现
+######## bigkey的发现
 
-########## 应用异常
+######### 应用异常
 
-########### JedisConnectionException
+########## JedisConnectionException
 
-############ read time out
+########### read time out
 
-############ could not get a resource from the pool
+########### could not get a resource from the pool
 
-########## redis-cli --bigkeys
+######### redis-cli --bigkeys
 
-########## scan + debug object k
+######### scan + debug object k
 
-########## 主动报警：网络流量监控，客户端监控
+######### 主动报警：网络流量监控，客户端监控
 
-########## 内核热点key问题优化
+######### 内核热点key问题优化
 
-######### bigkey删除
+######## bigkey删除
 
-########## 阻塞（注意隐性删除，如过期、rename）
+######### 阻塞（注意隐性删除，如过期、rename）
 
-########## unlink命令 （lazy delete, 4.0之后）
+######### unlink命令 （lazy delete, 4.0之后）
 
-########## big hash渐进删除：hscan + hdel
+######### big hash渐进删除：hscan + hdel
 
-######## 选择合适的数据结构
+####### 选择合适的数据结构
 
-######### 多个string vs. 一个hash
+######## 多个string vs. 一个hash
 
-######### 分段hash
+######## 分段hash
 
-########## 节省内存、但编程复杂
+######### 节省内存、但编程复杂
 
-######## 过期设计
+####### 过期设计
 
-######### object idle time: 查找垃圾kv
+######## object idle time: 查找垃圾kv
 
-######### 过期时间不宜集中，避免缓存穿透和雪崩
+######## 过期时间不宜集中，避免缓存穿透和雪崩
 
-###### 命令使用技巧
+##### 命令使用技巧
 
-####### O(N)命令要关注N数量
+###### O(N)命令要关注N数量
 
-######## hgetall, lrange, smembers, zrange, sinter
+####### hgetall, lrange, smembers, zrange, sinter
 
-######## 更优：hscan, sscan, zscan
+####### 更优：hscan, sscan, zscan
 
-####### 禁用危险命令
+###### 禁用危险命令
 
-######## keys, flushall, flushdb
+####### keys, flushall, flushdb
 
-######## 手段：rename机制
+####### 手段：rename机制
 
-####### 不推荐select多数据库
+###### 不推荐select多数据库
 
-######## 客户端支持差
+####### 客户端支持差
 
-######## 实际还是单线程
+####### 实际还是单线程
 
-####### 不推荐事务功能
+###### 不推荐事务功能
 
-######## 一次事务key必须在同一个slot
+####### 一次事务key必须在同一个slot
 
-######## 不支持回滚
+####### 不支持回滚
 
-####### monitor命令不要长时间使用
+###### monitor命令不要长时间使用
+
+##### 连接池
+
+###### 连接数
+
+####### maxTotal
+
+######## 如何预估
+
+例如：
+- 一次命令耗时1ms，所以一个连接QPS=1000;
+- 业务期望QPS = 50000;
+
+> 则 maxTotal = 50000 / 1000 = 50
+
+######### 业务希望的 redis 并发量
+
+######### 客户端执行命令时间
+
+######### redis 资源：应用个数 * maxTotal < redis最大连接数
+
+####### maxIdle
+
+####### minIdle
+
+###### 等待
+
+####### blockWhenExhausted
+
+资源用尽后，是否要等待；建议设成true
+
+
+####### maxWaitMillis
+
+###### 有效性检测
+
+####### testOnBorrow 
+
+####### testOnReturn
+
+###### 监控
+
+####### jmxEnabled
+
+###### 空闲资源监测
+
+####### testWhileIdle
+
+####### timeBetweenEvictionRunsMillis
+
+监测周期
+
+
+####### numTestsPerEvictionRun
+
+每次监测的采样数
+
 
 ### MongoDb
 
