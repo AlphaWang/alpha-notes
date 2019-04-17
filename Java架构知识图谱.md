@@ -400,6 +400,20 @@ classpath
 
 ####### OSGi: 网状
 
+##### 异常
+
+###### ClassNotFoundException
+
+####### 当动态加载Class的时候找不到类会抛出该异常
+
+####### 一般在执行Class.forName()、ClassLoader.loadClass()或ClassLoader.findSystemClass()的时候抛出
+
+###### NoClassDefFoundError
+
+####### 编译成功以后，执行过程中Class找不到
+
+####### 由JVM的运行时系统抛出
+
 ### GC
 
 #### 引用类型
