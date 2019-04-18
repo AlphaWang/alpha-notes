@@ -973,7 +973,47 @@ help
 
 ###### execute不需要返回值，无法判断任务是否执行成功
 
-##### 构造参数
+##### ThreadPoolExecutor
+
+###### corePoolSize
+
+####### 最小线程数
+
+###### maximumPoolSize
+
+####### 最大线程数
+
+###### keepAliveTime & unit
+
+####### 判断是否空闲的依据
+
+###### workQueue
+
+####### 工作队列
+
+####### 慎用无界队列，避免OOM
+
+###### threadFactory
+
+###### handler
+
+####### 拒绝策略
+
+####### CallerRunsPolicy
+
+######## 提交任务的线程去执行
+
+####### AbortPolicy
+
+######## 抛出 RejectedExecutionException，默认值
+
+######## 慎用，因为并不强制要catch exception，很容易被忽略
+
+######## 一般与降级策略配合
+
+####### DiscardOldestPolicy
+
+######## 丢弃最老的任务
 
 ##### 线程池大小设置
 
@@ -984,6 +1024,14 @@ help
 ###### IO密集型任务：线程池尽可能大
 
 ####### CPU核数 * (1 + IO耗时/CPU耗时 )
+
+##### 与一般池化资源的区别
+
+###### 本质是 生产者-消费者 模式
+
+####### 生产者：线程使用方
+
+####### 消费者：线程池本身
 
 #### Fork / Join
 
