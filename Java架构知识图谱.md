@@ -4929,12 +4929,6 @@ scan <cursor> match <regex> count <limit>
 
 #### 运维
 
-##### 内存回收
-
-###### 无法保证立即回收已经删除的 key 的内存
-
-###### flushdb
-
 ##### eviction
 
 ###### LRU: Least Recently Used
@@ -4959,6 +4953,44 @@ Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 
 
 
 ###### LFU: Least Frequently Used
+
+##### 内存
+
+###### 内存回收
+
+####### 无法保证立即回收已经删除的 key 的内存
+
+####### flushdb
+
+###### info memory
+
+####### used_memory
+
+mem_allocator 分配的内存量
+
+######## redis自身内存
+
+######## 对象内存
+
+######## 缓冲内存
+
+######### 客户端缓冲区
+
+######### 复制缓冲区
+
+######### AOF 缓冲区
+
+######## lua内存
+
+####### used_memory_rss
+
+######## 从操作系统角度看redis进程占用的总物理内存
+
+####### mem_fragmentation_ratio
+
+######## 内存碎片 used_memory_rss / used_memory > 1
+
+####### mem_allocator
 
 ##### 保护
 
