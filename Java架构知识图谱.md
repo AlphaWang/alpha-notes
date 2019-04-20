@@ -1632,10 +1632,6 @@ monitorexit指令：计数器-1
 
 ######## see above
 
-####### condition
-
-######## 必须在排它锁中使用
-
 ###### ReadWriteLock
 
 ####### 方法：writeLock / readLock
@@ -1855,6 +1851,14 @@ try {
 ####### 永远只在访问可变的成员变量时加锁
 
 ####### 永远不在调用其他对象的方法时加锁
+
+##### condition（条件变量）
+
+###### 必须在排它锁中使用
+
+###### ReentrantLock
+
+###### 通知机制
 
 ## 分布式
 
@@ -5743,6 +5747,35 @@ SpringMVC在调用方法前会创建一个隐含的模型对象。如果方法�
 ######## BindingResult
 
 ######### 调用bindingResult.hasErrors() 对校验失败情况进行处理
+
+##### 返回值
+
+###### 缩进设置
+
+```java
+@Bean
+public Jackson2ObjectMapperBuilderCustomizer c {
+  return builder -> builder.indentOutput(true);
+}
+```
+
+##### 异常处理
+
+###### @ExceptionHandler
+
+####### 添加到@Controller中
+
+####### 或添加到@ControllerAdvice中
+
+###### 核心接口 HandlerExceptionResolver
+
+####### SimpleMappingExceptionResovler
+
+####### DefaultHandlerER
+
+####### ResponseStatusER
+
+####### ExceptionHandlerER
 
 #### 原理
 
