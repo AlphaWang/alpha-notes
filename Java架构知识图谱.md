@@ -973,6 +973,8 @@ help
 
 ###### execute不需要返回值，无法判断任务是否执行成功
 
+###### submit 返回 Future
+
 ##### ThreadPoolExecutor
 
 ###### corePoolSize
@@ -995,9 +997,7 @@ help
 
 ###### threadFactory
 
-###### handler
-
-####### 拒绝策略
+###### handler: 拒绝策略
 
 ####### CallerRunsPolicy
 
@@ -1033,9 +1033,127 @@ help
 
 ####### 消费者：线程池本身
 
+###### 并非 acquire / release
+
 #### Fork / Join
 
 #### Future
+
+##### 作用：类比提货单
+
+##### ThreadPoolExecutor.submit(xx)
+
+###### Runnable
+
+###### Callable
+
+###### Runnable, T
+
+```java
+ExecutorService executor  = Executors.newFixedThreadPool(1);
+
+// 创建 Result 对象 r
+Result r = new Result();
+r.setAAA(a);
+
+// 提交任务
+Future<Result> future = 
+  executor.submit(new Task(r), r);  
+Result fr = future.get();
+
+// 下面等式成立
+fr === r;
+fr.getAAA() === a;
+fr.getXXX() === x
+
+class Task implements Runnable {
+  Result r;
+  // 通过构造函数传入 result
+  Task(Result r){
+    this.r = r;
+  }
+  
+  void run() {
+    // 可以操作 result
+    a = r.getAAA();
+    r.setXXX(x);
+  }
+}
+
+```
+
+##### 方法
+
+// 取消任务
+boolean cancel(boolean mayInterruptIfRunning);
+
+// 判断任务是否已取消  
+boolean isCancelled();
+
+// 判断任务是否已结束
+boolean isDone();
+
+// 获得任务执行结果
+get();
+
+// 获得任务执行结果，支持超时
+get(long timeout, TimeUnit unit);
+
+
+###### cancel
+
+###### isCancelled
+
+###### isDone
+
+###### get, get(timeout)
+
+##### FutureTask 工具类
+
+###### 实现接口
+
+####### Runnable
+
+######## 所以可以将FutureTask提交给Executor去执行
+
+####### Future
+
+######## 所以可以获取任务的执行结果
+
+```java
+// 创建 FutureTask
+FutureTask<Integer> futureTask = new FutureTask<>(()-> 1+2);
+
+// 创建线程池
+ExecutorService es = 
+  Executors.newCachedThreadPool();
+  
+// 提交 FutureTask 
+es.submit(futureTask);
+
+// 获取计算结果
+Integer result = futureTask.get();
+
+```
+
+###### RunnableAdapter
+
+####### 创建：Executors#callable(Runnable, T)
+
+####### 原理：适配器模式
+
+```java
+class RunnableAdapter<T> implements Callable<T> {
+
+        final Runnable task;
+        final T result;
+        
+        public T call() {
+            task.run();
+            return result;
+        }
+    }
+ ```
 
 #### 模式
 
