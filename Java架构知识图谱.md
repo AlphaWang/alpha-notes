@@ -5098,9 +5098,40 @@ mem_allocator 分配的内存量
 
 ######### 客户端缓冲区
 
+client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
+
+  - class: normal, slave, pubsub
+  
+
+########## 普通客户端 
+
+########### normal 0 0 0
+
+########### 默认无限制，注意防止大命令或 monitor
+
+########## slave 客户端
+
+########### slave 256mb 64mb 60
+
+########### 可能阻塞：主从延迟高时，从节点过多时
+
+########## pubsub 客户端 
+
+########### pubsub 32mb 8mb 60
+
+########### 可能阻塞：生产大于消费时
+
 ######### 复制缓冲区
 
+########## repl_back_buffer
+
+########## 默认1M，建议调大 例如100M
+
+########## 防止网络抖动时出现slave全量复制
+
 ######### AOF 缓冲区
+
+########## 无限制
 
 ######## lua内存
 
@@ -5315,7 +5346,7 @@ mem_allocator 分配的内存量
 每次监测的采样数
 
 
-### MongoDb
+### MongoDB
 
 #### 常用命令
 
