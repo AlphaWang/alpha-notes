@@ -1,4 +1,4 @@
-# Java架构知识图谱
+# Java基础知识图谱
 
 ## JVM
 
@@ -1154,6 +1154,145 @@ class RunnableAdapter<T> implements Callable<T> {
         }
     }
  ```
+
+#### CompletableFuture
+
+##### 创建
+
+###### 四个静态方法
+
+####### runAsync(Runnable, [Executor])
+
+####### supplyAsync(Supplier, [Executor])
+
+###### 默认使用公共的ForkJoinPool线程池
+
+####### 默认线程数 == CPU核数
+
+####### 强烈建议不同业务用不同线程池
+
+##### 实现接口
+
+###### Future
+
+####### 解决两个问题
+
+######## 异步操作什么时候结束
+
+######## 如何获取异步操作的执行结果
+
+###### CompletionStage
+
+####### 描述串行关系
+
+```java
+CompletableFuture<String> f0 = 
+  CompletableFuture.supplyAsync(
+    () -> "Hello World")      //①
+  .thenApply(s -> s + " QQ")  //②
+  .thenApply(String::toUpperCase);//③
+
+System.out.println(f0.join());
+```
+
+// 输出结果: 异步流程，但是顺序执行
+HELLO WORLD QQ
+
+######## thenApply(Function..), xxAsync
+
+######### 返回值CompletionStage<R>
+
+######## thenAccept(Consumer..), xxAsync
+
+######### 返回值CompletionStage<Void>
+
+######## thenRun(Runnable..), xxAsync
+
+######### 返回值CompletionStage<Void>
+
+######## thenCompose(Function..), xxAsync
+
+######### 返回值CompletionStage<R>
+
+######### 新创建一个子流程，最终结果和 thenApply 相同
+
+####### 描述 AND 聚合关系
+
+######## thenCombine(other, Function), xxAsync
+
+######### R
+
+######## thenAcceptBoth(other, Consumer), xxAsync
+
+######### Void
+
+######## runAfterBoth(other, Runnable), xxAsync
+
+######### Void
+
+####### 描述 OR 聚合关系
+
+```java
+CompletableFuture<String> f1 = 
+  CompletableFuture.supplyAsync(()->{
+    int t = getRandom(5, 10);
+    sleep(t, TimeUnit.SECONDS);
+    return String.valueOf(t);
+});
+
+CompletableFuture<String> f2 = 
+  CompletableFuture.supplyAsync(()->{
+    int t = getRandom(5, 10);
+    sleep(t, TimeUnit.SECONDS);
+    return String.valueOf(t);
+});
+
+CompletableFuture<String> f3 = 
+  f1.applyToEither(f2,s -> s);
+
+System.out.println(f3.join());
+
+```
+
+######## applyToEither(other, Function), xxAsync
+
+######### R
+
+######## acceptEither(other, Consumer), xxAsync
+
+######### Void
+
+######## runAfterEither(other, Runnable), xxAsync
+
+######### Void
+
+####### 异常处理
+
+```java
+CompletableFuture<Integer> f0 = CompletableFuture
+    .supplyAsync(()->7/0))
+    .thenApply(r->r*10)
+    .exceptionally(e->0);
+    
+System.out.println(f0.join());
+
+```
+
+######## exceptionally(Function)
+
+######### 类似catch
+
+######## whenComplete(Consumer), xxAsync
+
+######### 类似finally
+
+######### 不支持返回结果
+
+######## handle(Function), xxAsync
+
+######### 类似finally
+
+######### 支持返回结果
 
 #### 模式
 
