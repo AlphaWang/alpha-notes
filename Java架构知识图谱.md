@@ -628,6 +628,14 @@ bgsave时不扩容，除非达到dict_force_resize_ratio
 
 ####### ziplist
 
+######## 节约内存
+
+######## 配置
+
+######### hash-max-ziplist-entries
+
+######### hash-max-ziplist-value
+
 ###### 常用命令
 
 ####### hget / hset name k v
@@ -707,9 +715,11 @@ rpush books python java golang
 
 ####### hashtable
 
-####### IntSet: 当元素都是整数并且个数较小时，使用 intset 来存储
+####### IntSet
 
 intset 是紧凑的数组结构，同时支持 16 位、32 位和 64 位整数。
+
+######## 当元素都是整数并且个数较小时，使用 intset 来存储
 
 ###### 常用命令
 
@@ -1991,23 +2001,31 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
   - class: normal, slave, pubsub
   
 
-########## 普通客户端 
+########## 输出缓冲区
 
-########### normal 0 0 0
+########### 普通客户端 
 
-########### 默认无限制，注意防止大命令或 monitor
+############ normal 0 0 0
 
-########## slave 客户端
+############ 默认无限制，注意防止大命令或 monitor：可能导致内存占用超大！！
 
-########### slave 256mb 64mb 60
+############ 找到monitor客户端：client list | grep -v "omem=0"
 
-########### 可能阻塞：主从延迟高时，从节点过多时
+########### slave 客户端
 
-########## pubsub 客户端 
+############ slave 256mb 64mb 60
 
-########### pubsub 32mb 8mb 60
+############ 可能阻塞：主从延迟高时，从节点过多时
 
-########### 可能阻塞：生产大于消费时
+########### pubsub 客户端 
+
+############ pubsub 32mb 8mb 60
+
+############ 可能阻塞：生产大于消费时
+
+########## 输入缓冲区
+
+########### 最大 1GB
 
 ######### 复制缓冲区
 
@@ -2125,6 +2143,12 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 
 ########### 删除最近将要过期key
 
+####### 序列化与压缩
+
+######## 拒绝Java原生
+
+######## 推荐protobuf, kryo, snappy
+
 ##### 保护
 
 ###### rename-command flushall ""
@@ -2234,6 +2258,14 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 ######## 分段hash
 
 ######### 节省内存、但编程复杂
+
+######## 计算网站独立用户数
+
+######### set
+
+######### bitmap
+
+######### hyperLogLog
 
 ####### 过期设计
 
