@@ -1294,6 +1294,54 @@ System.out.println(f0.join());
 
 ######### 支持返回结果
 
+#### CompletionService
+
+##### 线程池 + Future任务 + 阻塞队列
+
+CompletionService 内部维护了一个阻塞队列，当任务执行结束就把任务的执行结果加Future加入到阻塞队列中
+
+##### 示例
+
+```java
+// 创建线程池
+ExecutorService executor = Executors.newFixedThreadPool(3);
+  
+// 创建 CompletionService
+CompletionService<Integer> cs = new ExecutorCompletionService<>(executor);
+
+// 异步向电商询价
+cs.submit(()->getPriceByS1());
+cs.submit(()->getPriceByS2());
+cs.submit(()->getPriceByS3());
+
+// 将询价结果异步保存到数据库
+for (int i=0; i<3; i++) {
+  Integer r = cs.take().get();
+  executor.execute(()->save(r));
+}
+
+```
+
+##### 创建
+
+###### ExecutorCompletionService(Executor)
+
+####### 默认用无界 LinkedBlockingQueue
+
+###### ExecutorCompletionService(Executor, BlockingQueue)
+
+##### 方法
+
+###### submit(Callable) / submit(Runnable, V)
+
+###### take()
+
+####### 如果队列为空，则阻塞
+
+###### poll()
+
+####### 如果队列为空，则返回null
+
 #### 模式
 
 ##### Guarded Suspension模式
