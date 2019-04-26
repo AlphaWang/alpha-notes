@@ -2420,7 +2420,7 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 
 ##### 服务等级协议
 
-#### 指标
+#### SLA 指标
 
 ##### 可用性 Availability
 
@@ -2459,3 +2459,29 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 ##### 延迟 Latency
 
 ###### Percentile
+
+#### 扩展指标
+
+##### 可扩展性 Scalability
+
+###### 水平扩展
+
+####### 可提高可用性
+
+###### 垂直扩展
+
+##### 一致性 Consistency
+
+###### 强一致性
+
+####### 牺牲延迟性
+
+####### 例如Google Cloud Spanner
+
+###### 弱一致性
+
+###### 最终一致性
+
+##### 持久性 Durability
+
+###### 数据复制
