@@ -1035,8 +1035,6 @@ help
 
 ###### 并非 acquire / release
 
-#### Fork / Join
-
 #### Future
 
 ##### 作用：类比提货单
@@ -1341,6 +1339,176 @@ for (int i=0; i<3; i++) {
 ###### poll()
 
 ####### 如果队列为空，则返回null
+
+#### Fork / Join
+
+##### 相当于单机版的MapReduce
+
+##### 分治任务模型
+
+###### 任务分解：Fork
+
+###### 结果合并：Join
+
+##### ForkJoin 计算框架
+
+###### 线程池 ForkJoinPool
+
+####### 方法
+
+######## invoke(ForkJoinTask)
+
+######## submit(Callable)
+
+####### 原理
+
+######## ForJoinPool内部有多个任务队列
+
+######### （而ThreadPoolExecutor只有一个队列）
+
+######## 任务窃取
+
+######### 双端队列
+
+###### 分治任务 ForkJoinTask
+
+####### 方法
+
+######## fork()
+
+######### 异步执行一个子任务
+
+######## join()
+
+######### 阻塞当前线程等待子任务执行结束
+
+####### 子类
+
+######## RecursiveAction
+
+######### compute() 无返回值
+
+######## RecursiveTask
+
+######### compute() 有返回值
+
+###### 示例
+
+####### 计算斐波那契数列
+
+```java
+static void main(String[] args){
+  // 创建分治任务线程池  
+  ForkJoinPool fjp = new ForkJoinPool(4);
+    
+  // 创建分治任务
+  Fibonacci fib = new Fibonacci(30);
+    
+  // 启动分治任务  
+  Integer result = fjp.invoke(fib);
+  
+  // 输出结果  
+  System.out.println(result);
+}
+
+// 递归任务
+static class Fibonacci extends RecursiveTask<Integer> {
+  final int n;
+  
+  protected Integer compute(){
+    if (n <= 1)
+      return n;
+    Fibonacci f1 = new Fibonacci(n - 1);
+    
+    // 创建子任务  
+    f1.fork();
+    
+    Fibonacci f2 = new Fibonacci(n - 2);
+    
+    // 等待子任务结果，并合并结果  
+    return f2.compute() + f1.join();
+  }
+}
+
+```
+
+####### 统计单词数量
+
+```java
+static void main(String[] args){
+  String[] fc = {"hello world",
+          "hello me",
+          "hello fork",
+          "hello join",
+          "fork join in world"};
+          
+  // 创建 ForkJoin 线程池    
+  ForkJoinPool fjp = new ForkJoinPool(3);
+  
+  // 创建任务    
+  MR mr = new MR(fc, 0, fc.length);  
+  // 启动任务    
+  Map<String, Long> result = fjp.invoke(mr);
+  
+  // 输出结果    
+ 
+}
+
+//MR 模拟类
+static class MR extends RecursiveTask<Map<String, Long>> {
+  private String[] fc;
+  private int start, end;
+  
+  @Override protected Map<String, Long> compute(){
+  
+    if (end - start == 1) {
+      return calc(fc[start]);
+    } else {
+      int mid = (start+end)/2;
+      MR mr1 = new MR(fc, start, mid);
+      
+      mr1.fork();
+      MR mr2 = new MR(fc, mid, end);
+      // 计算子任务，并返回合并的结果    
+      return merge(mr2.compute(),  mr1.join());
+    }
+  }
+  
+  // 合并结果
+  private Map<String, Long> merge(
+      Map<String, Long> r1, 
+      Map<String, Long> r2) {
+    Map<String, Long> result = new HashMap<>();
+    result.putAll(r1);
+    // 合并结果
+    r2.forEach((k, v) -> {
+      Long c = result.get(k);
+      if (c != null)
+        result.put(k, c+v);
+      else 
+        result.put(k, v);
+    });
+    return result;
+  }
+  
+  // 统计单词数量
+  private Map<String, Long> calc(String line) {
+    Map<String, Long> result =  new HashMap<>();
+    // 分割单词    
+    String [] words = line.split("\\s+");
+    // 统计单词数量    
+    for (String w : words) {
+      Long v = result.get(w);
+      if (v != null) 
+        result.put(w, v+1);
+      else
+        result.put(w, 1L);
+    }
+    return result;
+  }
+}
+
+```
 
 #### 模式
 
@@ -3834,6 +4002,44 @@ public Jackson2ObjectMapperBuilderCustomizer c {
 ####### ResponseStatusER
 
 ####### ExceptionHandlerER
+
+##### 拦截器
+
+###### 接口
+
+####### 同步：HandlerInterceptor
+
+####### 异步：AsyncHandlerInterceptor  -afterConcurrentHandlingStarted
+
+###### 源码：DispatcherSevlet
+
+```java
+doDispatch() {
+ if (!applyPreHandle())
+    return;
+    
+ handleAdapter.handle();
+ 
+ if (async)
+	return;
+ 
+ applyPostHandle();
+ 
+ 
+ triggerAfterCompletion();
+ 
+ finally {
+	if (asyn) 
+       applyAfterConcurrentHandlingStarted();
+				
+}
+```
+
+###### 配置方式
+
+####### WebMvcConfigurer.addInterceptors()
+
+####### SpringBoot: @Configuration WebMvcConfigurer
 
 #### 原理
 
