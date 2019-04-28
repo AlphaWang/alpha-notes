@@ -1706,6 +1706,44 @@ offset越大，则延迟选举时间越短
 
 ########## 一致性不高时，可用本地缓存，MQ
 
+######### 热点key解决思路
+
+########## 客户端统计
+
+```java
+AtomicLongMap<String> COUNTER = AtomicLongMap.create();
+
+String get(String key) {
+  countKey(key);
+  ...
+}
+
+String set(String key) {
+  countKey(key);
+  ...
+}
+```
+
+########### 实现简单
+
+########### 内存泄露隐患，只能统计单个客户端
+
+########## 代理统计
+
+########### 增加代理端开发部署成本
+
+########## 服务端统计（monitor）
+
+########### monitor本身问题，只能短时间使用
+
+########### 只能统计单个redis节点
+
+########## 机器段统计（抓取tcp）
+
+########### 无侵入
+
+########### 增加了机器部署成本
+
 ####### 读写分离
 
 ######## 只读连接
@@ -2151,9 +2189,19 @@ client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 
 ##### 保护
 
+######  spiped: SSL代理
+
+###### 设置密码
+
+####### server: requirepass / masterauth
+
+####### client: auth命令 、 -a参数
+
 ###### rename-command flushall ""
 
-######  spiped: SSL代理
+####### 不支持config set动态配置
+
+###### bind 内网IP
 
 ##### 懒惰删除
 
