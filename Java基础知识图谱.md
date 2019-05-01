@@ -4524,17 +4524,79 @@ getOrCreateEnvironment()
 
 ####### 动态扩容
 
+###### 内存空间连续
+
+####### 所以申请时如果连续空间不足，会OOM
+
 ##### 链表
 
-###### 单链表
+###### 种类
 
-###### 双向链表
+####### 单链表
 
-###### 循环链表
+####### 双向链表
 
-###### 双向循环链表
+######## LinkedHashMap
 
-###### 静态链表
+######## 用空间换时间
+
+####### 循环链表
+
+####### 双向循环链表
+
+####### 静态链表
+
+###### 例子
+
+####### LRU 缓存
+
+使用有序单链表，尾部表示最早使用的节点。插入节点时，
+- 遍历链表，查询是否已存在；
+- 若存在，则从原位置删除、插入到头；
+- 若不存在，且缓存未满，则插入到头；
+- 若不存在，且缓存已满，则删除尾部节点，插入到头。
+
+
+####### 判断字符串回文
+
+####### 单链表反转
+
+https://leetcode.com/problems/reverse-linked-list/ 
+
+####### 链表中环的检测
+
+https://leetcode.com/problems/linked-list-cycle/
+https://leetcode.com/problems/linked-list-cycle-ii/
+
+####### 有序链表合并
+
+https://leetcode.com/problems/merge-two-sorted-lists/
+
+
+####### 删除链表倒数第n个节点
+
+https://leetcode.com/problems/remove-nth-node-from-end-of-list/
+
+
+####### 求链表中间节点
+
+https://leetcode.com/problems/middle-of-the-linked-list/
+
+###### 技巧
+
+####### 理解指针或引用的含义
+
+####### 警惕指针丢失
+
+####### 利用哨兵简化实现难度
+
+######## 虚拟空头
+
+####### 留意边界条件处理
+
+######## 空、1节点、2节点
+
+####### 举例、画图
 
 ##### 栈
 
