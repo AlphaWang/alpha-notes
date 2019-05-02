@@ -1821,6 +1821,28 @@ private void doReceived(Response res) {
 
 ##### 不变模式
 
+###### 对象创建后状态不再发生变化
+
+####### 实现
+
+######## final 类
+
+######## final 字段
+
+######## 所有方法均是只读的
+
+####### 保护性拷贝
+
+####### 避免创建重复对象：享元模式 Flyweight Pattern
+
+######## 本质是对象池
+
+######## Long 缓存[-127, 127]
+
+###### 无状态
+
+####### 没有属性，只有方法
+
 ##### 线程封闭
 
 ###### 不和其他线程共享变量
@@ -1856,6 +1878,38 @@ AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 ####### 引用类型
 
 ######## AtomicReference
+
+######### 例如 原子性设置upper/lower
+
+```java
+public class SafeWM {
+  class WMRange{
+    final int upper;
+    final int lower;
+  }
+  
+  final AtomicReference<WMRange>
+    rf = new AtomicReference<>(
+      new WMRange(0,0)
+    );
+    
+  // 设置库存上限
+  void setUpper(int v){
+    while(true){
+      WMRange or = rf.get();
+      // 检查参数合法性
+      if(v < or.lower){
+        throw new IllegalArgumentException();
+      }
+      WMRange nr = new WMRange(v, or.lower);
+      if(rf.compareAndSet(or, nr)){
+        return;
+      }
+    }
+  }
+}
+
+```
 
 ######## AtomicStampedReference
 
