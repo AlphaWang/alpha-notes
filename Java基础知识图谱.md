@@ -4202,56 +4202,72 @@ https://github.com/alibaba/druid
 
 ##### 事务
 
-###### 传播
+###### Spring事务抽象
 
-####### PROPAGATION_REQUIRED
+####### PlatformTransactionManager
 
-######## 当前有就用当前的，没有就新建
+######## DataSourceTransactionManager
 
-####### PROPAGATION_SUPPORTS
+######## JpaTransactionManager
 
-######## 当前有就用当前的，没有就算了
+######## JmsTransactionManager
 
-####### PROPAGATION_MANDATORY
+######## JtaTransactionManager
 
-######## 当前有就用当前的，没有就抛异常
+####### TransactionDefinition 
 
-####### PROPAGATION_REQUIRES_NEW
+######## 传播
 
-######## 无论有没有，都新建
+######### REQUIRED
 
-####### PROPAGATION_NOT_SUPPORTED
+########## 当前有就用当前的，没有就新建
 
-######## 无论有没有，都不用
+######### SUPPORTS
 
-####### PROPAGATION_NEVER
+########## 当前有就用当前的，没有就算了
 
-######## 如果有，抛异常
+######### MANDATORY
 
-####### PROPAGATION_NESTED
+########## 当前有就用当前的，没有就抛异常
 
-######## 如果有，则在当前事务里再起一个事务
+######### REQUIRES_NEW
 
-###### 隔离
+########## 无论有没有，都新建
 
-####### ISOLATION_READ_UNCOMMITTED
+######### NOT_SUPPORTED
+
+########## 无论有没有，都不用
+
+######### NEVER
+
+########## 如果有，抛异常
+
+######### NESTED
+
+########## 如果有，则在当前事务里再起一个事务
+
+######## 隔离
+
+######### READ_UNCOMMITTED
 
 - 脏读
 - 不可重复读
 - 幻读
 
-####### ISOLATION_READ_COMMITTED
+######### READ_COMMITTED
 
 - 不可重复读
 - 幻读
 
-####### ISOLATION_REPEATABLE_READ
+######### REPEATABLE_READ
 
 - 幻读
 
-####### ISOLATION_SERIALIZABLE
+######### SERIALIZABLE
 
 - 
+
+####### TransactionStatus
 
 ##### 注解
 
