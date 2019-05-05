@@ -4677,42 +4677,6 @@ getOrCreateEnvironment()
 
 ####### 静态链表
 
-###### 例子
-
-####### LRU 缓存
-
-使用有序单链表，尾部表示最早使用的节点。插入节点时，
-- 遍历链表，查询是否已存在；
-- 若存在，则从原位置删除、插入到头；
-- 若不存在，且缓存未满，则插入到头；
-- 若不存在，且缓存已满，则删除尾部节点，插入到头。
-
-
-####### 判断字符串回文
-
-####### 单链表反转
-
-https://leetcode.com/problems/reverse-linked-list/ 
-
-####### 链表中环的检测
-
-https://leetcode.com/problems/linked-list-cycle/
-https://leetcode.com/problems/linked-list-cycle-ii/
-
-####### 有序链表合并
-
-https://leetcode.com/problems/merge-two-sorted-lists/
-
-
-####### 删除链表倒数第n个节点
-
-https://leetcode.com/problems/remove-nth-node-from-end-of-list/
-
-
-####### 求链表中间节点
-
-https://leetcode.com/problems/middle-of-the-linked-list/
-
 ###### 技巧
 
 ####### 理解指针或引用的含义
@@ -4729,11 +4693,100 @@ https://leetcode.com/problems/middle-of-the-linked-list/
 
 ####### 举例、画图
 
+###### 例题
+
+####### LRU 缓存
+
+使用有序单链表，尾部表示最早使用的节点。插入节点时，
+- 遍历链表，查询是否已存在；
+- 若存在，则从原位置删除、插入到头；
+- 若不存在，且缓存未满，则插入到头；
+- 若不存在，且缓存已满，则删除尾部节点，插入到头。
+
+
+####### 判断字符串回文
+
+####### 206. 单链表反转
+
+No. 206 https://leetcode.com/problems/reverse-linked-list/ 
+
+####### 141. 链表中环的检测
+
+No. 141 https://leetcode.com/problems/linked-list-cycle/
+No. 142 https://leetcode.com/problems/linked-list-cycle-ii/
+
+####### 21. 有序链表合并
+
+No. 21 https://leetcode.com/problems/merge-two-sorted-lists/
+
+
+####### 19. 删除链表倒数第n个节点
+
+No. 19 https://leetcode.com/problems/remove-nth-node-from-end-of-list/
+
+
+####### 876. 求链表中间节点
+
+No. 876 https://leetcode.com/problems/middle-of-the-linked-list/
+
 ##### 栈
 
-###### 顺序栈
+###### 分类
 
-###### 链式栈
+####### 顺序栈
+
+######## 用数组实现
+
+####### 链式栈
+
+######## 用链表实现
+
+###### 应用
+
+####### 函数调用栈
+
+####### 表达式求值
+
+######## 操作数栈
+
+######## 运算符栈
+
+####### 括号匹配
+
+####### 浏览器前进后退
+
+######## 两个栈
+
+###### 例题
+
+####### 20. Valid Parentheses
+
+No. 20 https://leetcode.com/problems/valid-parentheses/
+
+
+####### 155. Min Stack
+
+https://leetcode.com/problems/min-stack/
+
+####### 232. Implement Queue using Stacks
+
+https://leetcode.com/problems/implement-queue-using-stacks/
+
+####### 844. Backspace String Compare
+
+https://leetcode.com/problems/backspace-string-compare/
+
+####### 224. Basic Calculator
+
+https://leetcode.com/problems/basic-calculator/
+
+####### 682. Baseball Game
+
+https://leetcode.com/problems/baseball-game/
+
+####### 496. Next Greater Element I
+
+https://leetcode.com/problems/next-greater-element-i/
 
 ##### 队列
 
