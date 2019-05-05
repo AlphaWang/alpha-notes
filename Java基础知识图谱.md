@@ -4731,7 +4731,15 @@ No. 876 https://leetcode.com/problems/middle-of-the-linked-list/
 
 ##### 栈
 
-###### 分类
+###### 定义
+
+####### 受限的线性表
+
+######## 入栈 push()
+
+######## 出站pop()
+
+###### 实现
 
 ####### 顺序栈
 
@@ -4790,15 +4798,128 @@ https://leetcode.com/problems/next-greater-element-i/
 
 ##### 队列
 
-###### 普通队列
+###### 定义
 
-###### 双端队列
+####### 受限的线性表
 
-###### 阻塞队列
+######## 入队 enqueue()
 
-###### 并发队列
+######## 出队 dequeue()
 
-###### 阻塞并发队列
+###### 实现
+
+####### 顺序队列
+
+######## 用数组实现
+
+```java
+public class ArrayQueue {
+  // 数组：items，数组大小：n
+  private String[] items;
+  private int n = 0;
+  
+  private int head = 0;
+  private int tail = 0;
+  
+  // 出队
+  public String dequeue() {
+    // 如果 head == tail 表示队列为空
+    if (head == tail) return null;
+    String ret = items[head];
+    ++head;
+    return ret;
+  }
+  
+  // 入队
+  public boolean enqueue(String item) {
+    // 如果 tail == n 表示队列已经满了
+    if (tail == n) return false;
+    items[tail] = item;
+    ++tail;
+    return true;
+  }
+  
+  
+     // 入队 + 数据搬移
+  public boolean enqueue(String item) {
+    if (tail == n) {
+      // tail ==n && head==0，表示整个队列都占满了
+      if (head == 0) return false;
+      // 数据搬移
+      for (int i = head; i < tail; ++i) {
+        items[i-head] = items[i];
+      }
+      // 搬移完之后重新更新 head 和 tail
+      tail -= head;
+      head = 0;
+    }
+    
+    items[tail] = item;
+    ++tail;
+    return true;
+  }
+
+}
+
+```
+
+######### 队空：head == tail
+
+######### 队满：tail == n
+
+####### 链式队列
+
+######## 用链表实现
+
+###### 种类
+
+####### 普通队列
+
+####### 循环队列
+
+```java
+public class CircularQueue {
+  // 数组：items，数组大小：n
+  private String[] items;
+  private int n = 0;
+  
+  private int head = 0;
+  private int tail = 0;
+
+  // 入队
+  public boolean enqueue(String item) {
+    // 队列满了
+    if ((tail + 1) % n == head) return false;
+    items[tail] = item;
+    tail = (tail + 1) % n;
+    return true;
+  }
+
+  // 出队
+  public String dequeue() {
+    // 如果 head == tail 表示队列为空
+    if (head == tail) return null;
+    String ret = items[head];
+    head = (head + 1) % n;
+    return ret;
+  }
+}
+
+```
+
+######## 队空：head == tail
+
+######## 队满：(tail + 1) % n == head
+
+####### 双端队列
+
+####### 阻塞队列
+
+######## 生产者消费者模型
+
+####### 并发队列
+
+####### 阻塞并发队列
 
 #### 散列表
 
