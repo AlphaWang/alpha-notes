@@ -184,9 +184,23 @@ Java9改名为平台类jia'zai'qi
 
 #### 编译：将字节码翻译成机器码
 
-##### 解释执行
+##### 编译器
 
-##### 即时编译JIT：针对热点代码
+###### 解释执行
+
+###### JIT (Just in Time Compilation)
+
+####### 即时编译，在运行时将热点代码编译成机器码
+
+###### AOT (Ahead of Time Compilation) 
+
+####### 避免JIT预热开销
+
+##### 参数
+
+###### -Xint: 仅解释执行
+
+###### -Xcomp: 关闭解释器，最大优化级别；会导致启动变慢
 
 #### 结构
 
@@ -418,18 +432,63 @@ classpath
 
 #### 引用类型
 
-##### 强引用
+##### 种类
 
-##### 软引用
+###### 强引用 Strong Reference
 
-发生内存溢出之前，会尝试回收
+###### 软引用 SoftReference
 
-##### 弱引用
+####### 发生内存溢出之前，会尝试回收
 
-下一次垃圾回收之前，一定会被回收
+####### 应用场景：可用于实现内存敏感的缓存
 
+###### 弱引用 WeakReference
 
-##### 虚引用
+####### 下一次垃圾回收之前，一定会被回收
+
+####### 可用来构建一种没有特定约束的关系，例如维护非强制性的映射关系
+
+####### 应用场景：缓存
+
+###### 虚引用 PhantomReference 
+
+####### 不能通过它访问对象
+
+######## 需要配合ReferenceQueue使用
+
+```java
+Object counter = new Object();
+ReferenceQueue refQueue = new ReferenceQueue<>();
+
+PhantomReference<Object> p = new PhantomReference<>(counter, refQueue);
+
+counter = null;
+System.gc();
+
+try {
+    // Remove获取对象。
+    // 可以指定 timeout，或者选择一直阻塞
+    Reference<Object> ref = refQueue.remove(1000L);
+    if (ref != null) {
+        // do something
+    }
+} catch (InterruptedException e) { }
+
+```
+
+####### 虚引用仅提供一种确保对象被finalize后做某些事的机制
+
+####### finalize 之后会变成虚引用
+
+####### 应用场景：跟踪对象被垃圾回收器回收的活动
+
+##### 实践
+
+###### -XX:+PrintReferenceGC 打印各种引用数量
+
+###### Reference.reachabilityFence(this)
+
+####### 声明对象强可达
 
 #### GC回收判断
 
@@ -764,6 +823,8 @@ help
 ##### -XX:+PrintGCApplicationStoppedTime
 
 ##### -XX:+PrintGCDateStamps
+
+##### -XX:+PrintReferenceGC 打印各种引用数量
 
 ##### -Xloggc:xx.log
 
@@ -2447,6 +2508,76 @@ try {
 ###### ReentrantLock
 
 ###### 通知机制
+
+## Core Java
+
+### Exception
+
+#### 分类
+
+##### Throwable
+
+##### Error
+
+###### 无需捕获
+
+###### 例如OutOfMemoryError
+
+##### Exception
+
+###### Checked Exception
+
+####### 可检查异常，强制要求捕获
+
+####### 例如 IOException
+
+###### Unchecked Exception
+
+####### 运行时异常，不强制要求捕获
+
+####### 例如NPE, ArrayIndexOutOfBoundsException
+
+#### 最佳实践
+
+##### try-with-resources
+
+##### throw early, catch late
+
+###### 对入参判空
+
+###### 重新抛出，在更高层面 有了清晰业务逻辑后，决定合适的处理方式
+
+#### 问题
+
+##### try-catch 会产生额外的性能开销
+
+##### 创建Exception对象会对栈进行快照，耗时
+
+#### 典型题目
+
+##### NoClassDefFoundError vs. ClassNotFoundException
+
+###### ClassNotFoundException
+
+####### 动态加载类时（反射），classpath中未找到
+
+####### 当一个类已经某个类加载器加载到内存中了，此时另一个类加载器又尝试着动态地从同一个包中加载这个类
+
+###### NoClassDefFoundError
+
+####### 编译的时候存在，但运行时却找不到
+
+### Immutable Class
+
+#### final class
+
+#### private final field
+
+#### setter: 不提供
+
+#### getter: copy-on-write
+
+#### 构造对象时，成员变量使用深度拷贝来初始化
 
 ## 网络编程
 
