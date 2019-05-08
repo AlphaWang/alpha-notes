@@ -490,6 +490,25 @@ try {
 
 ####### 声明对象强可达
 
+```java
+class Resource {
+
+ public void action() {
+ try {
+     // 需要被保护的代码
+     int i = myIndex;
+     Resource.update(externalResourceArray[i]);
+ } finally {
+     // 调用 reachbilityFence，明确保障对象 strongly reachable
+     Reference.reachabilityFence(this);
+ }
+ 
+ 
+ // 调用
+ new Resource().action();
+
+```
+
 #### GC回收判断
 
 ##### 引用计数法
@@ -1908,9 +1927,74 @@ private void doReceived(Response res) {
 
 ###### 不和其他线程共享变量
 
-##### 线程本地存储
+##### 线程本地存储 ThreadLocal
 
-###### ThreadLocal
+###### 例子
+
+####### 线程ID生成器
+
+```java
+static class ThreadId {
+  static final AtomicLong nextId=new AtomicLong(0);
+ 
+  static final ThreadLocal<Long> tl=ThreadLocal.withInitial(
+    ()->nextId.getAndIncrement());
+  // 为每个线程分配一个唯一的 Id
+  static long get(){
+    return tl.get();
+  }
+}
+
+```
+
+###### 原理
+
+####### 方案一：ThreadLocal 引用Map<Thread, T>
+
+####### 方案二：Thread引用Map<ThreadLocal, T>
+
+```java
+class Thread {
+  ThreadLocal.ThreadLocalMap threadLocals;
+}
+
+class ThreadLocal<T>{
+  public T get() {
+    ThreadLocalMap map = Thread.currentThread().threadLocals;
+
+    Entry e = map.getEntry(this);
+    return e.value;  
+  }
+  
+  static class ThreadLocalMap{
+    // 内部是数组而不是 Map
+    Entry[] table;
+    
+    static class Entry extends WeakReference<ThreadLocal>{
+      Object value;
+    }
+  }
+}
+
+```
+
+####### 方案二的好处
+
+######## 更合理：所有和线程相关的数据都存储在 Thread 里面
+
+######## 不容易内存泄露
+
+方案一，只要ThreadLocal对象存在，那么Map中的Thread对象就永远不会回收
+
+###### 注意
+
+####### 线程池中使用ThreadLocal可能导致内存泄露
+
+- 线程池中线程存活时间长；
+- 所以Thread.ThreadLocalMap不会被回收；
+
+
+####### 手动释放：ThreadLocal.remove()
 
 ##### CAS
 
@@ -2579,6 +2663,76 @@ try {
 
 #### 构造对象时，成员变量使用深度拷贝来初始化
 
+### 反射与动态代理
+
+#### 动态代理
+
+##### 实现方式
+
+###### 反射: JDK Proxy
+
+####### implements InvocationHandler
+
+```java
+class MyInvocationHandler implements InvocationHandler {
+  private Object target;
+    
+  @Override
+  public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    System.out.println("Invoking sayHello");
+    Object result = method.invoke(target, args);
+    return result;
+  }
+}
+
+
+```
+
+####### 实现接口
+
+```java
+interface Hello {
+    void sayHello();
+}
+class HelloImpl implements  Hello {
+    @Override
+    public void sayHello() {
+        System.out.println("Hello World");
+    }
+}
+
+```
+
+
+
+####### Proxy.newProxyInstance
+
+```java
+HelloImpl hello = new HelloImpl();
+
+MyInvocationHandler handler = new MyInvocationHandler(hello);
+        
+Hello proxyHello = (Hello) Proxy.newProxyInstance(
+HelloImpl.class.getClassLoader(), 
+HelloImpl.class.getInterfaces(), 
+handler);
+
+// 调用代理方法
+proxyHello.sayHello();
+
+}
+```
+
+###### 字节码操作机制：ASM, cglib
+
+##### 设计模式
+
+###### 代理模式
+
+###### 装饰器模式
+
+### 函数式编程
+
 ## 网络编程
 
 ### Netty
@@ -2636,3 +2790,39 @@ NIO: 10000
 #### tips
 
 ##### `cp -r contrib/vim/* ~/.vim` 将vim语法高亮
+
+## 例题
+
+### 基础
+
+#### Exception,  Error
+
+#### final,  finally, finalize
+
+#### 四种引用类型
+
+#### String, StringBuffer, StringBuilder
+
+##### Immutable
+
+##### intern() 缓存，永久代 --> MetaSpace
+
+##### Java9: Compact String, char[] --> byte[]
+
+#### int 与 Integer
+
+##### 自动装箱：Integer.valueOf()
+
+###### 缓存 [-128, 127] 
+
+##### 自动拆箱：Integer.intValue()
+
+##### 避免无意的装箱拆箱行为
+
+##### 局限
+
+###### 非线程安全
+
+###### 原始数据类型与泛型并不能配合
+
+###### 对象数组  数据操作低效，无法利用CPU缓存机制
