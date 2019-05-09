@@ -2593,6 +2593,38 @@ try {
 
 ###### 通知机制
 
+### 模式
+
+#### Immutability模式
+
+#### Copy-on-Write模式
+
+#### 线程本地存储模式
+
+#### Guarded Suspension模式
+
+##### 保护性性暂停，又称Guarded Wait, Spin Lock
+
+##### 将异步转换为同步
+
+##### 示例
+
+###### Dubbo
+
+https://github.com/apache/incubator-dubbo/blob/master/dubbo-remoting/dubbo-remoting-api/src/main/java/org/apache/dubbo/remoting/exchange/support/DefaultFuture.java#L168
+
+###### MQ异步返回结果
+
+#### Balking模式
+
+#### Thread-per-Message模式
+
+#### Worker Thread模式
+
+#### 两阶段终止模式
+
+#### 生产者-消费者模式
+
 ## Core Java
 
 ### Exception
