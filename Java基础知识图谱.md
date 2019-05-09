@@ -2904,3 +2904,81 @@ NIO: 10000
 ###### 原始数据类型与泛型并不能配合
 
 ###### 对象数组  数据操作低效，无法利用CPU缓存机制
+
+#### Vector, ArrayList, LinkedList
+
+##### fail-fast: ConcurrentModificationException
+
+##### 集合排序算法
+
+#### Hashtable, HashMap, TreeMap
+
+#### 线程安全集合
+
+#### NIO
+
+#### 文件拷贝方式
+
+#### 接口 vs. 抽象类
+
+#### 设计模式
+
+### 并发
+
+#### synchronized vs. ReentrantLock
+
+#### 锁的升级降级
+
+#### thread.start
+
+#### 死锁
+
+#### 并发工具类
+
+#### ConcurrentLinkedQueue vs. LinkedBlockingQueue
+
+#### 线程池种类
+
+#### AtomicInteger原理
+
+### JVM
+
+#### 类加载过程
+
+#### 如何动态生成一个类
+
+#### 内存区域的划分
+
+#### 如何监控诊断堆内、堆外内存
+
+#### 常见垃圾收集器
+
+#### GC调优思路
+
+#### happen-before是什么
+
+#### Java运行在Docker中的问题
+
+### 安全和性能
+
+#### 注入攻击
+
+#### 安全的Java代码
+
+#### 性能优化思路
+
+#### Lambda对性能的影响
+
+#### JVM优化代码
+
+### 扩展
+
+#### 事务隔离级别
+
+#### 悲观锁，乐观锁
+
+#### Spring Bean生命周期、作用域
+
+#### Netty是如何实现高性能的
+
+#### 分布式ID设计方案
