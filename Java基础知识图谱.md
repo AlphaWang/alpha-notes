@@ -2607,6 +2607,8 @@ try {
 
 ##### 将异步转换为同步
 
+##### 多线程版本的 if
+
 ##### 示例
 
 ###### Dubbo
@@ -2616,6 +2618,144 @@ https://github.com/apache/incubator-dubbo/blob/master/dubbo-remoting/dubbo-remot
 ###### MQ异步返回结果
 
 #### Balking模式
+
+##### 当状态变量满足某个条件时，执行某个逻辑
+
+##### 与Guarded Suspenstion的区别
+
+###### Guarded Suspension会等待if条件
+
+###### Balking不会等待
+
+##### 示例
+
+###### synchronized实现autoSave
+
+```java
+boolean changed=false;
+// 自动存盘操作
+void autoSave(){
+  synchronized(this){
+    if (!changed) {
+      return;
+    }
+    changed = false;
+  }
+  
+  // 执行存盘操作
+  this.execSave();
+}
+
+// 编辑操作
+void edit(){
+  ......
+  change();
+}
+
+// 改变状态
+void change(){
+  synchronized(this){
+    changed = true;
+  }
+}
+
+```
+
+###### volatile实现保存路由表
+
+```java
+public class RouterTable {
+  //Key: 接口名, Value: 路由集合
+  ConcurrentHashMap<String, CopyOnWriteArraySet<Router>> 
+    rt;
+    
+  // 路由表是否发生变化
+  volatile boolean changed;
+  // 将路由表写入本地文件的线程池
+  ScheduledExecutorService ses = Executors.newSingleThreadScheduledExecutor();
+  
+  // 启动定时任务
+  // 将变更后的路由表写入本地文件
+  public void startLocalSaver(){
+    ses.scheduleWithFixedDelay(()->{
+      autoSave();
+    }, 1, 1, MINUTES);
+  }
+  
+  // 保存路由表到本地文件
+  void autoSave() {
+    if (!changed) {
+      return;
+    }
+    changed = false;
+    // 将路由表写入本地文件
+    this.save2Local();
+  }
+  
+  // 删除路由
+  public void remove(Router router) {
+    Set<Router> set=rt.get(router.iface);
+    if (set != null) {
+      set.remove(router);
+      // 路由表已发生变化
+      changed = true;
+    }
+  }
+  
+  // 增加路由
+  public void add(Router router) {
+    Set<Router> set = rt.computeIfAbsent(
+      route.iface, r -> 
+        new CopyOnWriteArraySet<>());
+    set.add(router);
+    // 路由表已发生变化
+    changed = true;
+  }
+}
+
+```
+
+###### 单次初始化
+
+```java
+class InitTest{
+  boolean inited = false;
+  synchronized void init(){
+    if (inited) {
+      return;
+    }
+    // 省略 doInit 的实现
+    doInit();
+    inited=true;
+  }
+}
+
+```
+
+###### 单例模式
+
+```java
+class Singleton{
+  private static volatile Singleton singleton;
+  
+  private Singleton() {}
+  
+  // 获取实例（单例）
+  public static Singleton getInstance() {
+    // 第一次检查
+    if(singleton==null){
+     synchronize{Singleton.class){
+        // 获取锁后二次检查
+        if(singleton==null){
+          singleton=new Singleton();
+        }
+      }
+    }
+    return singleton;
+  }
+}
+
+```
 
 #### Thread-per-Message模式
 
@@ -2769,7 +2909,7 @@ proxyHello.sayHello();
 
 ##### 闭包
 
-###### lambda表达式引用的是值，而非变量
+###### lambda表达式引用的是值，而非变量：虽然可以省略 final
 
 ###### 给变量多次赋值，然后再lambda中引用它，会编译报错
 
@@ -2810,6 +2950,30 @@ proxyHello.sayHello();
 ###### reduce
 
 ####### 从一组值中生成一个值
+
+#### 类库
+
+##### mapToInt().summaryStatistics()
+
+###### 数值统计：min, max, average, sum
+
+##### @FunctionalInterface
+
+###### 强制javac检查接口是否符合函数接口标准
+
+#### 默认方法
+
+##### 继承
+
+###### 类中重写的方法胜出
+
+###### 多重继承
+
+####### 可用InterfaceName.super.method() 来指定某个父接口的默认方法
+
+##### 用处
+
+###### Collection增加了stream方法，如果没有默认方法，则每个Collection子类都要修改
 
 ## 网络编程
 
@@ -2911,11 +3075,173 @@ NIO: 10000
 
 ##### 集合排序算法
 
+##### 类图
+
 #### Hashtable, HashMap, TreeMap
+
+##### equals vs. hashCode vs. compareTo
+
+##### HashMap
+
+###### 哈希计算：(key == null) ? 0 : (h = key.hashCode()) ^ (h >>> 16)
+
+为什么这里需要将高位数据移位到低位进行异或运算呢？
+这是因为有些数据计算出的哈希值差异主要在高位，而 HashMap 里的哈希寻址是忽略容量以上的高位的，那么这种处理就可以有效避免类似情况下的哈希碰撞。
+
+###### entry index算法：(n - 1) & hash
+
+###### resize
+
+- 门限值等于（负载因子）x（容量）;
+- 门限通常是以倍数进行调整 （newThr = oldThr << 1）。
+- 扩容后，需要将老的数组中的元素重新放置到新的数组，这是扩容的一个主要开销来源。
+
+###### 容量、负载因子
+
+#######  负载因子 * 容量 > 元素数量
+
+####### 容量 > 预估元素数据 / 负载因子
+
+###### 非线程安全
+
+####### 并发访问无限循环占用CPU
+
+####### 并发访问size不准
 
 #### 线程安全集合
 
+##### ConcurrentHashMap
+
+###### 原理
+
+####### 早期
+
+######## 分段锁
+
+######## concurrentLevel决定segment数量
+
+######## volatile value保证可见性
+
+######## get()
+
+```java
+public V get(Object key) {
+        Segment<K,V> s; // manually integrate access methods to reduce overhead
+        HashEntry<K,V>[] tab;
+        int h = hash(key.hashCode());
+       // 利用位操作替换普通数学运算
+       long u = (((h >>> segmentShift) & segmentMask) << SSHIFT) + SBASE;
+        // 以 Segment 为单位，进行定位
+        // 利用 Unsafe 直接进行 volatile access
+        if ((s = (Segment<K,V>)UNSAFE.getObjectVolatile(segments, u)) != null &&
+            (tab = s.table) != null) {
+           // 省略
+          }
+        return null;
+    }
+
+```
+
+######### 二次哈希，缓解哈希冲突
+
+######### 保证可见性
+
+######## put()
+
+```java
+public V put(K key, V value) {
+  Segment<K,V> s;
+  // 二次哈希，以保证数据的分散性，避免哈希冲突
+  int hash = hash(key.hashCode());
+  int j = (hash >>> segmentShift) & segmentMask;
+  if ((s = (Segment<K,V>)UNSAFE.getObject   // nonvolatile; recheck
+  (segments, (j << SSHIFT) + SBASE)) == null) //  in ensureSegment
+    s = ensureSegment(j);
+    return s.put(key, hash, value, false);
+}
+
+
+final V put(K key, int hash, V value, boolean onlyIfAbsent) {
+  // scanAndLockForPut 会去查找是否有 key 相同 Node
+  // 无论如何，确保获取锁
+  HashEntry<K,V> node = tryLock() ? null : scanAndLockForPut(key, hash, value);
+  V oldValue;
+  HashEntry<K,V>[] tab = table;
+  int index = (tab.length - 1) & hash;
+  HashEntry<K,V> first = entryAt(tab, index);
+  for (HashEntry<K,V> e = first;;) {
+    if (e != null) {
+       K k;
+       // 更新已有 value...
+    } else {
+      // 放置 HashEntry 到特定位置，如果超过阈值，进行 rehash
+      // ...
+    }
+}
+
+
+
+```
+
+######### 二次哈希
+
+######### 获取锁：Segment extends ReentrantLock
+
+######### 扩容：针对Segment
+
+######## size()
+
+######### 要同步吗？
+
+######### 重试机制 RETRIES_BEFORE_LOCK
+
+####### java8
+
+######## 不再用Segment，仅保留概念以便兼容
+
+######## 初始化 lazy-load
+
+######## CAS
+
 #### NIO
+
+##### 演进
+
+###### java.io / java.net
+
+####### 同步阻塞IO
+
+####### File, Socket, HttpURLConnection
+
+###### 1.4 NIO
+
+####### 同步非阻塞IO
+
+####### Channel, Selector
+
+###### 1.7 NIO2
+
+####### 异步非阻塞IO（AIO）
+
+####### 基于事件和回调机制
+
+##### 概念
+
+###### Buffer
+
+####### 数据容器
+
+###### Channel
+
+####### 类似Linux文件描述符
+
+####### 比File/Socket更底层
+
+###### Selector
+
+####### Channel可以注册在Selector上
+
+####### NIO会判断Selector上的Channel是否处于就绪状态
 
 #### 文件拷贝方式
 
