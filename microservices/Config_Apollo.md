@@ -292,6 +292,46 @@ config.addChangeListener(new ConfigChangeListener() {
 });
 ```
 
+#### 接入
+
+##### appid配置
+
+###### 推荐：/META-INF/app.properties -> appid
+
+###### 启动参数 -Dapp.id=
+
+##### metaService地址配置
+
+###### 启动参数 -Ddev_meta=
+
+###### 推荐：apollo-core.jar --> apollo-env.properties
+
+###### classpath: app-env.properties
+
+##### env配置
+
+###### 启动参数 -Denv=dev
+
+###### 环境变量 ENV
+
+###### 推荐：配置文件 opt/settings/server.properties -> env=
+
+###### 注意：env=Local用来本地研发
+
+##### cluster配置（可选）
+
+###### 启动参数 -Dapollo.cluster=
+
+###### 推荐：配置文件 opt/settings/server.properties -> idc=
+
+#### 本地缓存
+
+##### 缓存路径
+
+###### /opt/data/{appid}/config-cache
+
+###### {appid}-{clulster}-{namespace}.properties
+
 ## 部署
 
 ### 手工部署
@@ -357,3 +397,5 @@ http://www.iocoder.cn/Apollo
 ### 架构解析
 
 https://mp.weixin.qq.com/s/-hUaQPzfsl9Lm3IqQW3VDQ
+
+#### 简化架构图
