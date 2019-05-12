@@ -332,6 +332,10 @@ config.addChangeListener(new ConfigChangeListener() {
 
 ###### {appid}-{clulster}-{namespace}.properties
 
+### 灰度发布
+
+https://github.com/ctripcorp/apollo/wiki/Apollo%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97#%E4%BA%94%E7%81%B0%E5%BA%A6%E5%8F%91%E5%B8%83%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97
+
 ## 部署
 
 ### 手工部署
@@ -358,7 +362,9 @@ config.addChangeListener(new ConfigChangeListener() {
 
 https://pan.baidu.com/s/1rUAphfVq9fnEMqRrscDk-w?errno=0&errmsg=Auth%20Login%20Sucess&&bduss=&ssnerror=0&traceid=#list/path=%2F%E5%88%B6%E4%BD%9C%E8%A7%86%E9%A2%91%2Fapollo&parentPath=%2F%E5%88%B6%E4%BD%9C%E8%A7%86%E9%A2%91
 
-#### 数据库
+#### Portal Server
+
+##### 生产环境部署，管理FAT/UAT/PRO
 
 ##### ApolloPortalDB
 
@@ -374,6 +380,14 @@ https://pan.baidu.com/s/1rUAphfVq9fnEMqRrscDk-w?errno=0&errmsg=Auth%20Login%20Su
 
 ####### superAdmin
 
+#### Meta/Conifg/Admin
+
+##### 每个环境一套
+
+##### Meta Server + Config Server 一个进程
+
+##### Admin Server 一个进程
+
 ##### ApolloConfigDB
 
 ###### apolloconfigdb.sql
@@ -383,6 +397,13 @@ https://pan.baidu.com/s/1rUAphfVq9fnEMqRrscDk-w?errno=0&errmsg=Auth%20Login%20Su
 ###### ServerConfig表
 
 ####### eureka.service.url 
+
+## 二次开发
+
+### LDAP 登录
+
+https://github.com/ctripcorp/apollo/wiki/Portal-%E5%AE%9E%E7%8E%B0%E7%94%A8%E6%88%B7%E7%99%BB%E5%BD%95%E5%8A%9F%E8%83%BD
+
 
 ## 参考
 
@@ -399,3 +420,7 @@ http://www.iocoder.cn/Apollo
 https://mp.weixin.qq.com/s/-hUaQPzfsl9Lm3IqQW3VDQ
 
 #### 简化架构图
+
+### 使用场景
+
+https://github.com/ctripcorp/apollo-use-cases
