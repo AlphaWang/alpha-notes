@@ -99,13 +99,29 @@
 
 ##### Direct Memory
 
-###### NIO可能会操作堆外内存
+###### 创建
 
-###### -XX:MaxDirectMemorySize
+####### NIO可能会操作堆外内存：Buffer.isDirect()
 
-###### 回收：FullGC时顺便清理，不能主动触发
+####### FileChannel.map()创建MappedByteBuffer
 
-###### 异常OutOfMemoryError: Direct buffer memory
+将文件按照指定大小直接映射为内存区域，
+
+###### 场景
+
+####### 创建和销毁开销大
+
+####### 适用于场景使用、数据较大的场景
+
+###### 回收
+
+####### -XX:MaxDirectMemorySize
+
+####### -XX:NativeMemoryTracking={summary|detail}
+
+####### 回收：FullGC时顺便清理，不能主动触发
+
+####### 异常OutOfMemoryError: Direct buffer memory
 
 ##### 线程堆栈
 
@@ -750,12 +766,11 @@ JFR.stop
 JFR.start
 JFR.dump
 JFR.check
-VM.native_memory
-VM.check_commercial_features
-VM.unlock_commercial_features
+
 ManagementAgent.stop
 ManagementAgent.start_local
 ManagementAgent.start
+
 GC.rotate_log
 Thread.print
 GC.class_stats
@@ -763,11 +778,18 @@ GC.class_histogram
 GC.heap_dump
 GC.run_finalization
 GC.run
+
 VM.uptime
 VM.flags
 VM.system_properties
 VM.command_line
 VM.version
+VM.check_commercial_features
+VM.unlock_commercial_features
+VM.native_memory detail 
+VM.native_memory baseline
+VM.native_memory detail.diff
+
 help
 
 ##### javap: 分析class文件字节码
@@ -846,6 +868,8 @@ help
 ##### -XX:+PrintReferenceGC 打印各种引用数量
 
 ##### -Xloggc:xx.log
+
+##### -XX:NativeMemoryTracking={summary|detail}
 
 ## 并发
 
@@ -2903,6 +2927,33 @@ proxyHello.sayHello();
 
 ###### 装饰器模式
 
+### 集合
+
+#### HashMap
+
+##### resize与多线程
+
+https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
+
+```java
+1:  // Transfer method in java.util.HashMap -
+2:  // called to resize the hashmap
+3:  
+4:  for (int j = 0; j < src.length; j++) {
+5:    Entry e = src[j];
+6:    if (e != null) {
+7:      src[j] = null;
+8:      do {
+9:      Entry next = e.next; 
+10:     int i = indexFor(e.hash, newCapacity);
+11:     e.next = newTable[i];
+12:     newTable[i] = e;
+13:     e = next;
+14:   } while (e != null);
+15:   }
+16: } 
+```
+
 ### 函数式编程
 
 #### Lambda表达式
@@ -2951,29 +3002,47 @@ proxyHello.sayHello();
 
 ####### 从一组值中生成一个值
 
-#### 类库
+##### 收集器
 
-##### mapToInt().summaryStatistics()
+###### 转成其他收集器：toCollection(TreeSet::new)
 
-###### 数值统计：min, max, average, sum
+###### 统计信息：maxBy, averagingInt
 
-##### @FunctionalInterface
+###### 数据分块：partitionBy
 
-###### 强制javac检查接口是否符合函数接口标准
+###### 数据分组：groupingBy
 
-#### 默认方法
+###### 拼接字符串：joining(分隔符，前缀，后缀)
 
-##### 继承
+#### 工具
 
-###### 类中重写的方法胜出
+##### 类库
+
+###### mapToInt().summaryStatistics()
+
+####### 数值统计：min, max, average, sum
+
+###### @FunctionalInterface
+
+####### 强制javac检查接口是否符合函数接口标准
+
+##### 默认方法
+
+###### 继承
+
+####### 类中重写的方法胜出
 
 ###### 多重继承
 
 ####### 可用InterfaceName.super.method() 来指定某个父接口的默认方法
 
-##### 用处
+###### 用处
 
-###### Collection增加了stream方法，如果没有默认方法，则每个Collection子类都要修改
+####### Collection增加了stream方法，如果没有默认方法，则每个Collection子类都要修改
+
+##### 方法引用
+
+###### 等价于lambda表达式，需要时才会调用
 
 ## 网络编程
 
@@ -3231,6 +3300,12 @@ final V put(K key, int hash, V value, boolean onlyIfAbsent) {
 
 ####### 数据容器
 
+######## capacity: 数组长度
+
+######## position: 要处理的起始位置
+
+######## limit: 要处理的最大位置
+
 ###### Channel
 
 ####### 类似Linux文件描述符
@@ -3244,6 +3319,51 @@ final V put(K key, int hash, V value, boolean onlyIfAbsent) {
 ####### NIO会判断Selector上的Channel是否处于就绪状态
 
 #### 文件拷贝方式
+
+##### 方式
+
+###### NIO: transferTo
+
+public void copyFileByChannel(File source, File dest) {
+  try (FileChannel sourceChannel = new FileInputStream(source).getChannel();
+    FileChannel targetChannel = new FileOutputStream(dest).getChannel();) {
+     for (long count = sourceChannel.size();count>0;) {
+       long transferred = sourceChannel.transferTo(
+                    sourceChannel.position(), count, targetChannel); 
+                    sourceChannel.position(sourceChannel.position() + transferred);
+       count -= transferred;
+     }
+    }
+ }
+
+
+
+###### FileInputStream --> FileOutputStream
+
+```java
+public void copyFileByStream(File source, File dest) {
+    try (InputStream is = new FileInputStream(source);
+    OutputStream os = new FileOutputStream(dest);){
+      byte[] buffer = new byte[1024];
+      int length;
+      while ((length = is.read(buffer)) > 0) {
+          os.write(buffer, 0, length);
+      }
+  }
+}
+
+
+```
+
+###### Files.copy()
+
+####### 并非零拷贝！
+
+##### 实现机制
+
+###### 内核态数据 -> 用户态数据 -> 内核态数据
+
+###### 零拷贝
 
 #### 接口 vs. 抽象类
 
