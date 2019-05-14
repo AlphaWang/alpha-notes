@@ -2482,6 +2482,72 @@ Producer会监听`Broker的新增与减少`、`Topic的新增与减少`、`Broke
 
 ###### NESTED: 如果有，则在当前事务里再起一个事务
 
+#### Spring分布式事务实现
+
+##### XA与最后资源博弈
+
+###### 两阶段提交
+
+1. start MQ tran
+2. receive msg
+3. start JTA tran on DB
+4. update DB
+5. Phase-1 commit on DB tran
+6. commit MQ tran
+7. Phase-2 commit on DB tran
+
+##### 共享资源
+
+###### 实现
+
+####### 两个数据源共享同一个底层资源
+
+####### 例如ActiveMQ使用DB作为存储
+
+####### 使用DB上的connection控制事务提交
+
+###### 要求
+
+####### 需要数据源支持
+
+##### 最大努力一次提交
+
+###### 实现
+
+####### 依次提交事务
+
+####### 可能出错
+
+####### 通过AOP或Listener实现事务直接的同步
+
+###### 例：JMS最大努力一次提交+重试
+
+1. start MQ tran
+2. receive msg
+3. start DB tran
+4. update DB
+5. commit DB tran
+6. commit MQ tran
+
+Step4 数据库操作出错，消息会被放回MQ，重新触发该方法；
+Step6 提交MQ事务出错，消息会被放回MQ，重新触发该方法；此时会重复数据库操作，需要忽略重复消息；
+
+####### 适用于其中一个数据源是MQ，并且事务由读MQ消息开始
+
+####### 利用MQ消息的重试机制
+
+####### 重试时需要考虑重复消息
+
+##### 链式事务
+
+###### 实现
+
+####### 定义一个事务链
+
+####### 多个事务在一个事务管理器里依次提交
+
+####### 可能出错
+
 ### 定理
 
 #### CAP定理
@@ -2518,9 +2584,13 @@ Producer会监听`Broker的新增与减少`、`Topic的新增与减少`、`Broke
 
 ####### Cassandra
 
+####### Eureka
+
 ###### CA
 
 ####### Kafka
+
+####### zookeeper
 
 ## 微服务
 
