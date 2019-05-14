@@ -3463,7 +3463,19 @@ public void copyFileByStream(File source, File dest) {
 
 #### 接口 vs. 抽象类
 
+##### 不支持多重继承 --> 所以引入工具类（例如Collections）--> default method
+
+##### Marker Interface --> 还可用Annotation
+
 #### 设计模式
+
+##### SOLID
+
+- Single Responsibility
+- Open-Close
+- Liskov Substitution
+- Interface Segregation
+- Dependent Inversion
 
 ### 并发
 
