@@ -2627,11 +2627,13 @@ try {
 
 #### Guarded Suspension模式
 
-##### 保护性性暂停，又称Guarded Wait, Spin Lock
+##### 概念
 
-##### 将异步转换为同步
+###### 保护性性暂停，又称Guarded Wait, Spin Lock
 
-##### 多线程版本的 if
+###### 将异步转换为同步
+
+###### 多线程版本的 if
 
 ##### 示例
 
@@ -2643,13 +2645,15 @@ https://github.com/apache/incubator-dubbo/blob/master/dubbo-remoting/dubbo-remot
 
 #### Balking模式
 
-##### 当状态变量满足某个条件时，执行某个逻辑
+##### 概念
 
-##### 与Guarded Suspenstion的区别
+###### 当状态变量满足某个条件时，执行某个逻辑
 
-###### Guarded Suspension会等待if条件
+###### 与Guarded Suspenstion的区别
 
-###### Balking不会等待
+####### Guarded Suspension会等待if条件
+
+####### Balking不会等待
 
 ##### 示例
 
@@ -2782,6 +2786,76 @@ class Singleton{
 ```
 
 #### Thread-per-Message模式
+
+##### 概念
+
+###### 分工：为每个任务分配一个独立的线程
+
+```java
+final ServerSocketChannel ssc = 
+  ServerSocketChannel.open().bind(new InetSocketAddress(8080));
+   
+try {
+  while (true) {
+    SocketChannel sc = ssc.accept();
+    // 每个请求都创建一个线程
+    new Thread(()->{
+      try {
+        // 读 Socket
+        ByteBuffer rb = ByteBuffer.allocateDirect(1024);
+        sc.read(rb);
+        // 模拟处理请求
+        Thread.sleep(2000);
+        // 写 Socket
+        ByteBuffer wb = (ByteBuffer)rb.flip();
+        sc.write(wb);
+        // 关闭 Socket
+        sc.close();
+      }catch(Exception e){
+      }
+    }).start();
+  }
+} finally {
+  ssc.close();
+}   
+
+```
+
+###### 优化：线程池、轻量级线程（协程、Fiber)
+
+```java
+final ServerSocketChannel ssc = 
+  ServerSocketChannel.open().bind(new InetSocketAddress(8080));
+
+try {
+  while (true) {
+    final SocketChannel sc = ssc.accept();
+    
+    Fiber.schedule(()->{
+      try {
+        // 读 Socket
+        ByteBuffer rb = ByteBuffer.allocateDirect(1024);
+        sc.read(rb);
+        // 模拟处理请求
+        LockSupport.parkNanos(2000*1000000);
+        // 写 Socket
+        ByteBuffer wb =(ByteBuffer)rb.flip()
+        sc.write(wb);
+        // 关闭 Socket
+        sc.close();
+      } catch(Exception e){
+      }
+    });
+  }
+} finally {
+  ssc.close();
+}
+
+```
+
+##### 示例
+
+###### HTTP Server委托子线程处理HTTP请求
 
 #### Worker Thread模式
 
@@ -2980,7 +3054,7 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 
 ####### 返回另一个值
 
-##### 常用流操作
+##### stream() 常用流操作
 
 ###### collect(toList())
 
@@ -3004,15 +3078,31 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 
 ##### 收集器
 
-###### 转成其他收集器：toCollection(TreeSet::new)
+###### 原生方法
 
-###### 统计信息：maxBy, averagingInt
+####### 转成其他收集器：toCollection(TreeSet::new)
 
-###### 数据分块：partitionBy
+####### 统计信息：maxBy, averagingInt
 
-###### 数据分组：groupingBy
+####### 数据分块：partitionBy
 
-###### 拼接字符串：joining(分隔符，前缀，后缀)
+####### 数据分组：groupingBy
+
+####### 拼接字符串：joining(分隔符，前缀，后缀)
+
+####### 定制：reducing(identity, mapper, op)
+
+###### 自定义收集器
+
+####### supplier() -> Supplier，后续操作的初始值
+
+####### accumulator() -> BiConsumer，结合之前操作的结果和当前值，生成并返回新值
+
+####### combine() -> BinaryOperator，合并
+
+####### finisher() -> Function，转换，返回最终结果
+
+##### parallelStream() 并行流
 
 #### 工具
 
@@ -3043,6 +3133,12 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 ##### 方法引用
 
 ###### 等价于lambda表达式，需要时才会调用
+
+##### 集合类
+
+###### computeIfAbsent()
+
+###### forEach()
 
 ## 网络编程
 
