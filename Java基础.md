@@ -3102,7 +3102,47 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 
 ####### finisher() -> Function，转换，返回最终结果
 
-##### parallelStream() 并行流
+##### 并行流
+
+###### 创建
+
+####### Collection.parallelStream()
+
+####### Stream.parallel()
+
+###### 实现
+
+####### 使用ForkJoinPool
+
+###### 场景
+
+####### 数据量越大，每个元素处理时间越长，并行就越有意义
+
+####### 数据结构要易于分解
+
+######## 好：ArrayList, IntStream
+
+######## 一般：HashSet，TreeSet
+
+######## 差：LinkedList，Streams.iterate，BufferedReader.lines
+
+####### 避开有状态操作
+
+######## 无状态：map，filter，flatMap
+
+######## 有状态：sorted，distinct，limit
+
+###### Arrays提供的并行操作
+
+####### Arrays.parallelSetAll
+
+######## 并行设置value
+
+####### Arrays.parallelPrefix
+
+######## 将每一个元素替换为当前元素与前驱元素之和
+
+####### Arrays.parallelSort
 
 #### 工具
 
@@ -3139,6 +3179,74 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 ###### computeIfAbsent()
 
 ###### forEach()
+
+#### 范例
+
+##### 封装：log.debug(Suppiler)
+
+```java
+// AS-IS
+if (logger.isDebugEnabled()) {
+  logger.debug("...");
+}
+
+// TO-BE 调用者无需关心日志级别
+logger.debug(() -> "...");
+
+public void debug(Supplier msg) {
+  if (isDebugEnabled()) {
+    debug(msg.get());
+  }
+}
+```
+
+##### 孤独的覆盖：ThreadLocal.withInitial(Supplier)
+
+```java
+// AS-IS
+new ThreadLocal<Object>() {
+  @Override
+  protected Object initialValue() {
+    return db.get();
+  }
+}
+
+//TO-BE
+ThreadLocal.withInitial(() -> db.get());
+```
+
+##### 重复：传入ToLongFunction
+
+例如遍历订单中的item详情数目
+```java
+public long count(ToLongFunction<Order> fun) {
+  return orders.stream()
+    .mapToLong(fun)
+    .sum();
+}
+
+// 否则调用端需要重复遍历orders
+public long countItem() {
+  return count(order -> order.getItems().count())
+}
+
+public long countAmount() {
+  return count(order -> order.getAmoun().count())
+}
+```
+
+#### 调试
+
+##### peek()
+
+peek()让你能查看每个值，同时能继续操作流。
+```java
+album.getMusicians()
+  .filter(...)
+  .map(...)
+  .peek(item -> System.out.println(item))
+  .collect(Collectors.toSet());
+```
 
 ## 网络编程
 
