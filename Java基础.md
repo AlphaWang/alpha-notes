@@ -2836,8 +2836,7 @@ try {
         // 读 Socket
         ByteBuffer rb = ByteBuffer.allocateDirect(1024);
         sc.read(rb);
-        // 模拟处理请求
-        LockSupport.parkNanos(2000*1000000);
+        // 模拟处理请求       LockSupport.parkNanos(2000*1000000);
         // 写 Socket
         ByteBuffer wb =(ByteBuffer)rb.flip()
         sc.write(wb);
@@ -2853,11 +2852,60 @@ try {
 
 ```
 
+###### 类比：委托他人办理（子线程）
+
 ##### 示例
 
 ###### HTTP Server委托子线程处理HTTP请求
 
 #### Worker Thread模式
+
+##### 概念
+
+###### Thread-per-Message模式会频繁创建销毁线程，影响性能
+
+###### 用阻塞队列做任务池、创建固定数量的线程消费队列中的任务
+
+```java
+ExecutorService es = Executors.newFixedThreadPool(500);
+
+ServerSocketChannel ssc = ServerSocketChannel.open().bind(new InetSocketAddress(8080));
+    
+try {
+  while (true) {
+    SocketChannel sc = ssc.accept();
+    
+    // 将请求处理任务提交给线程池
+    es.execute(()->{
+      try {
+        // 读 Socket
+        ByteBuffer rb = ByteBuffer.allocateDirect(1024);
+        sc.read(rb);
+        // 模拟处理请求
+        Thread.sleep(2000);
+        // 写 Socket
+        ByteBuffer wb = (ByteBuffer)rb.flip();
+        sc.write(wb);
+        // 关闭 Socket
+        sc.close();
+      }catch(Exception e) 
+      }
+    });
+  }
+} finally {
+  ssc.close();
+  es.shutdown();
+}   
+
+```
+
+####### 其实就是线程池！
+
+###### 类比：车间工人
+
+##### 示例
+
+###### 线程池
 
 #### 两阶段终止模式
 
