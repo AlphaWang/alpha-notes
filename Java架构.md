@@ -2770,6 +2770,80 @@ https://github.com/knightliao/disconf
 
 #### 链路跟踪
 
+## 设计模式
+
+### 创建型
+
+#### Factory
+
+##### 案例
+
+###### Spring BeanFactory/ApplicationContext
+
+#### Abstract Factory
+
+#### Singleton
+
+##### 双重检查锁定
+
+##### 内部类持有静态对象：利用对象初始化锁
+
+##### 案例
+
+###### Spring Bean单例
+
+#### Builder
+
+##### 案例
+
+###### HttpRequest构造
+
+#### Prototype
+
+### 结构型
+
+#### Bridge
+
+#### Adapter
+
+#### Decorator
+
+##### 案例
+
+###### Java IO: FileInputStream/ByteArrayInputStream  -> InputStream
+
+#### Proxy
+
+#### Composite
+
+#### Facade
+
+#### Flyweight
+
+### 行为型
+
+#### Strategy
+
+#### Interpreter
+
+#### Command
+
+#### Observer
+
+##### 案例
+
+###### 事件监听器
+
+#### Iterator
+
+#### Template Method
+
+##### 案例
+
+###### JdbcTemplate
+
+#### Visitor
+
 ## 运维
 
 ### SLA
