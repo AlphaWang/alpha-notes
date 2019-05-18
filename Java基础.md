@@ -1025,23 +1025,15 @@ help
 
 ######## 等待锁
 
-####### Waiting
+####### Waiting / Timed_Waiting
 
 ######## wait()
 
 ######## join()
 
-######## LockSupport.park()
-
-####### Timed_Waiting
+######## LockSupport.park() /  parkNanos/parkUntil
 
 ######## sleep(ms)
-
-######## wait(timeout)
-
-######## join(ms)
-
-########  parkNanos/parkUntil
 
 ###### 终止
 
@@ -1613,20 +1605,6 @@ static class MR extends RecursiveTask<Map<String, Long>> {
 }
 
 ```
-
-#### 模式
-
-##### Guarded Suspension模式
-
-##### Balking模式
-
-##### Thread-Per-Message模式
-
-##### 生产者消费者模式
-
-##### Worker Thread模式
-
-##### 两阶段终止模式
 
 ### 协作
 
@@ -2912,6 +2890,86 @@ try {
 ###### 线程池
 
 #### 两阶段终止模式
+
+##### 概念
+
+###### 阶段1：线程T1向T2发送终止指令
+
+###### 阶段2：线程T2响应终止指令
+
+##### 原理
+
+###### 只能从Runnable状态进入Terminated状态
+
+###### 通过 interrupt()方法转到到Runnable
+
+##### 要点
+
+###### 1. 需要检查终止标志位
+
+###### 2. 并且检查线程中断状态
+
+##### 示例
+
+###### 在线终止监控
+
+```java
+class Proxy {
+  volatile boolean terminated = false;
+  boolean started = false;
+  
+  Thread rptThread;
+  
+  synchronized void start(){
+    // 不允许同时启动多个采集线程
+    if (started) {
+      return;
+    }
+    started = true;
+    terminated = false;
+    rptThread = new Thread(()->{
+      while (!terminated){
+        report();
+        try {
+          Thread.sleep(2000);
+        } catch (InterruptedException e){
+          // 重新设置线程中断状态
+          // 可否直接break???
+                      Thread.currentThread().interrupt();
+        }
+      }
+      // 执行到此处说明线程马上终止
+      started = false;
+    });
+    rptThread.start();
+  }
+  
+  
+  // 终止采集功能
+  synchronized void stop(){
+    // 设置中断标志位
+    terminated = true;
+    // 中断线程 rptThread
+    rptThread.interrupt();
+  }
+}
+
+
+```
+
+####### 捕获Thread.sleep中断异常后，需要重新设置线程中断状态
+
+###### 终止线程池
+
+####### shutdown() / shutdownNow()
+
+shutdown:
+- 会拒绝接收新的任务
+- 等线程池中正在执行的、以及队列中的任务执行完才最终关闭
+
+shutdownNow:
+- 会拒绝接收新的任务
+- 线程池中正在执行的、以及队列中的任务会作为返回值返回。
 
 #### 生产者-消费者模式
 
