@@ -52,6 +52,23 @@
 
 ###### web.xml
 
+```xml
+    <servlet>
+      <servlet-name>myServlet</servlet-name>
+      <servlet-class>MyServlet</servlet-class>
+    </servlet>
+
+    <servlet-mapping>
+      <servlet-name>myServlet</servlet-name>
+      <url-pattern>/myservlet</url-pattern>
+    </servlet-mapping>
+
+```
+
+####### 或者标注配置
+
+@WebServlet("/myAnnotationServlet")
+
 ###### /lib
 
 ###### /classes
