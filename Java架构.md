@@ -2500,7 +2500,7 @@ Producer会监听`Broker的新增与减少`、`Topic的新增与减少`、`Broke
 
 ###### 共享资源
 
-####### 实现
+####### 原理
 
 ######## 两个数据源共享同一个底层资源
 
@@ -2514,7 +2514,7 @@ Producer会监听`Broker的新增与减少`、`Topic的新增与减少`、`Broke
 
 ###### 最大努力一次提交
 
-####### 实现
+####### 原理
 
 ######## 依次提交事务
 
@@ -2542,13 +2542,62 @@ Step6 提交MQ事务出错，消息会被放回MQ，重新触发该方法；此�
 
 ###### 链式事务
 
-####### 实现
+####### 原理
 
 ######## 定义一个事务链
 
 ######## 多个事务在一个事务管理器里依次提交
 
 ######## 可能出错
+
+第二个提交执行中 如果数据库连接失败，第一个提交无法回滚。
+
+
+####### 实现
+
+######## ChainedTransactionManager
+
+######### DB + DB
+
+```java
+@Bean
+public PlatformTransactionManger trxManager() {
+  DataSourceTransactionManager userTM = new DataSourceTransactionManager(userDataSource());
+  DataSourceTransactionManager orderTM = ...
+  
+  // 顺序敏感，在前的后提交
+  ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
+}
+```
+
+######### JPA + DB
+
+JPA factory:
+```java
+@Bean
+public LocalContainerEntityManagerFactoryBean entityManagerFactory() {
+  HibernateJpaVendorAdapter va = new ...;
+  LocalContainerEntityManagerFactoryBean factory = new ...;
+  factory.setJpaVendorAdapter(va);
+  factory.setDataSource(userDataSrouce());
+  return factory;
+}
+
+```
+
+TRX Manger:
+```java
+@Bean
+public PlatformTransactionManger trxManager() {
+  JpaTransactionManager userTM = new ...;
+  userTM.setEntityManagerFactory(entityManagerFactory().getObject());
+  
+  DataSourceTransactionManager orderTM = new DataSourceTransactionManager(orderDataSource())
+  
+  // 顺序敏感，在前的后提交
+  ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
+}
+```
 
 ##### 选择
 
@@ -2772,6 +2821,24 @@ https://github.com/knightliao/disconf
 
 ## 设计模式
 
+### SOLID
+
+#### Single Responsibility
+
+##### 程序中的类或方法只能有一个改变的理由
+
+#### Open-Closed
+
+##### 对扩展开放，对修改关闭
+
+#### Liskov substitution
+
+#### Interface Segregation
+
+#### Dependency inversion
+
+##### 抽象不应该依赖细节，细节应该依赖抽象
+
 ### 创建型
 
 #### Factory
@@ -2824,9 +2891,19 @@ https://github.com/knightliao/disconf
 
 #### Strategy
 
+##### lambda简化
+
+###### 可去除策略子类
+
 #### Interpreter
 
 #### Command
+
+##### lambda简化
+
+###### 可去除命令子类
+
+###### 命令类是 FunctionalInterface，可通过lambda/方法引用传入；这样就能去除所有命令子类
 
 #### Observer
 
@@ -2834,9 +2911,17 @@ https://github.com/knightliao/disconf
 
 ###### 事件监听器
 
+##### lambda简化
+
+###### 可去除Observer子类
+
 #### Iterator
 
 #### Template Method
+
+##### 定义
+
+###### 有一个通用算法，步骤上略有不同
 
 ##### 案例
 
