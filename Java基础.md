@@ -758,6 +758,8 @@ jmap -dump:live,format=b,file=/pang/logs/tomcat/heapdump.bin 1
 
 ##### jstack -l: 生成thread dump
 
+###### 分析死锁：找到BLOCKED的线程
+
 ##### jcmd
 
 `jcmd 1 GC.heap_dump ${dump_file_name}`
@@ -870,6 +872,10 @@ help
 ##### -Xloggc:xx.log
 
 ##### -XX:NativeMemoryTracking={summary|detail}
+
+#### 并发
+
+##### -XX:-UseBiasedLocking 关闭偏向锁
 
 ## 并发
 
@@ -991,6 +997,10 @@ help
 
 ####### 避免：如果等待不到，则主动释放已占有的锁 （Lock  timeout）
 
+if (lock.tryLock() || lock.tryLock(timeout, unit))
+
+
+
 ###### 4. 循环等待
 
 ####### 互相等待
@@ -1001,7 +1011,7 @@ help
 
 ###### 其实就是破坏发生条件
 
-###### 1. 互斥
+###### 避免使用多个锁；设计要锁的获取顺序
 
 #### Thread
 
@@ -2314,16 +2324,15 @@ native boolean compareAndSwapLong(
 
 ###### 原理
 
-####### 同步块：Java对象头中有monitor对象；
+####### 同步块
+
+######## Java对象头中有monitor对象；
 monitorenter指令：计数器+1
 monitorexit指令：计数器-1
 
-####### 同步方法：ACC_SYNCHRONIZED 标识
+####### 同步方法
 
-###### Java6的优化
-
-####### 偏向锁，轻量级锁，自旋锁；
-锁消除，锁粗化
+######## ACC_SYNCHRONIZED 标识
 
 ###### 对比ReentrantLock
 
@@ -2358,6 +2367,27 @@ monitorexit指令：计数器-1
 ####### volatile只保证可见性，不保证原子性
 
 ####### 对线程访问volatile字段不会发生阻塞，而sync会阻塞
+
+###### Java6的优化
+
+####### 偏向锁，轻量级锁，自旋锁；
+
+偏向锁：
+- 默认使用
+- 利用CAS，在对象头 Mark Word部分设置线程ID
+
+轻量级锁：
+- 其他线程加锁时，需要撤销偏向锁，耗时。
+- 撤销成功则切换到轻量级锁。
+- 否则进一步升级为重量级锁。
+
+
+
+
+
+####### 锁消除，锁粗化
+
+####### 不再完全依靠操作系统内部的互斥锁，不再需要用户态内核态切换
 
 ##### Lock
 
