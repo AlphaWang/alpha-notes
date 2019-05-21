@@ -3003,6 +3003,106 @@ shutdownNow:
 
 #### 生产者-消费者模式
 
+##### 场景
+
+###### 解耦
+
+###### 异步：平衡速度差异
+
+##### 示例
+
+###### 批量存盘
+
+```java
+
+BlockingQueue<Task> bq=new
+  LinkedBlockingQueue<>(2000);
+
+// 启动 5 个消费者线程；执行批量任务 
+
+void start() {
+  ExecutorService es=xecutors.newFixedThreadPool(5);
+  for (int i=0; i<5; i++) {
+    es.execute(()->{
+        while (true) {
+          // 获取批量任务
+          List<Task> ts=pollTasks();
+          // 执行批量任务
+          execTasks(ts);
+        }
+    });
+  }
+}
+
+List<Task> pollTasks() {
+  List<Task> ts=new LinkedList<>();
+  
+  // 阻塞式获取一条任务
+  Task t = bq.take();
+  while (t != null) {
+    ts.add(t);
+    // 非阻塞式获取一条任务
+    t = bq.poll();
+  }
+  return ts;
+}
+
+// 批量执行任务
+execTasks(List<Task> ts) {
+  // 省略具体代码无数
+}
+
+```
+
+###### 分阶段提交
+
+- ERROR日志立即刷盘。
+- 累积500条立即刷盘。
+- 累积5秒立即刷盘。
+
+```java
+class Logger {
+ BlockingQueue<LogMsg> bq = new BlockingQueue<>();
+  static final int batchSize=500;
+  ExecutorService es = Executors.newFixedThreadPool(1);
+  
+  // 启动写日志线程
+  void start(){
+    es.execute(()->{
+      try {
+        // 未刷盘日志数量
+        int curIdx = 0;
+        long preFT=System.currentTimeMillis();
+        while (true) {
+          LogMsg log = bq.poll(
+            5, TimeUnit.SECONDS);
+          // 写日志
+          if (log != null) {
+            writer.write(log.toString());
+            ++curIdx;
+          }
+          // 如果不存在未刷盘数据，则无需刷盘
+          if (curIdx <= 0) {
+            continue;
+          }
+          
+          // 根据规则刷盘
+          if (log!=null && log.level==LEVEL.ERROR ||
+              curIdx == batchSize ||
+              System.currentTimeMillis()-preFT>5000){
+            writer.flush();
+            curIdx = 0;
+            preFT=System.currentTimeMillis();
+          }
+        }
+      }
+    });  
+  }
+ 
+}
+
+```
+
 ## Core Java
 
 ### Exception
