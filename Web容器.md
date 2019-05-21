@@ -108,3 +108,46 @@
 ###### Tomcat启动过程中，扫描到DispatcherServlet、初始化之
 
 ###### DispatcherServlet初始化时会创建SpringMVC容器，从ServletContext中取出Spring根容器，将其设为自己的父容器
+
+## Service
+
+### 连接器
+
+#### 功能
+
+##### 对外交流
+
+- 监听网络端口。
+- 接受网络连接请求。
+- 读取请求网络字节流。
+- 根据具体应用层协议解析字节流，生成Tomcat Request对象。
+- 将Tomcat Request转成标准ServletRequest。
+
+- 调用Servlet容器，得到ServletResponse。
+- 转成Tomcat Response。
+- 转成网络字节流。
+- 将响应字节流写回给浏览器。
+
+#### 模块
+
+##### ProtocolHandler
+
+###### EndPoint
+
+####### 底层Socket通信
+
+###### Processor
+
+####### 应用层协议解析
+
+##### Adaptor
+
+###### Tomcat Req/Res 与 ServletRequest/ServletResponse转换
+
+#### 模块图
+
+### 容器
+
+#### 功能
+
+##### 内部处理

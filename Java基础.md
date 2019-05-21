@@ -1646,7 +1646,7 @@ static class MR extends RecursiveTask<Map<String, Long>> {
 
 #### CountDownLatch
 
-##### 场景：一个线程等待多个线程
+##### 场景：一个线程等待多个线程；操作的是事件
 
 ##### 计数器不能循环再利用
 
@@ -1762,6 +1762,8 @@ void checkAll(){
 ###### release()
 
 #### Phaser
+
+##### 类似CountDownLatch，但允许线程动态注册上来
 
 #### Exchanger
 
