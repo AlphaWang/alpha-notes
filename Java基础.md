@@ -2300,9 +2300,17 @@ native boolean compareAndSwapLong(
 
 ######## LinkedBlockingQueue
 
+######## 区别：LinkedBQ 头尾操作使用不同的锁，吞吐量会更高
+
 ####### 双端阻塞队列
 
 ######## LinkedBlockingDeque
+
+######### 队尾插入：addLast / offerLast
+
+######### 队尾删除：removeLast / pollLast
+
+######### 阻塞：take / put
 
 ####### 单端非阻塞队列
 
@@ -2311,6 +2319,10 @@ native boolean compareAndSwapLong(
 ####### 双端非阻塞队列
 
 ######## ConcurrentLinkedDeque
+
+####### SynchronousQueue
+
+######## cachedThreaPool的默认队列
 
 #### 互斥锁
 
