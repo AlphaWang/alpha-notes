@@ -405,6 +405,86 @@ https://pan.baidu.com/s/1rUAphfVq9fnEMqRrscDk-w?errno=0&errmsg=Auth%20Login%20Su
 https://github.com/ctripcorp/apollo/wiki/Portal-%E5%AE%9E%E7%8E%B0%E7%94%A8%E6%88%B7%E7%99%BB%E5%BD%95%E5%8A%9F%E8%83%BD
 
 
+## 源码
+
+### 创建App
+
+http://www.iocoder.cn/Apollo/portal-create-app/
+
+#### Portal: AppController
+
+##### AppService
+
+###### 是否已存在？appRepository.findByAppId
+
+###### 创建：AppRepository
+
+###### 创建AppNS: AppNamespaceService
+
+###### initAppRoles
+
+###### Tracer.logEvent: CREATE_APP
+
+##### EventPublisher
+
+###### > CreationListener
+
+####### AdminServiceAPI.crreatAPP
+
+######## 同步到Config DB
+
+######### Q: 如何保证一致性？
+
+######## RetryableRestTemplate
+
+##### RolePermission
+
+#### Admin: AppController
+
+##### 是否已存在？appService.findOne
+
+##### 创建：adminService.createNewApp
+
+###### 保存：appService.save
+
+####### appRepository
+
+####### auditService 审计入库
+
+###### APP默认NS: appNamespaceService.createDefaultAppNamespace
+
+###### APP默认集群：clusterService.createDefaultCluster
+
+###### 集群默认NS：namespaceService.instanceOfAppNamespaces
+
+### 创建Cluster
+
+http://www.iocoder.cn/Apollo/portal-create-cluster/
+
+#### Portal: ClusterController
+
+##### ClusterService
+
+###### AdminServiceAPI.ClusterAPI#create
+
+####### 同步到Config DB
+
+###### 注意这里并没有保存到Portal DB!
+
+###### Tracer.logEvent: CREATE_CLUSTER
+
+#### Admin: ClusterController
+
+##### ClusterService
+
+###### 创建Cluster
+
+###### 创建NS
+
+### 创建NameSpace
+
+http://www.iocoder.cn/Apollo/portal-create-namespace/
+
 ## 参考
 
 ### 官网
@@ -414,6 +494,10 @@ https://github.com/ctripcorp/apollo/wiki/Apollo%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D
 ### 源码
 
 http://www.iocoder.cn/Apollo  
+
+#### 本地开发环境搭建
+
+https://github.com/ctripcorp/apollo/wiki/Apollo%E5%BC%80%E5%8F%91%E6%8C%87%E5%8D%97
 
 ### 架构解析
 
