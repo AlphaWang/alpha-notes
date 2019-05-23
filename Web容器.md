@@ -151,3 +151,85 @@
 #### 功能
 
 ##### 内部处理
+
+#### Container 层次结构
+
+server.xml 的层次结构
+
+##### Engine
+
+###### 表示一个引擎，用来管理多个虚拟主机
+
+##### Host
+
+###### 表示一个虚拟主机
+
+##### Context
+
+###### 表示一个web应用程序
+
+##### Wrapper
+
+###### 表示一个Servlet
+
+#### Mapper组件
+
+##### 作用
+
+###### 确定请求是有哪个Wrapper的Servlet来处理
+
+##### 流程
+
+###### 1.根据协议和端口号选定Service和Engine
+
+###### 2.根据域名选定Host
+
+###### 3.根据URL路径找到Context组件
+
+###### 4.根据URL路径，从web.xml找到Wrapper（Servlet）
+
+#### Pipeline-Valve管道
+
+##### 作用
+
+###### 让请求依次被Engine、Host、Context、Wrapper处理
+
+##### Valve
+
+###### 处理点，同时负责调用链
+
+###### 方法
+
+####### getNext() / setNext()
+
+####### invoke() 
+
+##### Pipeline
+
+###### 维护Valve链表
+
+###### 方法
+
+####### addValve()
+
+####### getBasic() / setBasic()
+
+####### getFirst 
+
+##### 触发
+
+###### 初始由连接器中的Adapter触发
+
+```java
+// Calling the container
+connector.getService().getContainer().getPipeline().getFirst().invoke(request, response);
+```
+
+
+###### 不同容器的调用链如何触发：BasicValve
+
+#######  
+
+###### 结束后：最后一个valve会调用Filter.doFilter()链，最终调到Servlet.service()
+
+###### Wrapper -> Filter -> DispatcherServlet -> Controller
