@@ -1555,6 +1555,7 @@ class CachedData {
     if (!cacheValid) {
       // 释放读锁，因为不允许读锁的升级
       r.unlock();
+      
       // 获取写锁
       w.lock();
       try {
@@ -1892,6 +1893,7 @@ static class ThreadId {
 ### 多线程版本的 IF
 
 #### Guarded Suspension模式
+（等待唤醒机制）
 
 ##### 概念
 
@@ -1899,7 +1901,102 @@ static class ThreadId {
 
 ###### 将异步转换为同步
 
-###### 多线程版本的 if
+###### 多线程版本的 if：等待一个条件满足
+
+##### 标准写法
+
+###### 1. GuardedObject
+
+```java
+class GuardedObject<T>{
+  // 受保护的对象
+  T obj;
+  Lock lock = new ReentrantLock();
+  Condition done = lock.newCondition();
+  int timeout=1;
+  
+  // 获取受保护对象  
+  T get(Predicate<T> p) {
+    lock.lock();
+    try {
+      //MESA 管程推荐写法
+      while(!p.test(obj)){
+        done.await(timeout, TimeUnit.SECONDS);
+      }
+    } finally{
+      lock.unlock();
+    }
+    return obj;
+  }
+  
+  // 事件通知方法
+  void onChanged(T obj) {
+    lock.lock();
+    try {
+      this.obj = obj;
+      done.signalAll();
+    } finally {
+      lock.unlock();
+    }
+  }
+}
+
+```
+
+###### 2. GuardedObject + map
+
+```java
+class GuardedObject<T>{
+  // 受保护的对象
+  T obj;
+  Lock lock = new ReentrantLock();
+  Condition done = lock.newCondition();
+  int timeout=2;
+  
+  // 保存所有 GuardedObject
+  static Map<Object, GuardedObject> gos=new ConcurrentHashMap<>();
+  
+  // 静态方法创建 GuardedObject
+  static <K> GuardedObject create(K key){
+    GuardedObject go=new GuardedObject();
+    gos.put(key, go);
+    return go;
+  }
+  
+  // 获取受保护对象  
+  T get(Predicate<T> p) {
+    lock.lock();
+    try {
+      //MESA 管程推荐写法
+      while(!p.test(obj)){
+        done.await(timeout, TimeUnit.SECONDS);
+      }
+    }finally{
+      lock.unlock();
+    }
+    return obj;
+  }
+  
+  // 事件通知方法
+  static <K, T> void fireEvent(K key, T obj){
+    GuardedObject go=gos.remove(key);
+    if (go != null){
+      go.onChanged(obj);
+    }
+  }
+  
+  void onChanged(T obj) {
+    lock.lock();
+    try {
+      this.obj = obj;
+      done.signalAll();
+    } finally {
+      lock.unlock();
+    }
+  }
+}
+
+```
 
 ##### 示例
 
@@ -1909,17 +2006,49 @@ https://github.com/apache/incubator-dubbo/blob/master/dubbo-remoting/dubbo-remot
 
 ###### MQ异步返回结果
 
+```java
+// 处理浏览器发来的请求
+Respond handleWebReq(){
+  int id= 序号生成器.get();
+  // 创建一消息
+  Message msg1 = new Message(id,"{...}");
+  
+  // 创建 GuardedObject 实例
+  GuardedObject<Message> go = GuardedObject.create(id);  
+  
+  // 发送消息
+  send(msg1);
+  // 等待 MQ 消息
+  Message r = go.get(t->t != null);  
+}
+
+// 唤醒等待的线程
+void onMessage(Message msg){
+  GuardedObject.fireEvent(
+    msg.id, msg);
+}
+
+```
+
 #### Balking模式
 
 ##### 概念
 
-###### 当状态变量满足某个条件时，执行某个逻辑
+###### 当volatile状态变量满足某个条件时，执行某个逻辑
 
 ###### 与Guarded Suspenstion的区别
 
 ####### Guarded Suspension会等待if条件
 
 ####### Balking不会等待
+
+##### 标准写法
+
+###### 互斥锁方案
+
+###### valatile方案
+
+####### 适用于没有原子性要求时
 
 ##### 示例
 
@@ -1929,6 +2058,7 @@ https://github.com/apache/incubator-dubbo/blob/master/dubbo-remoting/dubbo-remot
 boolean changed=false;
 // 自动存盘操作
 void autoSave(){
+
   synchronized(this){
     if (!changed) {
       return;
@@ -1982,7 +2112,7 @@ public class RouterTable {
       return;
     }
     changed = false;
-    // 将路由表写入本地文件
+    // 将路由表写入本地"文件"
     this.save2Local();
   }
   
@@ -2134,7 +2264,7 @@ try {
 
 ##### 概念
 
-###### Thread-per-Message模式会频繁创建销毁线程，影响性能
+###### Thread-per-Message模式的问题：会频繁创建销毁线程，影响性能
 
 ###### 用阻塞队列做任务池、创建固定数量的线程消费队列中的任务
 
@@ -2174,6 +2304,10 @@ try {
 ####### 其实就是线程池！
 
 ###### 类比：车间工人
+
+##### 注意
+
+###### 死锁问题（同一个线程池的任务一定要相互独立）
 
 ##### 示例
 
@@ -2291,11 +2425,13 @@ class Logger {
 
 ###### 阶段2：线程T2响应终止指令
 
+###### 终止指令：interrupt()方法、终止标志位
+
 ##### 原理
 
 ###### 只能从Runnable状态进入Terminated状态
 
-###### 通过 interrupt()方法转到到Runnable
+###### 通过 interrupt()方法能转到Runnable
 
 ##### 要点
 
