@@ -164,6 +164,20 @@ https://www.continuousdeliveryconsulting.com/blog/organisat
 
 ####### 对公共组件的配置进行调整
 
+##### 类别
+
+###### properties
+
+每一行配置对应一条 Item 记录
+
+###### yml, yaml
+
+一个 Namespace 仅仅对应一条 Item 记录。
+
+###### json
+
+###### xml
+
 #### item
 
 ##### 表示可配置项
@@ -407,83 +421,255 @@ https://github.com/ctripcorp/apollo/wiki/Portal-%E5%AE%9E%E7%8E%B0%E7%94%A8%E6%8
 
 ## 源码
 
-### 创建App
+### 创建
+
+#### 创建App
 
 http://www.iocoder.cn/Apollo/portal-create-app/
 
-#### Portal: AppController
+##### Portal: AppController
 
-##### AppService
+###### AppService
 
-###### 是否已存在？appRepository.findByAppId
+####### 是否已存在？appRepository.findByAppId
 
-###### 创建：AppRepository
+####### 创建：AppRepository
 
-###### 创建AppNS: AppNamespaceService
+####### 创建AppNS: AppNamespaceService
 
-###### initAppRoles
+####### initAppRoles
 
-###### Tracer.logEvent: CREATE_APP
+####### Tracer.logEvent: CREATE_APP
 
-##### EventPublisher
+###### EventPublisher
 
-###### > CreationListener
+####### > CreationListener
 
-####### AdminServiceAPI.crreatAPP
+######## AdminServiceAPI.crreatAPP
 
-######## 同步到Config DB
+######### 同步到Config DB
 
-######### Q: 如何保证一致性？
+########## Q: 如何保证一致性？
 
-######## RetryableRestTemplate
+######### RetryableRestTemplate
 
-##### RolePermission
+###### RolePermission
 
-#### Admin: AppController
+##### Admin: AppController
 
-##### 是否已存在？appService.findOne
+###### 是否已存在？appService.findOne
 
-##### 创建：adminService.createNewApp
+###### 创建：adminService.createNewApp
 
-###### 保存：appService.save
+####### 保存：appService.save
 
-####### appRepository
+######## appRepository
 
-####### auditService 审计入库
+######## auditService 审计入库
 
-###### APP默认NS: appNamespaceService.createDefaultAppNamespace
+####### APP默认NS: appNamespaceService.createDefaultAppNamespace
 
-###### APP默认集群：clusterService.createDefaultCluster
+####### APP默认集群：clusterService.createDefaultCluster
 
-###### 集群默认NS：namespaceService.instanceOfAppNamespaces
+####### 集群默认NS：namespaceService.instanceOfAppNamespaces
 
-### 创建Cluster
+#### 创建Cluster
 
 http://www.iocoder.cn/Apollo/portal-create-cluster/
 
-#### Portal: ClusterController
+##### Portal: ClusterController
 
-##### ClusterService
+###### ClusterService
 
-###### AdminServiceAPI.ClusterAPI#create
+####### AdminServiceAPI.ClusterAPI#create
 
-####### 同步到Config DB
+######## 同步到Config DB
 
-###### 注意这里并没有保存到Portal DB!
+####### 注意这里并没有保存到Portal DB!
 
-###### Tracer.logEvent: CREATE_CLUSTER
+####### Tracer.logEvent: CREATE_CLUSTER
 
-#### Admin: ClusterController
+##### Admin: ClusterController
 
-##### ClusterService
+###### ClusterService
 
-###### 创建Cluster
+####### 创建Cluster
 
-###### 创建NS
+####### 创建NS
 
-### 创建NameSpace
+#### 创建AppNamespace
 
 http://www.iocoder.cn/Apollo/portal-create-namespace/
+
+##### Portal: NamespaceController
+
+###### @PreAurthorize
+
+###### AppNamespaceService
+
+####### appNamespaceRepository
+
+####### 保存到PortalDB
+
+###### assignNamespaceRoleToOperator
+
+###### publishEvent: AppNamespaceCreationEvent
+
+####### CreationListener#onAppNamespaceCreationEvent
+
+####### AdminServiceAPI.NamespaceAPI
+
+####### 同步到ConfigDB
+
+##### Admin: AppNamespaceController
+
+###### 校验重复
+
+###### 存盘
+
+#### 关联Namespace
+
+http://www.iocoder.cn/Apollo/portal-associate-namespace/
+
+##### Portal: NamespaceController
+
+###### NamespaceService
+
+####### AdminServiceAPI.NamespaceAPI
+
+####### 保存到ConfigDB
+
+##### Admin: NamespaceController
+
+#### 创建Item
+
+http://www.iocoder.cn/Apollo/portal-create-item/
+
+##### Portal: ItemController
+
+/apps/{appId}/envs/{env}/clusters/{clusterName}/namespaces/{namespaceName}/item
+
+###### ConfigService.createItem
+
+####### AdminServiceAPI.ItemAPI
+
+####### 保存到ConfigDB
+
+####### Tracer.logEvent: MODIFY_NAMESPACE
+
+##### Admin: ItemController
+
+/apps/{appId}/clusters/{clusterName}/namespaces/{namespaceName}/items
+
+###### ItemService
+
+####### 校验重复
+
+####### 保存
+
+###### CommitService
+
+### 发布
+
+#### 限制修改人
+
+##### @PreAcquireNamespaceLock
+
+##### NamespaceAcquireLockAspect
+
+##### NamespaceUnlockAspect
+
+#### 限制发布人
+
+##### ReleaseService.publish()
+
+###### checkLock
+
+#### 发布配置
+
+##### Portal: ReleaseController
+
+/apps/{appId}/envs/{env}/clusters/{clusterName}/namespaces/{namespaceName}/releases	
+
+###### ReleaseService.publish
+
+####### AdminServiceAPI.ReleaseAPI
+
+####### Tracer.logEvent: RELEASE_NAMESPACE
+
+###### ApplicationEventPublisher: ConfigPublishEvent
+
+##### Admin: ReleaseController
+
+/apps/{appId}/clusters/{clusterName}/namespaces/{namespaceName}/releases
+
+###### ReleaseService.publish
+
+####### checkLock
+
+####### getNamespaceItems --> 获取Item map
+
+####### findLatestActiveRelease：获取上一次发布
+
+####### 正常发布：masterRelease
+
+######## createRelease
+
+######## createReleaseHistory
+
+####### 若为灰度：则mergeFromMasterAndPublishBranch
+
+###### find cluster name
+
+####### 子Namespace：说明是灰度发布
+
+###### MessageSender
+
+messageSender.sendMessage(
+
+ReleaseMessageKeyGenerator.generate(appId, messageCluster, namespaceName),
+                              Topics.APOLLO_RELEASE_TOPIC);
+
+####### 基于数据库ReleaseMessage表实现的队列
+
+Config Service 有一个线程会每秒扫描一次 ReleaseMessage 表，看看是否有新的消息记录
+
+####### DatabaseMessageSender
+
+######## Tracer.logEvent: ReleaseMessage
+
+######## Tracer.newTransaction
+
+Tracer.newTransaction("Apollo.AdminService", "sendMessage")
+
+
+######## releaseMessageRepository.save()
+
+######## BlockingQueue<Long> toClean.offer()
+
+####### 持续清理ReleaseMessage
+
+########  DatabaseMessageSender.cleanExecutorService
+
+######## 删除 releaseMessageRepository.findFirst100ByMessageAndIdLessThanOrderByIdAsc(
+
+##### Config Service定期扫描
+
+###### MessageScannerConfiguration
+
+###### ReleaseMessageScanner
+
+####### 获取bizConfig扫描频率
+
+####### 获取最大ReleaseMessage编号
+
+####### scheduleWithFixedDelay
+
+######## scanAndSendMessages
+
+######### 获取上次扫描后的最多500条记录
+
+######### ReleaseMessageListener.handleMessage
 
 ## 参考
 
