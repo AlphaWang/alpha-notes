@@ -233,3 +233,60 @@ connector.getService().getContainer().getPipeline().getFirst().invoke(request, r
 ###### 结束后：最后一个valve会调用Filter.doFilter()链，最终调到Servlet.service()
 
 ###### Wrapper -> Filter -> DispatcherServlet -> Controller
+
+### 请求流转图
+
+####  
+
+## LifeCycle
+
+### 目的：实现tomcat一键式启停
+
+#### 父组件init()方法里 创建子组件、并调用子组件的init()
+
+#### 组合模式 
+
+### LifeCycle接口
+
+#### init / start / stop / destroy
+
+#### LifeCycleBase抽象基类
+
+##### init()：模板方法
+
+```java
+@Override
+public final synchronized void init()  {
+  //1. 状态检查
+  if (!state.equals(LifecycleState.NEW)) {
+    invalidTransition(Lifecycle.BEFORE_INIT_EVENT);
+  }
+
+  try {
+    //2. 触发 INITIALIZING 事件的监听器
+    setStateInternal(LifecycleState.INITIALIZING, null, false);
+        
+    //3. 调用具体子类的初始化方法
+    initInternal();
+        
+    //4. 触发 INITIALIZED 事件的监听器
+    setStateInternal(LifecycleState.INITIALIZED, null, false);
+        
+  } catch (Throwable t) {
+     ...
+  }
+}
+
+```
+
+##### 触发监听器
+
+### LifecycleListener
+
+#### 监听状态变化
+
+#### 方便扩展新功能
+
+##### server.xml中添加监听器
+
+#### 观察者模式
