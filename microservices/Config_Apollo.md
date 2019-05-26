@@ -569,7 +569,7 @@ http://www.iocoder.cn/Apollo/portal-create-item/
 
 ###### CommitService
 
-### 发布
+### 权限
 
 #### 限制修改人
 
@@ -585,91 +585,245 @@ http://www.iocoder.cn/Apollo/portal-create-item/
 
 ###### checkLock
 
-#### 发布配置
+### 发布配置
 
-##### Portal: ReleaseController
+#### Portal: ReleaseController
 
 /apps/{appId}/envs/{env}/clusters/{clusterName}/namespaces/{namespaceName}/releases	
 
-###### ReleaseService.publish
+##### ReleaseService.publish
 
-####### AdminServiceAPI.ReleaseAPI
+###### AdminServiceAPI.ReleaseAPI
 
-####### Tracer.logEvent: RELEASE_NAMESPACE
+###### Tracer.logEvent: RELEASE_NAMESPACE
 
-###### ApplicationEventPublisher: ConfigPublishEvent
+##### ApplicationEventPublisher: ConfigPublishEvent
 
-##### Admin: ReleaseController
+#### Admin: ReleaseController
 
 /apps/{appId}/clusters/{clusterName}/namespaces/{namespaceName}/releases
 
-###### ReleaseService.publish
+##### ReleaseService.publish
 
-####### checkLock
+###### checkLock
 
-####### getNamespaceItems --> 获取Item map
+###### getNamespaceItems --> 获取Item map
 
-####### findLatestActiveRelease：获取上一次发布
+###### findLatestActiveRelease：获取上一次发布
 
-####### 正常发布：masterRelease
+###### 正常发布：masterRelease
 
-######## createRelease
+####### createRelease
 
-######## createReleaseHistory
+####### createReleaseHistory
 
-####### 若为灰度：则mergeFromMasterAndPublishBranch
+###### 若为灰度：则mergeFromMasterAndPublishBranch
 
-###### find cluster name
+##### find cluster name
 
-####### 子Namespace：说明是灰度发布
+###### 子Namespace：说明是灰度发布
 
-###### MessageSender
+##### MessageSender
 
 messageSender.sendMessage(
 
 ReleaseMessageKeyGenerator.generate(appId, messageCluster, namespaceName),
                               Topics.APOLLO_RELEASE_TOPIC);
 
-####### 基于数据库ReleaseMessage表实现的队列
+###### 基于数据库ReleaseMessage表实现的队列
 
 Config Service 有一个线程会每秒扫描一次 ReleaseMessage 表，看看是否有新的消息记录
 
-####### DatabaseMessageSender
+###### DatabaseMessageSender
 
-######## Tracer.logEvent: ReleaseMessage
+####### Tracer.logEvent: ReleaseMessage
 
-######## Tracer.newTransaction
+####### Tracer.newTransaction
 
 Tracer.newTransaction("Apollo.AdminService", "sendMessage")
 
 
-######## releaseMessageRepository.save()
+####### releaseMessageRepository.save()
 
-######## BlockingQueue<Long> toClean.offer()
+####### BlockingQueue<Long> toClean.offer()
 
-####### 持续清理ReleaseMessage
+###### 持续清理ReleaseMessage
 
-########  DatabaseMessageSender.cleanExecutorService
+#######  DatabaseMessageSender.cleanExecutorService
 
-######## 删除 releaseMessageRepository.findFirst100ByMessageAndIdLessThanOrderByIdAsc(
+####### 删除 releaseMessageRepository.findFirst100ByMessageAndIdLessThanOrderByIdAsc(
 
-##### Config Service定期扫描
+#### Config Service定期扫描
 
-###### MessageScannerConfiguration
+##### MessageScannerConfiguration
 
-###### ReleaseMessageScanner
+##### ReleaseMessageScanner
 
-####### 获取bizConfig扫描频率
+###### 获取bizConfig扫描频率
 
-####### 获取最大ReleaseMessage编号
+###### 获取最大ReleaseMessage编号
 
-####### scheduleWithFixedDelay
+###### scheduleWithFixedDelay
 
-######## scanAndSendMessages
+####### scanAndSendMessages
 
-######### 获取上次扫描后的最多500条记录
+######## 获取上次扫描后的最多500条记录
 
-######### ReleaseMessageListener.handleMessage
+######## ReleaseMessageListener.handleMessage
+
+######### 参见下一条
+
+#### Config Service通知配置变化
+
+##### NotificationControllerV2
+
+###### implements ReleaseMessageListener
+
+##### 处理客户端轮询
+
+###### 接口
+
+####### /notifications/v2
+
+####### 返回值：DeferredResult
+
+DeferredResult<ResponseEntity<List<ApolloConfigNotification>>> 
+
+###### 流程
+
+####### 过滤 ApolloConfigNotification Map
+
+######## normalized归一化处理ns：大小写统一
+
+会存储到DeferredResultWrapper中，以便返回结果时找到归一化之前的namespace
+
+######## 去除.properties结尾
+
+####### 组装 Watch Key Multimap
+
+######## WatchKeysUtil
+
+######## key: Namespace name, value: watch key
+
+####### 获取最新 ReleaseMessage 列表
+
+######## ReleaseMessageServiceWithCache
+
+####### 获取最新 ApolloConfigNotification 列表
+
+######## 遍历namespace集合
+
+######## 判断是否有更新：服务端通知编号 是否大于客户端通知编号
+
+####### 如有新ApolloConfigNotification，设置结果，结束长轮询
+
+####### 如无新ApolloConfigNotification，注册deferredResults，等待配置更新通知
+
+##### 监听配置变更 handleMessage()
+
+###### 获取被修改的Namespace
+
+###### 获取并创建DeferredResultWrapper 列表
+
+####### 避免并发问题？
+
+###### largeNotificationBatchExecutorService异步通知
+
+###### DeferredResultWrapper.setResult 结束长轮询
+
+### 灰度发布
+
+### 客户端源码
+
+#### Client轮询配置
+
+##### 定时轮询：RemoteConfigRepository
+
+###### Config Service: ConfigController
+
+/configs/{appId}/{clusterName}/{namespace:.+}
+
+####### 前置处理
+
+######## 移除.properties
+
+######## normalize
+
+####### 获取Release：ConfigService.loadConfig
+
+######## 灰度 > 普通
+
+######## 指定cluster > IDC cluster > 默认 cluster
+
+####### 获取公共类型NS下的Release
+
+####### 后置处理
+
+######## audit release
+
+######## Tracer.logEvent: Apollo.Config.Found
+
+###### 初始化
+
+####### trySync
+
+######## 初次配置初始化缓存
+
+######## loadApolloConfig
+
+######### 限流
+
+######### getConfigServices
+
+######### assembleQueryConfigUrl
+
+######### doGet
+
+####### schedulePeriodicRefresh
+
+######## 定时刷新配置：定期sync()
+
+####### scheduleLongPollingRefresh
+
+######## 把自己注册到RemoteConfigLongPollService，实现实时通知
+
+######## onLongPollNotified()
+
+######### 同步配置
+
+######### sync()
+
+##### 长轮询：RemoteConfigLongPollService
+
+###### 目的
+
+####### 长轮询 /notifications/v2 接口
+
+####### 如果新通知，则触发RemoteConfigRepository
+
+###### doLongPollingRefresh
+
+####### 限流
+
+####### 获取config service 地址
+
+####### doGet
+
+####### 如果有新通知
+
+######## updateNotifications
+
+######## updateRemoteNotifications
+
+######## notify()
+
+######### RemoteConfigRepository. onLongPollNotified()
+
+####### 如果没有新通知
+
+######## 重置config service地址
+
+######### 实现下次请求不同的config service
 
 ## 参考
 
