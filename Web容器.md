@@ -160,6 +160,26 @@ server.xml 的层次结构
 
 ###### 表示一个引擎，用来管理多个虚拟主机
 
+###### 维护子容器Host表：HashMap<String, Container> children
+
+###### 负责触发Host.pipeline，将请求转发给Host自容器来处理
+
+```java
+final class StandardEngineValve extends ValveBase {
+
+  public final void invoke(Request request, Response response) {
+  
+    // 拿到请求中的 Host 容器
+    Host host = request.getHost();
+  
+    // 调用 Host Pipeline 中的第一个 Valve
+    host.getPipeline().getFirst().invoke(request, response);
+  }
+  
+}
+
+```
+
 ##### Host
 
 ###### 表示一个虚拟主机
@@ -290,3 +310,29 @@ public final synchronized void init()  {
 ##### server.xml中添加监听器
 
 #### 观察者模式
+
+## 管理组件
+
+### 启动过程
+
+#### 1. startup.sh
+
+##### 运行启动类Bootstrap
+
+#### 2. Bootstrap
+
+##### 初始化类加载器，实例化Catalina
+
+#### 3. Catalina 
+
+##### 解析server.xml，创建Server组件，调用其start()
+
+#### 4. Server
+
+##### 维护Service数组，调用Service.start()
+
+##### 数组动态扩容
+
+#### 5. Service
+
+##### 维护Connector数组、Engine实例，调用Engine/Connector.start()
