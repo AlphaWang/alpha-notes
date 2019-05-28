@@ -811,6 +811,66 @@ mongoTemplate.insertAll(list)
 
 ## Spring Boot
 
+### 六大特性
+
+#### 创建独立的Spring应用
+
+##### 运行方式
+
+###### mvn spring-boot:run
+
+前提：
+```xml
+<parent>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-parent</artifactId>
+</parent>  
+  
+```
+
+
+###### 可执行 JAR
+
+前提：
+```xml
+<build>
+  <plugins><plugin>
+    <artifactId>spring-boot-maven-plugin</artifactId> 
+```
+
+
+####### 原理
+
+######## JarLauncher
+
+######## MANIFEST.MF
+
+######### Main-Class = JarLauncher
+
+######### Start-Class
+
+#### 嵌入Web容器
+
+#### 提供固化的starter依赖，简化构建配置
+
+##### 两种方式
+
+###### spring-boot-starter-parent
+
+####### <parent>
+
+####### 缺点：单继承
+
+###### spring-boot-dependencies
+
+####### <dependency>
+
+#### 自动装配
+
+#### 提供运维特性
+
+#### 无需代码生成
+
 ### 模式注解
 
 #### 派生性
