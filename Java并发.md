@@ -192,6 +192,23 @@ if (lock.tryLock() || lock.tryLock(timeout, unit))
 
 ######## 不可用stop()!! 其不会释放锁
 
+### AQS
+
+AbstractQueuedSynchronizer
+
+
+#### 内部实现
+
+##### volatile int state
+
+###### 表示状态
+
+##### FIFO 队列
+
+###### 实现多线程建竞争和等待
+
+##### 各种基于CAS的操作方法，以及抽象acquire() / release()
+
 ## 分工
 
 ### Executor / 线程池
@@ -242,6 +259,18 @@ if (lock.tryLock() || lock.tryLock(timeout, unit))
 
 ####### 丢弃最老的任务
 
+#### Executors创建线程池
+
+##### newCachedThreadPool()
+
+##### newFixedThreadPool()
+
+##### newSingleThreadExecutor()
+
+##### newSingleThreadScheduledExecutor()
+
+##### newWorkStealingPool()
+
 #### 线程池大小设置
 
 ##### CPU密集型任务：线程池尽可能小
@@ -251,6 +280,8 @@ if (lock.tryLock() || lock.tryLock(timeout, unit))
 ##### IO密集型任务：线程池尽可能大
 
 ###### CPU核数 * (1 + IO耗时/CPU耗时 )
+
+###### CPU核数 * (1 + 等待时间/工作时间 )
 
 #### 与一般池化资源的区别
 
@@ -384,6 +415,8 @@ class RunnableAdapter<T> implements Callable<T> {
 
 #### 创建
 
+##### = Future + 回调
+
 ##### 四个静态方法
 
 ###### runAsync(Runnable, [Executor])
@@ -406,6 +439,10 @@ class RunnableAdapter<T> implements Callable<T> {
 
 ####### 如何获取异步操作的执行结果
 
+######## get()方法
+
+######## join()方法
+
 ##### CompletionStage
 
 ###### 描述串行关系
@@ -426,6 +463,8 @@ HELLO WORLD QQ
 ####### thenApply(Function..), xxAsync
 
 ######## 返回值CompletionStage<R>
+
+######## 转换，类似map
 
 ####### thenAccept(Consumer..), xxAsync
 
@@ -518,6 +557,10 @@ System.out.println(f0.join());
 ######## 类似finally
 
 ######## 支持返回结果
+
+#### 扩展
+
+##### RxJava Observable继承了CompletableFuture的概念，用来处理数据流
 
 ### CompletionService
 
@@ -1133,6 +1176,8 @@ class ThreadLocal<T>{
 
 #### CAS
 
+##### see Atomic原子类
+
 #### Copy-on-Write
 
 ##### 场景
@@ -1202,19 +1247,13 @@ public class RouterTable {
 
 ###### 基本类型 
 
-####### AtomicLong
-
-####### AtomicInteger
-
-####### AutomicBoolean
+####### AtomicLong、AtomicInteger、AtomicBoolean
 
 ###### 数组类型
 
 AtomicIntegerArray, AtomicLongArray, Atomic ReferenceArray
 
-####### AtomicIntegerArray
-
-####### AtomicReferenceArray
+####### AtomicIntegerArray、AtomicReferenceArray
 
 ###### 引用类型
 
@@ -1325,7 +1364,8 @@ boolean compareAndSet(
 - CAS的原理是拿期望的值和原本的一个值作比较，如果相同则更新成新的值。
 
 
-`UnSafe.objectFieldOffset()` 方法是一个本地方法，这个方法是用来拿到“原来的值”的内存地址，返回值是 valueOffset。另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
+`UnSafe.objectFieldOffset()` 是一个本地方法，用来拿到“原来的值”的内存地址，返回值是 valueOffset。
+另外 value 是一个volatile变量，在内存中可见，因此 JVM 可以保证任何时刻任何线程总能拿到该变量的最新值。
 
 ####### 只有 currentValue == expectedValue，才会将其更新为newValue
 
@@ -1357,7 +1397,7 @@ class SimulatedCAS {
 ``
 
 
-####### 真实示例代码：Unsafe.getAndAddLong()
+####### 示例：Unsafe.getAndAddLong()
 
 ```java
 public final long getAndAddLong(
@@ -1381,7 +1421,48 @@ native boolean compareAndSwapLong(
 
 ```
 
+####### 示例：AtomicLongFieldUpdater实现锁
+
+```java
+private static final AtomicLongFieldUpdater<AtomicBTreePartition> lockFieldUpdater =
+        AtomicLongFieldUpdater.newUpdater(AtomicBTreePartition.class, "lock");
+
+private void acquireLock(){
+    long t = Thread.currentThread().getId();
+    while (!lockFieldUpdater.compareAndSet(this, 0L, t)){
+        // 等待一会儿，数据库操作可能比较慢
+         …
+    }
+}
+
+public class AtomicBTreePartition {
+private volatile long lock;
+public void acquireLock(){}
+public void releaseeLock(){}
+}
+
+
+```
+
+######## Java9 优化：VarHandle
+
+```java
+private static final VarHandle HANDLE = MethodHandles.lookup().findStaticVarHandle
+        (AtomicBTreePartition.class, "lock");
+
+private void acquireLock(){
+    long t = Thread.currentThread().getId();
+    while (!HANDLE.compareAndSet(this, 0L, t)){
+        // 等待一会儿，数据库操作可能比较慢
+        …
+    }
+}
+
+```
+
 ###### ABA 问题
+
+####### AtomicStampedReference
 
 #### 并发容器
 
@@ -1419,6 +1500,8 @@ native boolean compareAndSwapLong(
 
 ####### ArrayBlockingQueue
 
+######## 利用锁来保证互斥
+
 ####### LinkedBlockingQueue
 
 ####### 区别：LinkedBQ 头尾操作使用不同的锁，吞吐量会更高
@@ -1443,7 +1526,158 @@ native boolean compareAndSwapLong(
 
 ###### SynchronousQueue
 
+https://stackoverflow.com/questions/8591610/when-should-i-use-synchronousqueue
+
+the SynchronousQueue is more of a handoff, whereas the LinkedBlockingQueue just allows a single element. The difference being that the put() call to a SynchronousQueue will not return until there is a corresponding take() call, but with a LinkedBlockingQueue of size 1, the put() call (to an empty queue) will return immediately.
+
+I can't say that i have ever used the SynchronousQueue directly myself, but it is the default BlockingQueue used for the Executors.newCachedThreadPool() methods. It's essentially the BlockingQueue implementation for when you don't really want a queue (you don't want to maintain any pending data).
+
+
 ####### cachedThreaPool的默认队列
+
+####### 避免任务排队，put后必须被另一个线程take：size == 1
+
+####### 更像是一个在线程间进行移交的机制，而非真正的队列
+
+###### Disruptor
+
+####### 用法
+
+
+```java
+// 自定义 Event
+class LongEvent {
+  private long value;
+}
+
+// 指定 RingBuffer 大小,
+// 必须是 2 的 N 次方
+int bufferSize = 1024;
+
+// 构建 Disruptor
+Disruptor<LongEvent> disruptor 
+= new Disruptor<>(
+  LongEvent::new,//EventFactory
+  bufferSize,
+  DaemonThreadFactory.INSTANCE);
+
+// 注册事件处理器
+disruptor.handleEventsWith(
+  (event, sequence, endOfBatch) ->System.out.println("E: "+event));
+
+// 启动 Disruptor
+disruptor.start();
+
+// 获取 RingBuffer
+RingBuffer<LongEvent> ringBuffer = disruptor.getRingBuffer();
+
+// 生产 Event
+ByteBuffer bb = ByteBuffer.allocate(8);
+for (long l = 0; true; l++){
+  bb.putLong(0, l);
+  // 生产者生产消息
+  ringBuffer.publishEvent(
+    (event, sequence, buffer) -> event.set(buffer.getLong(0)), bb);
+  Thread.sleep(1000);
+}
+
+```
+
+####### 优点
+
+######## 内存分配更合理
+
+- RingBuffer数据结构，数组元素初始化时一次性全部创建。
+- 对象循环利用，避免频繁GC
+
+
+######### RingBuffer：元素内存地址尽可能连续
+
+初始化所有元素，内存地址大概率是连续的；
+利用`程序的空间局部性原理`
+
+```java
+for (int i=0; i<bufferSize; i++){
+  //entries[] 就是 RingBuffer 内部的数组
+  //eventFactory 就是前面示例代码中传入的 LongEvent::new
+  entries[BUFFER_PAD + i] 
+    = eventFactory.newInstance();
+}
+
+```
+
+######### publishEvent()发布Event时，并不创建新对象，而是修改原对象
+
+######## 避免伪共享，提升缓存利用率
+
+伪共享：由于共享缓存行，导致缓存无效的场景
+
+```
+// 前：填充 56 字节
+class LhsPadding{
+    long p1, p2, p3, p4, p5, p6, p7;
+}
+class Value extends LhsPadding{
+    volatile long value;
+}
+// 后：填充 56 字节
+class RhsPadding extends Value{
+    long p9, p10, p11, p12, p13, p14, p15;
+}
+class Sequence extends RhsPadding{
+  // 省略实现
+}
+
+```
+
+######### 缓存行填充技术
+
+######### Java8可用 @sun.misc.Contended避免伪共享
+
+######## 无锁算法，性能好
+
+入队算法：
+
+```java
+// 生产者获取 n 个写入位置
+do {
+  //cursor 类似于入队索引，指的是上次生产到这里
+  current = cursor.get();
+  // 目标是在生产 n 个
+  next = current + n;
+  
+  // 减掉一个循环
+  long wrapPoint = next - bufferSize;
+  // 获取上一次的最小消费位置
+  long cachedGatingSequence = gatingSequenceCache.get();
+  
+  // 没有足够的空余位置
+  if (wrapPoint>cachedGatingSequence || cachedGatingSequence>current){
+    // 重新计算所有消费者里面的最小值位置
+    long gatingSequence = Util.getMinimumSequence(
+        gatingSequences, current);
+        
+    // 仍然没有足够的空余位置，出让 CPU 使用权，重新执行下一循环
+    if (wrapPoint > gatingSequence){
+      LockSupport.parkNanos(1);
+      continue;
+    }
+    
+    // 从新设置上一次的最小消费位置
+    gatingSequenceCache.set(gatingSequence);
+  } else if (cursor.compareAndSet(current, next)){
+    // 获取写入位置成功，跳出循环
+    break;
+  }
+} while (true);
+
+```
+
+######### 入队：如果没有空余位置，出让CPU使用权，然后重新计算
+
+######### 入队：如果有空余位置，通过CAS设置入队索引
+
+######## 支持批量消费
 
 ### 互斥锁
 
@@ -1640,11 +1874,13 @@ try {
 
 ####### 写锁
 
-######## 类似WriteLock
+######## writeLock()，类似WriteLock
 
 ####### 悲观读锁
 
-######## 类似ReadLock
+######## readLock()，类似ReadLock
+
+当多个线程同时读的同时，写操作会被阻塞
 
 ####### 乐观读
 
@@ -2502,3 +2738,103 @@ shutdownNow:
 - 线程池中正在执行的、以及队列中的任务会作为返回值返回。
 
 #### 毒丸对象：终止生产者消费者服务
+
+## 案例
+
+### Guava RateLimiter 限流器
+
+#### 应用
+
+```java
+// 限流器流速：2 个请求 / 秒
+RateLimiter limiter = 
+  RateLimiter.create(2.0);
+// 执行任务的线程池
+ExecutorService es = Executors.newFixedThreadPool(1);
+
+// 记录上一次执行时间
+prev = System.nanoTime();
+// 测试执行 20 次
+for (int i=0; i<20; i++){
+  // 限流器限流
+  limiter.acquire();
+  // 提交任务异步执行
+  es.execute(()->{
+    long cur=System.nanoTime();
+    // 打印时间间隔：毫秒
+    System.out.println(
+      (cur-prev)/1000_000);
+    prev = cur;
+  });
+}
+
+输出结果：
+...
+500
+499
+499
+500
+499
+
+```
+
+##### RateLimiter.acquire()
+
+#### 原理
+
+##### 令牌通、漏桶
+
+##### 实现1：用定时器+生产者消费者？高并发时定时器精度误差大
+
+##### 实现2：记录并动态计算下一令牌发放的时间
+
+```java
+class SimpleLimiter {
+  // 下一令牌产生时间
+  long next = System.nanoTime();
+  // 发放令牌间隔：纳秒
+  long interval = 1000_000_000;
+
+// 预占令牌，返回能够获取令牌的时间
+  synchronized long reserve(long now){
+    // 请求时间在下一令牌产生时间之后
+    // 重新计算下一令牌产生时间
+    if (now > next){
+      // 将下一令牌产生时间重置为当前时间
+      next = now;
+    }
+    
+    // 能够获取令牌的时间
+    long at=next;
+    // 设置下一令牌产生时间
+    next += interval;
+    // 返回线程需要等待的时间
+    return Math.max(at, 0L);
+  }
+  
+  
+  // 申请令牌
+  void acquire() {
+    // 申请令牌时的时间
+    long now = System.nanoTime();
+    // 预占令牌
+    long at=reserve(now);
+    long waitTime=max(at-now, 0);
+    // 按照条件等待
+    if(waitTime > 0) {
+      try {
+        TimeUnit.NANOSECONDS
+          .sleep(waitTime);
+      }catch(){
+      }
+    }
+  }
+}
+
+```
+
+### Netty 网络应用框架
+
+### Disruptor 队列
+
+### HikariCP 数据库连接池
