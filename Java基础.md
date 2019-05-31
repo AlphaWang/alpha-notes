@@ -1414,6 +1414,47 @@ NIO: 10000
 
 (x) --> (?:x)
 
+#### ArrayList vs. LinkedList
+
+##### ArrayList
+
+```java
+  // 默认初始化容量
+    private static final int DEFAULT_CAPACITY = 10;
+    // 对象数组
+    transient Object[] elementData; 
+    // 数组长度
+    private int size;
+
+```
+
+为什么是transient数组?  
+自己实现了writeObject/readObject，避免序列化数组中的空yuan'su
+
+###### 数组，动态扩容
+
+###### 新增：add(E), add(index, E)
+
+####### 触发扩容，数组拷贝
+
+###### 删除：remove(index)
+
+####### 数组拷贝
+
+##### LinkedList
+
+```java
+    transient int size = 0;
+    transient Node<E> first;
+    transient Node<E> last;
+```
+
+
+
+###### for循环：每一次都要遍历半个list
+
+###### iterator循环：性能更好
+
 ### 多线程调优
 
 ### JVM调优
