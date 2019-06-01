@@ -851,6 +851,20 @@ mongoTemplate.insertAll(list)
 
 #### 嵌入Web容器
 
+##### Tomcat
+
+###### Servlet/Reactive：TomcatWebServer Bean
+
+##### Jetty
+
+###### Servlet/Reactive：JettyWebServer Bean
+
+##### Undertow
+
+###### Servlet：UndertowServletWebServer Bean
+
+###### Reactive：UndertowWebServer Bean
+
 #### 提供固化的starter依赖，简化构建配置
 
 ##### 两种方式
@@ -867,6 +881,29 @@ mongoTemplate.insertAll(list)
 
 #### 自动装配
 
+##### 作用
+
+###### 根据所依赖的jar，尝试自动配置spring application
+
+##### 实现
+
+###### 1.@EnableAutoConfiguration
+
+或 @SpringBootApplication == 
+- @ComponentScan
+- @EnableAutoConfiguration
+- @SpringBootConfiguration -> @Configuration
+
+###### 2. 自定义XXAutoConfiguration
+
+####### 条件判断 @Conditional
+
+####### 模式注解 @Configuration
+
+####### @Enable模块：@EnableXX -> *ImportSelector -> *Configuration
+
+###### 3.配置spring.factories (SpringFactoriesLoader)
+
 #### 提供运维特性
 
 #### 无需代码生成
@@ -876,20 +913,6 @@ mongoTemplate.insertAll(list)
 #### 派生性
 
 #### 层次性
-
-### 自动装配
-
-#### 1.@EnableAutoConfiguration
-
-#### 2. XXAutoConfiguration
-
-##### 条件判断 @Conditional
-
-##### 模式注解 @Configuration
-
-##### @Enable模块：@EnableXX -> *ImportSelector -> *Configuration
-
-#### 3.配置spring.factories (SpringFactoriesLoader)
 
 ### 源码
 
