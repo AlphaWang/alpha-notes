@@ -336,3 +336,145 @@ public final synchronized void init()  {
 #### 5. Service
 
 ##### 维护Connector数组、Engine实例，调用Engine/Connector.start()
+
+## Jetty
+
+### 架构
+
+#### 架构图
+
+#####  
+
+#### 与tomcat的区别
+
+##### Jetty没有service概念
+
+##### Jetty connector是被所有handler共享的
+
+##### Jetty connector共享一个全局线程池，而tomcat每个连接器都有自己的线程池
+
+### Connector: NIO
+
+#### Acceptor
+
+```java
+public void accept(int acceptorID) {
+  ServerSocketChannel serverChannel = _acceptChannel;
+  
+  if (serverChannel != null && serverChannel.isOpen())
+  {
+    // 这里是阻塞的
+    SocketChannel channel = serverChannel.accept();
+    
+    // 执行到这里时说明有请求进来了
+    accepted(channel);
+  }
+}
+
+private void accepted(SocketChannel channel){
+  channel.configureBlocking(false);
+  Socket socket = channel.socket();
+  configure(socket);
+  
+  // _manager 是 SelectorManager 实例，里面管理了所有的 Selector 实例
+  _manager.accept(channel);
+}
+
+```
+
+
+##### 在全局线程池中执行
+
+##### 作用：通过阻塞方式接受连接、连接成功后将SocketChannel设为非阻塞，交给Selector处理
+
+#### Selector
+
+```java
+public void accept(SelectableChannel channel, Object attachment) {
+  // 选择一个 ManagedSelector 来处理 Channel
+  ManagedSelector selector = chooseSelector();
+  // 提交一个任务 Accept 给 ManagedSelector
+  selector.submit(selector.new Accept(channel, attachment));
+}
+
+```
+
+##### Selector.register()：把Channel注册到Selector上，拿到一个SelectionKey
+
+```java
+ _key = _channel.register(selector, SelectionKey.OP_ACCEPT, this);
+
+```
+
+
+##### 创建EndPoint和Connection，并跟SelectionKey绑在一起
+
+```java
+private void createEndPoint(SelectableChannel channel, SelectionKey selectionKey) {
+  //1. 创建 Endpoint
+  EndPoint endPoint = _selectorManager.newEndPoint(channel, this, selectionKey);
+    
+  //2. 创建 Connection
+  Connection connection = _selectorManager.newConnection(channel, endPoint, selectionKey.attachment());
+    
+  //3. 把 Endpoint、Connection 和 SelectionKey 绑在一起
+  endPoint.setConnection(connection);
+  selectionKey.attach(endPoint);
+    
+}
+
+```
+
+##### EndPoint返回一个Runnable ，扔给线程池执行
+
+#### Connection
+
+##### 上一步的Runnable会调用Connection回调方法来处理请求
+
+getEndPoint().fillInterested(_readCallback);
+
+
+###### 使用回调函数来模拟异步IO
+
+##### Connection调用Handler进行业务处理
+
+#### 流程图
+
+##### 
+
+### Handler：负责处理请求
+
+#### 协调 Handler
+
+##### 负责将请求路由到一组Handler中去
+
+##### 例如`HandlerCollection`
+
+#### 过滤器 Handler
+
+##### 自己处理请求，处理完后转发到下一个Handler
+
+##### 例如`HandlerWrapper`
+
+#### 内容 Handler
+
+##### 真正调用Servlet来处理请求，生成响应
+
+##### 例如`ServletHandler`
+
+#### 启动示例
+
+```java
+// 新建一个 WebAppContext，WebAppContext 是一个 Handler
+WebAppContext webapp = new WebAppContext();
+webapp.setContextPath("/mywebapp");
+webapp.setWar("mywebapp.war");
+
+// 将 Handler 添加到 Server 中去
+server.setHandler(webapp);
+
+// 启动 Server
+server.start();
+server.join();
+
+```
