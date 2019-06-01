@@ -1055,161 +1055,219 @@ https://mailinator.blogspot.com/2009/06/beautiful-race-condition.html
 16: } 
 ```
 
-### 函数式编程
+## 函数式编程
 
-#### Lambda表达式
+### Lambda表达式
 
-##### 闭包
+#### 闭包
 
-###### lambda表达式引用的是值，而非变量：虽然可以省略 final
+##### lambda表达式引用的是值，而非变量：虽然可以省略 final
 
-###### 给变量多次赋值，然后再lambda中引用它，会编译报错
+##### 给变量多次赋值，然后再lambda中引用它，会编译报错
 
-##### 函数接口
+#### 函数接口
 
-###### 即lambda表达式的类型
+##### 即lambda表达式的类型
 
-#### 流
+### 流 Stream
 
-##### 实现机制
+#### 实现机制
 
-###### 惰性求值方法
+##### 惰性求值方法
 
-####### 返回Stream
+###### 返回Stream
 
-###### 及早求值方法
+##### 及早求值方法
 
-####### 返回另一个值
+###### 返回另一个值
 
-##### stream() 常用流操作
+#### 中间操作 Intermediate Operation
 
-###### collect(toList())
+懒操作
 
-####### 根据Stream里的值生成一个列表
 
-###### map
+##### 无状态
+
+###### filter()
+
+###### map()
 
 ####### 转换：将Stream中的值转换成一个新的流
 
-###### filter
-
-###### flatMap
+###### flatMap()
 
 ####### 用Stream替换值，然后将多个Stream连接成一个Stream
 
-###### min / max(Comparator)
+###### peek()
+
+##### 有状态
+
+###### distinct()
+
+###### sorted()
+
+###### limit()
+
+###### skip()
+
+####  终结操作 Terminal Operation
+
+##### 非短路操作
+
+###### forEach()
 
 ###### reduce
 
 ####### 从一组值中生成一个值
 
-##### 收集器
+###### min / max(Comparator)
 
-###### 原生方法
+###### count()
 
-####### 转成其他收集器：toCollection(TreeSet::new)
+###### collect(toList())
 
-####### 统计信息：maxBy, averagingInt
+####### 根据Stream里的值生成一个列表
 
-####### 数据分块：partitionBy
+##### 短路操作
 
-####### 数据分组：groupingBy
+###### anyMatch() / allMatch() / noneMatch()
 
-####### 拼接字符串：joining(分隔符，前缀，后缀)
+###### findFirst() / findAny()
 
-####### 定制：reducing(identity, mapper, op)
+#### Collectors
 
-###### 自定义收集器
+##### 原生方法
 
-####### supplier() -> Supplier，后续操作的初始值
+###### 转成其他收集器：toCollection(TreeSet::new)
 
-####### accumulator() -> BiConsumer，结合之前操作的结果和当前值，生成并返回新值
+###### 统计信息：maxBy, averagingInt
 
-####### combine() -> BinaryOperator，合并
+###### 数据分块：partitionBy
 
-####### finisher() -> Function，转换，返回最终结果
+###### 数据分组：groupingBy
 
-##### 并行流
+###### 拼接字符串：joining(分隔符，前缀，后缀)
 
-###### 创建
+###### 定制：reducing(identity, mapper, op)
 
-####### Collection.parallelStream()
+##### 自定义收集器
 
-####### Stream.parallel()
+###### supplier() -> Supplier，后续操作的初始值
 
-###### 实现
+###### accumulator() -> BiConsumer，结合之前操作的结果和当前值，生成并返回新值
 
-####### 使用ForkJoinPool
+###### combine() -> BinaryOperator，合并
 
-###### 场景
+###### finisher() -> Function，转换，返回最终结果
 
-####### 数据量越大，每个元素处理时间越长，并行就越有意义
+#### 并行流
 
-####### 数据结构要易于分解
+##### 创建
 
-######## 好：ArrayList, IntStream
+###### Collection.parallelStream()
 
-######## 一般：HashSet，TreeSet
+###### Stream.parallel()
 
-######## 差：LinkedList，Streams.iterate，BufferedReader.lines
+##### 实现
 
-####### 避开有状态操作
+###### 使用ForkJoinPool
 
-######## 无状态：map，filter，flatMap
+##### 场景
 
-######## 有状态：sorted，distinct，limit
+###### 数据量越大，每个元素处理时间越长，并行就越有意义
 
-###### Arrays提供的并行操作
+###### 数据结构要易于分解
 
-####### Arrays.parallelSetAll
+####### 好：ArrayList, IntStream
 
-######## 并行设置value
+####### 一般：HashSet，TreeSet
 
-####### Arrays.parallelPrefix
+####### 差：LinkedList，Streams.iterate，BufferedReader.lines
 
-######## 将每一个元素替换为当前元素与前驱元素之和
+###### 避开有状态操作
 
-####### Arrays.parallelSort
+####### 无状态：map，filter，flatMap
 
-#### 工具
+####### 有状态：sorted，distinct，limit
 
-##### 类库
+##### Arrays提供的并行操作
 
-###### mapToInt().summaryStatistics()
+###### Arrays.parallelSetAll
 
-####### 数值统计：min, max, average, sum
+####### 并行设置value
 
-###### @FunctionalInterface
+###### Arrays.parallelPrefix
 
-####### 强制javac检查接口是否符合函数接口标准
+####### 将每一个元素替换为当前元素与前驱元素之和
 
-##### 默认方法
+###### Arrays.parallelSort
 
-###### 继承
+#### 性能提升
 
-####### 类中重写的方法胜出
+##### 执行无状态中间操作时，只是创建一个Stage来标识用户的操作；最终由终结操作触发
 
-###### 多重继承
+###### Stage的构成
 
-####### 可用InterfaceName.super.method() 来指定某个父接口的默认方法
+####### 数据来源
 
-###### 用处
+####### 操作
 
-####### Collection增加了stream方法，如果没有默认方法，则每个Collection子类都要修改
+####### 回调函数
 
-##### 方法引用
+##### 执行有状态中间操作时，需要等待迭代处理完所有的数据
 
-###### 等价于lambda表达式，需要时才会调用
+##### 并行处理
 
-##### 集合类
+###### 终结操作的实现方式与串行不一样
 
-###### computeIfAbsent()
+###### 使用ForkJoin对stream处理进行分片
 
-###### forEach()
+###### 适用场景
 
-#### 范例
+####### 多核、大数据量
 
-##### 封装：log.debug(Suppiler)
+否则 常规迭代 性能更好，串行迭代次之
+
+
+### 工具
+
+#### 类库
+
+##### mapToInt().summaryStatistics()
+
+###### 数值统计：min, max, average, sum
+
+##### @FunctionalInterface
+
+###### 强制javac检查接口是否符合函数接口标准
+
+#### 默认方法
+
+##### 继承
+
+###### 类中重写的方法胜出
+
+##### 多重继承
+
+###### 可用InterfaceName.super.method() 来指定某个父接口的默认方法
+
+##### 用处
+
+###### Collection增加了stream方法，如果没有默认方法，则每个Collection子类都要修改
+
+#### 方法引用
+
+##### 等价于lambda表达式，需要时才会调用
+
+#### 集合类
+
+##### computeIfAbsent()
+
+##### forEach()
+
+### 范例
+
+#### 封装：log.debug(Suppiler)
 
 ```java
 // AS-IS
@@ -1227,7 +1285,7 @@ public void debug(Supplier msg) {
 }
 ```
 
-##### 孤独的覆盖：ThreadLocal.withInitial(Supplier)
+#### 孤独的覆盖：ThreadLocal.withInitial(Supplier)
 
 ```java
 // AS-IS
@@ -1242,7 +1300,7 @@ new ThreadLocal<Object>() {
 ThreadLocal.withInitial(() -> db.get());
 ```
 
-##### 重复：传入ToLongFunction
+#### 重复：传入ToLongFunction
 
 例如遍历订单中的item详情数目
 ```java
@@ -1262,9 +1320,9 @@ public long countAmount() {
 }
 ```
 
-#### 调试
+### 调试
 
-##### peek()
+#### peek()
 
 peek()让你能查看每个值，同时能继续操作流。
 ```java
@@ -1350,6 +1408,22 @@ NIO: 10000
 #### tips
 
 ##### `cp -r contrib/vim/* ~/.vim` 将vim语法高亮
+
+## NIO
+
+http://ifeve.com/java-nio-all/
+
+### 核心概念
+
+#### Channel
+
+#### Buffer
+
+#### Selector
+
+##### 用来检测Channel上的IO事件；例如连接就绪、读就绪
+
+##### 循环调用 SelectionKey select()
 
 ## 性能调优
 
@@ -1454,6 +1528,8 @@ NIO: 10000
 ###### for循环：每一次都要遍历半个list
 
 ###### iterator循环：性能更好
+
+#### 用Stream遍历集合
 
 ### 多线程调优
 
