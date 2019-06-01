@@ -249,7 +249,7 @@ AbstractQueuedSynchronizer
 
 ###### AbortPolicy
 
-####### 抛出 RejectedExecutionException，默认值
+####### 默认值，抛出 RejectedExecutionException
 
 ####### 慎用，因为并不强制要catch exception，很容易被忽略
 
@@ -1484,9 +1484,7 @@ private void acquireLock(){
 
 ###### ConcurrentSkipListMap
 
-####### 有序
-
-####### 跳表，性能高
+####### 有序；跳表，性能高
 
 ##### Set
 
@@ -2838,3 +2836,144 @@ class SimpleLimiter {
 ### Disruptor 队列
 
 ### HikariCP 数据库连接池
+
+#### FastList
+
+##### 用处
+
+###### 类似ArrayLIst，用于在Connection中保存Statement列表
+
+##### 性能提升
+
+###### 逆序删除时，不用顺序查找，而用逆序查找
+
+#### ConcurrentBag
+
+##### 用处
+
+###### 维护数据库连接
+
+##### 构成
+
+```java
+// 用于存储所有的数据库连接
+CopyOnWriteArrayList<T> sharedList;
+
+// 线程本地存储中的数据库连接
+ThreadLocal<List<Object>> threadList;
+
+// 等待数据库连接的线程数
+AtomicInteger waiters;
+
+// 分配数据库连接的工具
+SynchronousQueue<T> handoffQueue;
+
+```
+
+###### CopyOnWriteArrayList  sharedList 保存所有连接
+
+###### ThreadLocal  threadList 保存连接
+
+###### AtomicInteger waiters 保存等待连接的线程数
+
+###### SynchronousQueue 用来分配数据库连接
+
+##### add() 创建连接
+
+```java
+// 将空闲连接添加到队列
+void add(final T bagEntry){
+  // 加入共享队列
+  sharedList.add(bagEntry);
+  
+  // 如果有等待连接的线程，
+  // 则通过 handoffQueue 直接分配给等待的线程
+  while (waiters.get() > 0 
+  && bagEntry.getState() == STATE_NOT_IN_USE 
+  && !handoffQueue.offer(bagEntry)) {
+      yield();
+  }
+}
+
+```
+
+###### 放入sharedList
+
+###### 如有waiters，则SynchronousQueue.offer()
+
+##### borrow() 获取连接
+
+```java
+T borrow(long timeout, final TimeUnit timeUnit){
+
+  //1. 先查看线程本地存储是否有空闲连接
+  final List<Object> list = threadList.get();
+  
+  for (int i = list.size() - 1; i >= 0; i--) {
+    final Object entry = list.remove(i);
+    final T bagEntry = weakThreadLocals ? ((WeakReference<T>) entry).get() : (T) entry;
+    // 线程本地存储中的连接也可以被窃取，
+    // 所以需要用 CAS 方法防止重复分配
+    if (bagEntry != null 
+      && bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
+      return bagEntry;
+    }
+  }
+
+  //2. 线程本地存储中无空闲连接，则从共享队列中获取
+  final int waiting = waiters.incrementAndGet();
+  try {
+    for (T bagEntry : sharedList) {
+      // 如果共享队列中有空闲连接，则返回
+      if (bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
+        return bagEntry;
+      }
+    }
+    
+    
+    //3. 共享队列中没有连接，则需要等待
+    timeout = timeUnit.toNanos(timeout);
+    do {
+      final long start = currentTime();
+      final T bagEntry = handoffQueue.poll(timeout, NANOSECONDS);
+      if (bagEntry == null 
+        || bagEntry.compareAndSet(STATE_NOT_IN_USE, STATE_IN_USE)) {
+          return bagEntry;
+      }
+      // 重新计算等待时间
+      timeout -= elapsedNanos(start);
+    } while (timeout > 10_000);
+    // 超时没有获取到连接，返回 null
+    return null;
+  } finally {
+    waiters.decrementAndGet();
+  }
+}
+
+```
+
+###### 优先取ThreadLocal连接
+
+####### CAS status
+
+###### 再取sharedList 
+
+####### CAS status
+
+###### 都取不到，则等待
+
+####### SynchronousQueue.poll()
+
+####### CAS status
+
+##### requite() 释放连接
+
+###### 更新status
+
+###### 如有waiter，则SynchronousQueue.offer()
+
+###### 否则保存到 ThreadLocal
+
+##### 性能提升
+
+###### 用ThreadLocal避免部分并发问题
