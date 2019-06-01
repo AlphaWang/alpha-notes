@@ -1537,146 +1537,6 @@ I can't say that i have ever used the SynchronousQueue directly myself, but it i
 
 ####### 更像是一个在线程间进行移交的机制，而非真正的队列
 
-###### Disruptor
-
-####### 用法
-
-
-```java
-// 自定义 Event
-class LongEvent {
-  private long value;
-}
-
-// 指定 RingBuffer 大小,
-// 必须是 2 的 N 次方
-int bufferSize = 1024;
-
-// 构建 Disruptor
-Disruptor<LongEvent> disruptor 
-= new Disruptor<>(
-  LongEvent::new,//EventFactory
-  bufferSize,
-  DaemonThreadFactory.INSTANCE);
-
-// 注册事件处理器
-disruptor.handleEventsWith(
-  (event, sequence, endOfBatch) ->System.out.println("E: "+event));
-
-// 启动 Disruptor
-disruptor.start();
-
-// 获取 RingBuffer
-RingBuffer<LongEvent> ringBuffer = disruptor.getRingBuffer();
-
-// 生产 Event
-ByteBuffer bb = ByteBuffer.allocate(8);
-for (long l = 0; true; l++){
-  bb.putLong(0, l);
-  // 生产者生产消息
-  ringBuffer.publishEvent(
-    (event, sequence, buffer) -> event.set(buffer.getLong(0)), bb);
-  Thread.sleep(1000);
-}
-
-```
-
-####### 优点
-
-######## 内存分配更合理
-
-- RingBuffer数据结构，数组元素初始化时一次性全部创建。
-- 对象循环利用，避免频繁GC
-
-
-######### RingBuffer：元素内存地址尽可能连续
-
-初始化所有元素，内存地址大概率是连续的；
-利用`程序的空间局部性原理`
-
-```java
-for (int i=0; i<bufferSize; i++){
-  //entries[] 就是 RingBuffer 内部的数组
-  //eventFactory 就是前面示例代码中传入的 LongEvent::new
-  entries[BUFFER_PAD + i] 
-    = eventFactory.newInstance();
-}
-
-```
-
-######### publishEvent()发布Event时，并不创建新对象，而是修改原对象
-
-######## 避免伪共享，提升缓存利用率
-
-伪共享：由于共享缓存行，导致缓存无效的场景
-
-```
-// 前：填充 56 字节
-class LhsPadding{
-    long p1, p2, p3, p4, p5, p6, p7;
-}
-class Value extends LhsPadding{
-    volatile long value;
-}
-// 后：填充 56 字节
-class RhsPadding extends Value{
-    long p9, p10, p11, p12, p13, p14, p15;
-}
-class Sequence extends RhsPadding{
-  // 省略实现
-}
-
-```
-
-######### 缓存行填充技术
-
-######### Java8可用 @sun.misc.Contended避免伪共享
-
-######## 无锁算法，性能好
-
-入队算法：
-
-```java
-// 生产者获取 n 个写入位置
-do {
-  //cursor 类似于入队索引，指的是上次生产到这里
-  current = cursor.get();
-  // 目标是在生产 n 个
-  next = current + n;
-  
-  // 减掉一个循环
-  long wrapPoint = next - bufferSize;
-  // 获取上一次的最小消费位置
-  long cachedGatingSequence = gatingSequenceCache.get();
-  
-  // 没有足够的空余位置
-  if (wrapPoint>cachedGatingSequence || cachedGatingSequence>current){
-    // 重新计算所有消费者里面的最小值位置
-    long gatingSequence = Util.getMinimumSequence(
-        gatingSequences, current);
-        
-    // 仍然没有足够的空余位置，出让 CPU 使用权，重新执行下一循环
-    if (wrapPoint > gatingSequence){
-      LockSupport.parkNanos(1);
-      continue;
-    }
-    
-    // 从新设置上一次的最小消费位置
-    gatingSequenceCache.set(gatingSequence);
-  } else if (cursor.compareAndSet(current, next)){
-    // 获取写入位置成功，跳出循环
-    break;
-  }
-} while (true);
-
-```
-
-######### 入队：如果没有空余位置，出让CPU使用权，然后重新计算
-
-######### 入队：如果有空余位置，通过CAS设置入队索引
-
-######## 支持批量消费
-
 ### 互斥锁
 
 #### synchronized
@@ -2833,7 +2693,151 @@ class SimpleLimiter {
 
 ### Netty 网络应用框架
 
+#### Reactor 模式
+
 ### Disruptor 队列
+
+#### 用法
+
+
+```java
+// 自定义 Event
+class LongEvent {
+  private long value;
+}
+
+// 指定 RingBuffer 大小,
+// 必须是 2 的 N 次方
+int bufferSize = 1024;
+
+// 构建 Disruptor
+Disruptor<LongEvent> disruptor 
+= new Disruptor<>(
+  LongEvent::new,//EventFactory
+  bufferSize,
+  DaemonThreadFactory.INSTANCE);
+
+// 注册事件处理器
+disruptor.handleEventsWith(
+  (event, sequence, endOfBatch) ->System.out.println("E: "+event));
+
+// 启动 Disruptor
+disruptor.start();
+
+// 获取 RingBuffer
+RingBuffer<LongEvent> ringBuffer = disruptor.getRingBuffer();
+
+// 生产 Event
+ByteBuffer bb = ByteBuffer.allocate(8);
+for (long l = 0; true; l++){
+  bb.putLong(0, l);
+  // 生产者生产消息
+  ringBuffer.publishEvent(
+    (event, sequence, buffer) -> event.set(buffer.getLong(0)), bb);
+  Thread.sleep(1000);
+}
+
+```
+
+##### disruptor.getRingBuffer().publishEvent()
+
+##### Disruptor.handleEventsWith()
+
+#### 优点
+
+##### 内存分配更合理
+
+- RingBuffer数据结构，数组元素初始化时一次性全部创建。
+- 对象循环利用，避免频繁GC
+
+
+###### RingBuffer：元素内存地址尽可能连续
+
+初始化所有元素，内存地址大概率是连续的；
+利用`程序的空间局部性原理`
+
+```java
+for (int i=0; i<bufferSize; i++){
+  //entries[] 就是 RingBuffer 内部的数组
+  //eventFactory 就是前面示例代码中传入的 LongEvent::new
+  entries[BUFFER_PAD + i] 
+    = eventFactory.newInstance();
+}
+
+```
+
+###### publishEvent()发布Event时，并不创建新对象，而是修改原对象
+
+##### 避免伪共享，提升缓存利用率
+
+伪共享：由于共享缓存行，导致缓存无效的场景
+
+```
+// 前：填充 56 字节
+class LhsPadding{
+    long p1, p2, p3, p4, p5, p6, p7;
+}
+class Value extends LhsPadding{
+    volatile long value;
+}
+// 后：填充 56 字节
+class RhsPadding extends Value{
+    long p9, p10, p11, p12, p13, p14, p15;
+}
+class Sequence extends RhsPadding{
+  // 省略实现
+}
+
+```
+
+###### 缓存行填充技术
+
+###### Java8可用 @sun.misc.Contended避免伪共享
+
+##### 无锁算法，性能好
+
+入队算法：
+
+```java
+// 生产者获取 n 个写入位置
+do {
+  //cursor 类似于入队索引，指的是上次生产到这里
+  current = cursor.get();
+  // 目标是在生产 n 个
+  next = current + n;
+  
+  // 减掉一个循环
+  long wrapPoint = next - bufferSize;
+  // 获取上一次的最小消费位置
+  long cachedGatingSequence = gatingSequenceCache.get();
+  
+  // 没有足够的空余位置
+  if (wrapPoint>cachedGatingSequence || cachedGatingSequence>current){
+    // 重新计算所有消费者里面的最小值位置
+    long gatingSequence = Util.getMinimumSequence(
+        gatingSequences, current);
+        
+    // 仍然没有足够的空余位置，出让 CPU 使用权，重新执行下一循环
+    if (wrapPoint > gatingSequence){
+      LockSupport.parkNanos(1);
+      continue;
+    }
+    
+    // 从新设置上一次的最小消费位置
+    gatingSequenceCache.set(gatingSequence);
+  } else if (cursor.compareAndSet(current, next)){
+    // 获取写入位置成功，跳出循环
+    break;
+  }
+} while (true);
+
+```
+
+###### 入队：如果没有空余位置，出让CPU使用权，然后重新计算
+
+###### 入队：如果有空余位置，通过CAS设置入队索引
+
+##### 支持批量消费
 
 ### HikariCP 数据库连接池
 
