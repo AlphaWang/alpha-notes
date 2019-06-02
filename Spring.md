@@ -156,6 +156,78 @@ prototype --> request, 动态代理
 
 ##### BeanPostProcessor
 
+### 注解驱动编程
+
+#### 1.x: 启蒙
+
+##### @Transactional, @ManagedResource
+
+#### 2.x: 过渡
+
+##### @Autowired, @Qualifier, @Component, @Controller, @RequestMapping
+
+##### @Resource, @PostConstuct, @PreDestroy
+
+##### 问题：没有直接提供驱动注解的spring应用上下文，并仍需要XML配置驱动
+
+<context:annotation-config>
+注册Annotation处理器
+
+<context:component-scan>
+负责扫描相对于classpath下指定base package，寻找被标注的类，注册为Bean
+
+#### 3.x: 黄金
+
+##### @Configuration, @Import, @ImportResource
+
+##### @Profile("!production")
+
+##### @RequestHeader, @ResponseBody
+
+###### MVC强化
+
+##### Environment接口，@PropertySource
+
+###### 配置属性API
+
+##### @EnableXXX
+
+###### 手动装配
+
+##### @ComponentScan
+
+###### 替换xml
+
+##### 引入 AnnotationConfigApplicationContext
+
+#### 4.x: 完善
+
+##### @Conditional
+
+###### 完善条件装配
+
+##### @Repeatable，@ComponentScans
+
+###### 完善重复标注
+
+##### @EventListener
+
+###### 新增事件监听注解
+
+##### @AliasFor
+
+###### 解决派生注解属性的限制
+
+##### @RestController, @GetMapping
+
+###### Rest完善
+
+#### 5.x
+
+##### @Indexed
+
+###### 为模式注解添加索引，提高启动性能
+
 ### DI
 
 #### Bean Factory
@@ -904,9 +976,48 @@ mongoTemplate.insertAll(list)
 
 ###### 3.配置spring.factories (SpringFactoriesLoader)
 
-#### 提供运维特性
+```properties
+# Auto Configure
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+org.springframework.boot.autoconfigure.admin.SpringApplicationAdminJmxAutoConfiguration,\
+org.springframework.boot.autoconfigure.aop.AopAutoConfiguration,\
+org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration,\
+org.springframework.boot.autoconfigure.batch.BatchAutoConfiguration,\
+org.springframework.boot.autoconfigure.cache.CacheAutoConfiguration,\
+org.springframework.boot.autoconfigure.cassandra.CassandraAutoConfiguration,\
+```
+
+#### 提供运维特性 production-ready
+
+##### Actuator
+
+###### 端点
+
+####### /beans
+
+####### /conditions
+
+####### /env
+
+####### /health
+
+####### /info
+
+###### 配置
+
+####### management.endpoints.web.exposure.include=*
+
+##### 外部化配置
+
+###### @Value 注入
+
+###### Spring Environment读取
+
+###### @ConfigurationProperties 绑定到结构化对象
 
 #### 无需代码生成
+
+##### 规约大约配置
 
 ### 模式注解
 
@@ -914,34 +1025,32 @@ mongoTemplate.insertAll(list)
 
 #### 层次性
 
-### 源码
+### SpringApplication
 
-#### SpringApplication
+#### 准备阶段
 
-##### 准备阶段
+##### 配置 Spring Boot Bean 源		
 
-###### 配置 Spring Boot Bean 源		
-
-###### 推断Web应用类型
+##### 推断Web应用类型
 
 根据classpath
 
-###### 推断引导类
+##### 推断引导类
 
 根据 Main 线程执行堆栈判断实际的引导类
 
-###### 加载ApplicationContextInitializer
+##### 加载ApplicationContextInitializer
 
 spring.factorie
 
-###### 加载ApplicationListener
+##### 加载ApplicationListener
 
 spring.factories
 例如`ConfigFileApplicationListener`
 
-##### 运行阶段
+#### 运行阶段
 
-###### 加载监听器 SpringApplicationRunListeners
+##### 加载监听器 SpringApplicationRunListeners
 
 spring.factories
 getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, args))
@@ -949,22 +1058,22 @@ getSpringFactoriesInstances(SpringApplicationRunListener.class, types, this, arg
 `EventPublishingRunListener` 
 --> `SimpleApplicationEventMulticaster`
 
-####### EventPublishingRunListener
+###### EventPublishingRunListener
 
-####### SimpleApplicationEventMulticaster
+###### SimpleApplicationEventMulticaster
 
-###### 运行监听器 SpringApplicationRunListeners
+##### 运行监听器 SpringApplicationRunListeners
 
 listeners.starting();
 
-###### 创建应用上下文 ConfigurableApplicationContext
+##### 创建应用上下文 ConfigurableApplicationContext
 
 createApplicationContext()
 - NONE: `AnnotationConfigApplicationContext`
 - SERVLET: `AnnotationConfigServletWebServerApplicationContext`
 - REACTIVE: `AnnotationConfigReactiveWebServerApplicationContext` 
 
-###### 创建Environment
+##### 创建Environment
 
 getOrCreateEnvironment()
 - SERVLET: `StandardServletEnvironment`
