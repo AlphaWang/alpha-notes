@@ -2,7 +2,7 @@
 
 
 
-# 系统设计案例
+
 
 ## 信息流服务
 
@@ -128,7 +128,88 @@ TBD
 
 ## MQ 系统设计
 
+TBD
 
+
+
+
+
+## 会话缓存服务
+
+需求
+
+- 消除粘性会话 Sticky Session：单点问题，发布问题，难以水平扩展。
+
+**设计思路**
+
+- 四种常用会话技术：粘性会话、纯客户端会话、服务器共享会话，集中式会话。
+- sessionId 与 SessionServer的映射关系问题：一致性哈希不适用，因为服务器挂了会导致数据丢失；cookie 携带 server IP，如果读失败，则从DB加载数据、重新分配server IP。
+- SessionServer挂了怎么办：缓存写后（异步刷盘到DB）
+- 升级扩容 / 服务发现：
+
+**SessionServer 内部设计**
+
+- 两级缓存，平衡性能和容量：
+  - LRU内存缓存；
+  - 磁盘存储：存储不活跃的session，cache eviction后放入二级磁盘存储。value = 存储块ID + 位移；存储块整理线程，清理存储块中被删除的段。
+    --> 参考 Yahoo HaloDB
+- DB持久化（缓存写后异步刷盘，也可刷到集中式缓存，参考携程 x-pipe）
+  - 异步操作 如何保证一定成功？
+- LRU 缓存实现：
+  - Guava Cache --> Caffeine
+  - 线程安全：get/put - 写锁；size - 读锁
+  - 线程安全 + 高并发：分段锁 LruCache[] 
+
+**集群跨数据中心HA**
+
+- 摇摆策略：各数据中心互通、互相注册。
+- 双写策略：异步写入另一个数据中心。
+
+
+
+## 延迟任务队列
+
+- 周期性扫描任务表：select * from tasks where alert_after < now。同时计算下一次执行时间。
+
+- 开源：
+
+  - `db-scheduler`  
+  - `killbill notification queue` 
+  - `quartz` 重量
+  - `Xxl-job`
+  - `cron-utils` 工具类
+
+- 如何保证一个任务只被一个worker执行：
+
+  - 1) 乐观锁：所有worker都能获取任务，但只有第一个写入的才能写入成功。`update version = version + 1 where version = ? ` 
+  -  2) 每个节点只处理当前节点写入的任务（sticky polling）
+
+  
+
+
+
+## 轻量级锁
+
+- 乐观锁：基于版本号
+- 排它锁：
+  - 基于数据库：
+  - 如果获取锁后线程挂掉
+    - 超时机制：但有可能任务执行本来就很慢。
+    - 栅栏令牌（fencing token）：返回锁 + 令牌，令牌类似乐观锁version？
+  - 开源产品：`ShedLock`
+
+
+
+## 分布式限流系统
+
+- 常用算法
+  - 令牌桶：支持突发流量
+  - 漏桶算法
+  - 固定窗口计数器
+  - 滑动窗口计数器
+- 限流规则配置化、功能开关
+- 网关限流
+- 
 
 ## 数据迁移
 
