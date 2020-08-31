@@ -382,6 +382,23 @@ https://leetcode.com/problems/next-greater-element-i/
 - 受限的线性表
   - 入队 enqueue()
   - 出队 dequeue()
+- 接口
+
+```
+- Queue 的接口
+  - offer() / add()  
+  - poll() / remove()
+  - peek() / element() null / exception
+
+- Deque 的接口
+  - getFirst() / getLast()        : exception
+  - pollFirst() / pollLast()      : null
+  - removeFirst() / removeLast()  : exception
+  - addFirst() / addLast()
+  - offerFirst() / offerLast() : addFirst() + return true
+```
+
+
 
 **实现**
 
@@ -1138,8 +1155,9 @@ for (int i = 0; i < n; i++) {
   - 各桶数据分布较均匀
 
 - 性能
-  - 非稳定排序
-
+  
+- 非稳定排序
+  
 - 应用
 
   - 外部排序： 10GB订单 按金额排序
@@ -1224,6 +1242,7 @@ public void countingSort(int[] a, int n) {
 ###### 基数排序 Radix Sort
 
 - 思路
+  
   - 最低位开始，依次排序
 - 要求
   - 数据可以分割出独立的 “位”
@@ -1321,8 +1340,9 @@ TBD
 #### 二分查找
 
 - 复杂度
-  - O(logN): 极其高效
-
+  
+- O(logN): 极其高效
+  
 - 中点的计算
 
   >  (low + high / 2)  可能溢出
@@ -1362,8 +1382,9 @@ TBD
   - 空间复杂度：O(N)
 
 - 插入、删除
-  - 随机函数插入几级索引
-
+  
+- 随机函数插入几级索引
+  
 - 跳表 vs. 红黑树
 
   - 跳表还支持按区间查找：找到起始位置，然后往后遍历
@@ -1393,11 +1414,13 @@ TBD
   - 注意：加 Salt
 
 - 唯一标识
-  - 图片摘要：分区取N字节 + MD5
-
+  
+- 图片摘要：分区取N字节 + MD5
+  
 - 数据校验
-  - BT 种子文件
-
+  
+- BT 种子文件
+  
 - 散列函数
 - 负载均衡
   - Session Sticky
@@ -1431,6 +1454,7 @@ TBD
   > 每个字母用 26 进制转成十进制数
   >
   > 相邻子串的哈希值计算有共享部分，节约效率
+
   - 与子串哈希值比较
 
 - 复杂度：O(n)
@@ -1766,11 +1790,13 @@ https://www.baeldung.com/lmax-disruptor-concurrency
 例如按照URL进行规则匹配
 
 - 精确匹配
-  - KMP / BM / BF
-
+  
+- KMP / BM / BF
+  
 - 前缀匹配
-  - Trie 树
-
+  
+- Trie 树
+  
 - 模糊匹配
 
   - 回溯算法
@@ -1782,8 +1808,9 @@ https://www.baeldung.com/lmax-disruptor-concurrency
 - 固定时间窗口限流
 
 - 滑动时间窗口限流
-  - 循环队列
-
+  
+- 循环队列
+  
 - 更平滑的限流
 
   - 令牌桶
