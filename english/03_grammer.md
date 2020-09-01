@@ -40,6 +40,32 @@
 
 
 
+## 感叹句
+
+### What + n.
+
+演化1：
+
+- It is a terrible day!
+- What a terrible day it is!
+- What a day it is!
+- Waht a day!
+
+演化2：
+
+- This is a wonderful world.
+- What a wonderful world (this is)!
+
+演化3：
+
+- It is a surprise.
+- What a surprise (it is)!
+
+
+
+### How + adj. / adv.
+
+- How interesting!
 
 
 
@@ -47,6 +73,63 @@
 
 
 
+# 时态
+
+## 一般现在时
+
+谓语动词 = 原型 / 第三人称单数
+
+> - I **tell** you a secret.
+> - He **tells** you a secret.
+> - Your friend tells you a secret.
+
+
+
+**用法1：表示现在经常性习惯性的动作**
+
+- We have the English class **every day**.
+- I never get up early **on Sundays**.
+- I **sometimes** stay in bed until lunchtime.
+
+搭配频度副词：
+
+- Always, ususally, frequently, often
+- sometimes
+- Seldom, rarely, hardly, never.
+
+
+
+**用法2：表示现在的状态**
+
+- I am a teacher.
+- It's one o'clock.
+
+
+
+**用法3：表示永恒**
+
+- The earth is round.
+- The earth moves around the sun.
+- Practice makes perfect.
+
+
+
+## 现在进行时
+
+谓语动词 = am/is/are + doing
+
+**用法1：表示现在正在进行的事**
+
+- I **am having** breakfast now.
+- J.K. Rowling **is writing** another book this year.
+
+
+
+**用法2：表示将来确定要发生的事**
+
+- I **am coming** to see you.
+- We **are arriving** at ...
+- The old man **is dying**.
 
 
 
