@@ -14,7 +14,44 @@
 
 ### 主谓双宾
 
-> I tell you a secret.
+> I **tell** you a secret.
+
+双宾语 = 人 + 物。
+
+人 = 间接宾语，物 = 直接宾语。
+
+
+
+Q：哪些及物动词可以接双宾语？
+
+A：既能接人、又能接物的动词，例如
+
+- send
+- teach
+- lend
+- give
+- ask
+- tell
+- offer
+- cook
+- buy
+- get 
+- make
+- write
+- bring
+- show
+
+
+
+形式1：双宾语动词 + sb. + sth.
+
+形式2：双宾语动词 + sth. + to/for + sb.
+
+
+
+- A friendly waiter **taught** me a few words of Italian.
+- He **lent** me a book. = He **lent** a book to me.
+- I **cooked** him a meal. = I **cooked** a meal for him.
 
 ### 主谓宾补
 
@@ -130,6 +167,40 @@
 - I **am coming** to see you.
 - We **are arriving** at ...
 - The old man **is dying**.
+
+
+
+## 一般过去时
+
+形式：谓语动词 = 过去式 (did)
+
+> Last summer I **went** to Italy.
+
+注意：一定表示动作已结束
+
+- She had a boyfriend.
+- Tom was a student.
+
+
+
+## 现在完成时
+
+形式：have / has + 过去分词 (done)
+
+用法：现在的之前
+
+- He **has finished** the homework.
+- We **have learned** English for ten years.
+
+
+
+
+
+
+
+
+
+
 
 
 
