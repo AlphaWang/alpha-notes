@@ -77,6 +77,12 @@ A：既能接人、又能接物的动词，例如
 
 
 
+### 同位语
+
+- He has just bought an Australian car and has gone to Alice Springs, <u>a small town in the center of Australia.</u>
+
+
+
 ## 感叹句
 
 ### What + n.
@@ -185,6 +191,8 @@ A：既能接人、又能接物的动词，例如
 
 ## 现在完成时
 
+> I love you. Always have, always will.
+
 形式：have / has + 过去分词 (done)
 
 用法：现在的之前
@@ -194,7 +202,37 @@ A：既能接人、又能接物的动词，例如
 
 
 
+**现在完成时 vs. 一般过去时：**
 
+- 现在完成时：表示持续到现在（动作持续，或者影响持续）
+
+- 当表示现在之前“全部完成”，则可以换成一般过去时。
+
+  He **has finished** the homework. --> He **finished** the homework.
+
+- 但表示现在之前“部分完成”，不可以换成一般过去时。
+
+  We **have learned** English for ten years. --> We **learned** English for ten years. (x)
+
+
+
+**动词的过去式 vs. 过去分词**
+
+- 过去式：
+  - 一般过去时
+- 过去分词：
+  - 完成时态
+  - 被动语态
+  - 非谓语动词
+
+
+
+常用搭配：
+
+- just / already / ever / never
+- yet 
+- so far / up to now / up till now / before / lately
+- for + 一段时间
 
 
 
