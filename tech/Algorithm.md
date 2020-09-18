@@ -389,6 +389,9 @@ https://leetcode.com/problems/next-greater-element-i/
   - offer() / add()  
   - poll() / remove()
   - peek() / element() null / exception
+  
+- BlockingQueue
+  - put() / take()
 
 - Deque 的接口
   - getFirst() / getLast()        : exception
