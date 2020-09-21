@@ -362,6 +362,37 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 - They are also empathetic **about** **how** the product makes users feel and **how** those users benefit from using this product. They often dive straight to data about business and user metrics, getting their hands on this data however they can.
   -- about how...: about --> 介词；how --> 宾语从句
 
+#### 介词 + 时间
+
+**in**: 表示较长的一段时间内
+
+- in 1992 / January / Summer
+- in the morning / afternoon / evening
+- in 20 minutes' time : 将来时，20分钟之后
+
+**on**: 某一天
+
+- on Monday / July 7th
+- on Wednesday evening.
+- on the morning of July 7th.
+
+**at**: 在某一时间点
+
+- at 8 o' clock.
+- at midnight / noon / night
+
+其他：
+
+- before / after / since / until
+- during / for / by
+- from ... till/to ...
+
+
+
+#### 介词 + 地点
+
+
+
 ### 限定性定语从句 vs. 非限定性定语从句
 
 限定性
