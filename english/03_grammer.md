@@ -112,7 +112,25 @@ A：既能接人、又能接物的动词，例如
 
 
 
+## 被动句
 
+形式： be + done
+
+- done: 被动的动作
+- be: 被动的时间
+- be: 主语的单复数
+
+现在进行时的被动：am / is / are being done
+
+现在完成时的被动：have / has been done
+
+例句
+
+- 他每天被打。He **is beaten** every day.
+- 他昨天被打了。He **was beaten** yesterday.
+- 他明天将要被打。He **will be beaten** tomorrow.
+- 他现在正在被打。He **is being beaten** now.
+- 他现在已经被打了。He **has been beaten**.
 
 
 
