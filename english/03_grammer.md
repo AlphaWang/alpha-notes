@@ -280,6 +280,73 @@ A：既能接人、又能接物的动词，例如
 
 
 
+## 过去完成时
+
+形式：had + done
+
+用法：过去的之前（全部完成 / 部分完成）
+
+“过去完成时（过去的之前）”与“一般过去时（过去）”的搭配使用
+
+- When he **got** there, she was not there. She **had left**.
+- After he **(had) finished** work, he **went** home. 
+- As soon as the sun **had set**, we **returned** to our hotel.
+
+现在完成时 vs. 一般过去时 vs. 过去将来时
+
+- The plan **was** late... A few hours earlier, someone **had told** the police that thieves **would try** to steal the diamonds.
+
+
+
+## 一般将来时
+
+形式：
+
+- Shall + do
+
+- Will + do
+
+- Be(am/is/are) going to + do
+
+用法：现在的将来
+
+- I **will study** abroad.
+- I **am going to study** abroad.
+
+变否定 / 疑问
+
+- He **will not be** a teacher. / **Will he be** a teacher?
+- He **is not going to be** a teacher. / **Is** he **going to be** a teacher?
+
+
+
+## 将来进行时
+
+形式：Will be doing / Shall be doing.
+
+用法：将来某时正在进行 / 确定要发生的将来。
+
+- I **will be waiting** here at 10:00 tomorrow.
+- They **will be coming** by train.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 -------
 
 
@@ -368,7 +435,14 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 
 - I think **that** you are right.
 
+### 间接引语宾语从句
 
+- He said, 'I will go to Italy' -->
+  He said **(that) he would go** to Italy.
+- He said, 'I went to Italy' -->
+  He said **(that) he had gone** to Italy.
+- He said, 'Mr. H will see you' -->
+  He told me **(that) Mr. H would see me**.
 
 ### 动词宾语从句
 
@@ -438,20 +512,54 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 - 限定性：Why ship this first milestone, instead of choosing another one **that’s** a lot simpler to build?
   非限定：Why ship this first milestone, instead of choosing another one**, which** is a lot simpler to build? 
 
+
+
 ### 状语从句
 
-##### 让步状语从句：though / although
+#### 让步状语从句：though / although
 
 - **Although** I don’t like him, I agree he is a good manager.
 
-##### 条件状语从句
+#### 条件状语从句
 
 - **Once** teams have ingested open source software, they naturally customize it to their needs and organizations by adding new features.
 - xxx, **even if** they no longer fit the purpose.
 
-##### 时间状语从句
+#### 时间状语从句
 
 - **When** buying proprietary enterprise software, xxx
+
+#### 条件状语从句
+
+##### 真实条件句
+
+假设现在：
+
+- **If he is out**, I will call him tomorrow.
+- **If he is working**, I won't disturb him.
+
+假设过去：
+
+- **If** tall chimneys **were built** above sea level, the tunnel would be well-ventilated.
+
+假设将来：(主将从现！！！)
+
+- **If** it **rains** tomorrow, we will stay at home.
+
+
+
+注意主句的变化，有时不用将来时：
+
+- If he finds something wrong, **he may tell you**.
+- If you make a mistake, correct it.
+
+
+
+##### 虚拟条件句
+
+
+
+
 
 ### 表语从句
 
