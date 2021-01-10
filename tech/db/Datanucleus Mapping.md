@@ -137,7 +137,9 @@ public class MyClass {
 
 ## Auditing
 
+- @CreateTimestamp @UpdateTimestamp @CreateUser @UpdateUser
 - 如何定义当前用户：datanucleus.CurrentUser
+- Q: 无法和 Embbed Object 配合使用？
 
 ```java
 @PersistenceCapable
