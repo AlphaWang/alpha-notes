@@ -177,7 +177,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 现在进行时
 
-谓语动词 = am/is/are + doing
+**谓语动词 = am/is/are + doing**
 
 **用法1：表示现在正在进行的事**
 
@@ -196,7 +196,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 一般过去时
 
-形式：谓语动词 = 过去式 (did)
+**形式：谓语动词 = 过去式 (did)**
 
 > Last summer I **went** to Italy.
 
@@ -211,7 +211,7 @@ A：既能接人、又能接物的动词，例如
 
 > I love you. Always have, always will.
 
-形式：have / has + 过去分词 (done)
+**形式：have  + 过去分词 (done)**
 
 用法：现在的之前
 
@@ -231,6 +231,14 @@ A：既能接人、又能接物的动词，例如
 - 但表示现在之前“部分完成”，不可以换成一般过去时。
 
   We **have learned** English for ten years. --> We **learned** English for ten years. (x)
+
+
+
+**现在完成时 vs. 现在完成进行时**
+
+- 都表示现在的之前
+- 现在完成时：强调完成的结果
+- 现在完成进行时：强调持续进行的过程
 
 
 
@@ -254,9 +262,19 @@ A：既能接人、又能接物的动词，例如
 
 
 
+## 现在完成进行时
+
+强调持续进行的过程
+
+**形式：have + been doing**
+
+- We have been working hard for several months.
+
+
+
 ## 过去进行时
 
-形式： was / were + doing.
+**形式： was / were + doing.**
 
 常搭配 when / while / as.
 
@@ -272,7 +290,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 过去将来时
 
-形式：Would do. Was / were going to do
+**形式：Would do. Was / were going to do**
 
 用法：过去的将来
 
@@ -282,7 +300,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 过去完成时
 
-形式：had + done
+**形式：had + done**
 
 用法：过去的之前（全部完成 / 部分完成）
 
@@ -302,11 +320,11 @@ A：既能接人、又能接物的动词，例如
 
 形式：
 
-- Shall + do
+- **Shall + do**
 
-- Will + do
+- **Will + do**
 
-- Be(am/is/are) going to + do
+- **Be(am/is/are) going to + do**
 
 用法：现在的将来
 
@@ -322,7 +340,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 将来进行时
 
-形式：Will be doing / Shall be doing.
+**形式：Will be doing / Shall be doing.**
 
 用法：将来某时正在进行 / 确定要发生的将来。
 
@@ -351,7 +369,7 @@ A：既能接人、又能接物的动词，例如
 
 
 
-## 分词短语
+# 分词短语
 
 ### 分词短语做时间状语
 
