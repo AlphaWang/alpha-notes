@@ -85,7 +85,7 @@ A：既能接人、又能接物的动词，例如
 
 ## 感叹句
 
-### What + n.
+**What + n.**
 
 演化1：
 
@@ -106,7 +106,7 @@ A：既能接人、又能接物的动词，例如
 
 
 
-### How + adj. / adv.
+**How + adj. / adv.**
 
 - How interesting!
 
@@ -268,7 +268,8 @@ A：既能接人、又能接物的动词，例如
 
 **形式：have + been doing**
 
-- We have been working hard for several months.
+- We **have been working** hard for several months.
+- Since then, they **have been trying** to find out how the fire began.
 
 
 
@@ -353,11 +354,20 @@ A：既能接人、又能接物的动词，例如
 
 
 
+# 非谓语动词
 
+- doing
+- done
+- to do
 
+## 作用
 
+### 1. 相当于名词，做 主语、宾语、表语 （doing / to do）
 
-
+- **Fishing** is my favourite sport.
+- **To fish** is my favourite sport.
+- It was his job **to repair** bicycles. - 形式主语
+  To repaire bicycles was his job.
 
 
 
@@ -371,7 +381,7 @@ A：既能接人、又能接物的动词，例如
 
 # 分词短语
 
-### 分词短语做时间状语
+### 分词短语 --> 做时间状语
 
 所谓状语，顾名思义，就是对动作的状态进行描述的句子成分，可以是单词（副词）、短语（分词短语）或句子（状语从句）。
 
@@ -379,26 +389,27 @@ A：既能接人、又能接物的动词，例如
 
 - When **coming** with ideas, product-minded engineers don’t just get these from thin air.
 
-### 分词短语做目的状语
+### 分词短语 --> 做目的状语
 
 - They often go back to the product manager, **suggesting** a completely different feature to be built.
 
-### 现在分词作结果状语
+### 现在分词 --> 作结果状语
 
 - On one extreme, engineers often forget about many of these, (结果) **having** to come back to addressing them, after (时间) **getting** feedback from people testing the product or end users.
 
-### 现在分词作主语
+### 现在分词 --> 作主语
 
 - On the other hand, **handling** all possible edge cases in a new product or feature can take a lot of time.
 
-### 过去分词作前置定语
+### 过去分词 --> 作前置定语
 
 - She says she’s got a **broken** heart. (=a heart that has been broken).
 - a **much-travelled** man.
 - **recently**-**arrived** immigrants
 - Bring **well-backed** product suggestions to the table
 
-- 
+
+
 
 # 虚拟语气
 
@@ -532,22 +543,22 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 
 
 
-### 状语从句
+## 状语从句
 
-#### 让步状语从句：though / although
+### 让步状语从句：though / although
 
 - **Although** I don’t like him, I agree he is a good manager.
 
-#### 条件状语从句
+### 条件状语从句
 
 - **Once** teams have ingested open source software, they naturally customize it to their needs and organizations by adding new features.
 - xxx, **even if** they no longer fit the purpose.
 
-#### 时间状语从句
+### 时间状语从句
 
 - **When** buying proprietary enterprise software, xxx
 
-#### 条件状语从句
+### 条件状语从句
 
 ##### 真实条件句
 
@@ -577,9 +588,36 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 
 
 
+### 状语从句的省略
+
+done 做状语，表示被动
+
+- Because she was **punished**, she burst into tears.
+  Because **punished**, ...
+  **Punished**, ...
+- When it is **done** too often, this habit can sometimes hurt.
+  When **done** too often, ...
+  **Done** too often, ...
 
 
-### 表语从句
+
+doing 做状语，表示主动
+
+- While he was **talking** with me, he broke his cup carelessly.
+  While **talking** with me, ....
+  **Talking** with me, ...
+- After he **glanced** at the bits of wood and metal, the man sadly picked up the mattress.
+  After **glancing** at the ...
+  **Glancing** at the ...
+- Because he **was tired of** sleeping on the floor, ...
+  Because **being tired of** sleeping on the floor, ...
+  **Being tired of** sleeping on the floor, ...
+
+
+
+
+
+## 表语从句
 
 系表结构，修饰主语
 
