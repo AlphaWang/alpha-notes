@@ -77,38 +77,10 @@ CMD ["python", "app.py"]
 
 
 
-## 原理
+## **容器镜像**
 
-
-
-**Namespace**
-
-- 作用：**隔离**。例如容器内部 ps，只能看到该容器内的进程
-- PID Namespace: 
-  - 对被隔离应用的进程空间做了手脚，使得这些进程只能看到重新计算过的进程编号，比如 PID=1。可实际上，他们在宿主机的操作系统里，还是原来的第 100 号进程。
-- Mount Namespace
-  - 原理：**chroot**
-    例如使用 $HOME/test 目录作为 /bin/bash 进程的根目录：`$ chroot $HOME/test /bin/bash`
-- UTS Namespace
-- Network Namespace
-- User Namespace
-
-
-
-**Cgroups**
-
-- Linux Control Group
-- 作用：**限制**一个进程组能够使用的资源上限，包括 CPU、内存、磁盘、网络带宽等等。
-- 原理：
-  - 以文件形式组织在 /sys/fs/cgroup
-  - 控制组：/sys/fs/cgroup/xx
-  - 子目录：cpu, blkio, cpuset, memory
-
-
-
-**容器镜像**
-
-- 容器镜像：挂载在容器根目录的文件系统，**rootfs**
+- 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
+- 是容器的静态视图
 - 注意容器镜像仅包含文件，不包含操作系统内核。--> 共享宿主机OS内核！
 
 
@@ -152,6 +124,110 @@ ls /var/lib/docker/volumes/{ID}/_data
 # 查看宿主机可读写层：不会修改，所以 docker commit 时不会提交 volume 内容
 ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 ```
+
+
+
+## 容器运行时
+
+- 容器运行时：由 Namespace + Cgroups 构成的隔离环境
+- 是容器的动态视图
+
+
+
+### **Namespace**
+
+- 作用：**隔离**。例如容器内部 ps，只能看到该容器内的进程
+- PID Namespace: 
+  - 对被隔离应用的进程空间做了手脚，使得这些进程只能看到重新计算过的进程编号，比如 PID=1。可实际上，他们在宿主机的操作系统里，还是原来的第 100 号进程。
+- Mount Namespace
+  - 原理：**chroot**
+    例如使用 $HOME/test 目录作为 /bin/bash 进程的根目录：`$ chroot $HOME/test /bin/bash`
+- UTS Namespace
+- Network Namespace
+- User Namespace
+
+
+
+### **Cgroups**
+
+- Linux Control Group
+- 作用：**限制**一个进程组能够使用的资源上限，包括 CPU、内存、磁盘、网络带宽等等。
+- 原理：
+  - 以文件形式组织在 /sys/fs/cgroup
+  - 控制组：/sys/fs/cgroup/xx
+  - 子目录：cpu, blkio, cpuset, memory
+
+
+
+
+
+
+
+# K8S 架构
+
+作为开发者，并不需要关心容器运行时的差异。--> 催生”容器编排“，需求：
+
+- 拉取镜像、运行容器
+- 运维能力：路由网关、水平扩展、监控、备份、灾难恢复
+- **处理大规模集群各种任务之间的关系。！！！**
+  - 细粒度：分别做成镜像、运行在一个个专属的容器中，互不干涉，可以被调度在集群内任何一台机器上。
+  - Docker compose? --> 方案太过简单
+  - K8S 的思路：从更宏观角度，以统一的方式来定义任务之间的各种关系
+    - 对容器的访问进行分类：
+    - **Pod** 里的容器关系紧密：共享 network ns、volume；
+    - **Service** 之间关系隔离：作为 pod的代理入口，维护 pod的ip、port等信息的自动更新
+    - **Secret** 处理授权关系：pod启动时，以volume方式挂载secret里的数据
+
+
+
+
+
+## Master 节点
+
+kube-apiserver
+
+- 负责 API 服务
+- 处理集群的持久化数据，保存到 etcd
+
+
+
+kube-schedule
+
+- 负责调度
+
+
+
+Kube-controller-manager
+
+- 负责容器编排
+
+
+
+## Node 节点
+
+kubelet
+
+- 负责和 `容器运行时` 打交道
+
+  - 通过 CRI (Container Runtime Interface) 远程调用接口
+  - 具体的容器运行时，例如Docker，则通过 OCI 规范同底层OS进行交互：把 CRI 请求翻译成对OS的系统调用
+
+  
+
+- 负责 通过 gRPC 和 `Device Plugin` 插件交互
+
+  - 管理宿主机物理设备，例如 GPU
+  - 主要用于通过k8s进行机器学习训练、高性能作业支持
+
+
+
+
+
+
+
+
+
+
 
 
 
