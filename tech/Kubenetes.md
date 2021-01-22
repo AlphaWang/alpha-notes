@@ -113,16 +113,18 @@ CMD ["python", "app.py"]
 
 
 
-Docker镜像的分层
+**Docker镜像的分层**
 
-- 原理：联合文件系统 UnionFS, Union File System
+原理：联合文件系统 UnionFS, Union File System
+
 - 只读层：ro + wh
   - readonly
   - whiteout 白障
-  - 
+    
 - Init层：ro + wh
   - 位于只读层和读写层之间。专门永利来存放 /etc/hosts, /etc/resolv.conf 等信息。
   - 这些文件本来属于只读的 Ubuntu 镜像的一部分，但是用户往往需要在启动容器时写入一些指定的值比如 hostname，所以就需要在可读写层对它们进行修改。但又不希望提交这些修改。
+    
 - 可读写层：rw
   - Read write
   - 用来存放修改 rootfs 后产生的增量：Copy On Write.
@@ -136,11 +138,22 @@ Docker镜像的分层
 
 原理：
 
-- 容器镜像的各个层保存在 `/var/lib/docker/aufs/diff` 目录下；容器进程启动后，被联合挂载到 `/var/lib/docker/aufs/mnt` 目录。
+- 容器镜像的各个层保存在 `/var/lib/docker/aufs/diff` 目录下；容器进程启动后，被联合挂载到 `/var/lib/docker/aufs/mnt` 目录。--> 这样 rootfs 就准备好了。
 
 - 在 rootfs 准备好后、在 chroot 执行之前，把宿主机目录挂载到指定容器目录即可。例如 `/var/lib/docker/aufs/mnt/$可读写层ID/$dir`
 
-- 
+
+```sh
+docker volume ls
+
+# 查看宿主机对应临时目录：同步修改
+ls /var/lib/docker/volumes/{ID}/_data
+
+# 查看宿主机可读写层：不会修改，所以 docker commit 时不会提交 volume 内容
+ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
+```
+
+
 
 
 
