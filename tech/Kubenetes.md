@@ -165,6 +165,8 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 # K8S 架构
 
+
+
 作为开发者，并不需要关心容器运行时的差异。--> 催生”容器编排“，需求：
 
 - 拉取镜像、运行容器
@@ -172,6 +174,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 - **处理大规模集群各种任务之间的关系。！！！**
   - 细粒度：分别做成镜像、运行在一个个专属的容器中，互不干涉，可以被调度在集群内任何一台机器上。
   - Docker compose? --> 方案太过简单
+    - 例如能处理 Java Web + Mysql，但不能处理 Cassandra集群。
   - K8S 的思路：从更宏观角度，以统一的方式来定义任务之间的各种关系
     - 对容器的访问进行分类：
     - **Pod** 里的容器关系紧密：共享 network ns、volume；
@@ -221,9 +224,58 @@ kubelet
 
 
 
+## K8S 部署
+
+**Step 1. 安装 kubeadm、kubelet、kubectl**
+
+```sh
+
+$ apt-get install kubeadm
+```
 
 
 
+- 把 kubelet 直接运行在宿主机上，然后使用容器部署其他 k8s 组件。
+
+  - 为何 kubelet 不能用 容器部署？
+    --> kubelet 要操作宿主机网络、数据卷
+
+  
+
+**Step 2. kubeadm init**
+
+kubeadm 常用命令
+
+```sh
+# 创建 master 节点
+kubeadm int --config kubeadm.yaml
+
+# 加入一个 node 节点
+kubeadm join {master ip/port}
+```
+
+
+
+**kubeadm init 工作流程**
+
+- **Preflight checks** 检查：os版本、cgroups模块是否可用、...
+- 生成 k8s 对外提供服务所需的各种**证书和对应目录**
+- 为其他组件生成访问 kube-apiserver 所需的**配置文件**：`/etc/kubernetes/xxx.conf`
+- 为 master 组件 生成 **pod 配置文件**；
+  - master 组件：kube-apiserver, kube-controller-manager, kube-scheduler
+  - Static Pod: kubelet 启动时会检查 static pod yaml 文件目录 `/etc/kubernetes/manifests`，然后在这台机器上启动他们。 
+- 为集群生成一个 **bootstrap token**
+- 将 ca.crt 等 master 节点信息，通过 ConfigMap (cluster-info) 的方式保存到 Etcd，供后续部署 Node 节点使用。
+- 安装默认插件
+  - Kube-proxy
+  - DNS
+
+
+
+**kubeadm join 工作流程**
+
+- 需要 bootstrap token，发起一次 ”不安全模式“ 的访问到 kube-apiserver，拿到 ConfigMap 中的 cluster-info (包含 apiserver 的授权信息)
+- 以后即可以 ”安全模式“ 连接 apiserver
 
 
 
