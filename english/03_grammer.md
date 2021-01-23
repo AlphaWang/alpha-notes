@@ -364,14 +364,39 @@ A：既能接人、又能接物的动词，例如
 
 ### 1. 相当于名词，做 主语、宾语、表语 （doing / to do）
 
+主语
+
 - **Fishing** is my favourite sport.
 - **To fish** is my favourite sport.
 - It was his job **to repair** bicycles. - 形式主语
   To repaire bicycles was his job.
 
+宾语
+
+- I often fish for hours without **catching** anything.
+- Both men started **runing** through the trees.
+- Both men started **to run** through the trees.
+
+表语
+
+- My dream is **travelling** around the world.
+- My dream is **to travel** around the world.
 
 
 
+### 2. 修饰名词，做定语
+
+- **Passing** **planes** can be heard night and day.
+- I was the only passenger **left** on the bus.
+- I have a lot of homework **to do**.
+
+
+
+### 3. 修饰句子，做状语
+
+- **Looking around**, I realized that I was the only passenger.
+- **Armed** with the new machine, they went into the cave.
+- I sat in the front of the bus **to get** a good view.
 
 
 
