@@ -441,7 +441,6 @@ A：既能接人、又能接物的动词，例如
 http://englishplus.com/grammar/00000031.htm
 
 - The subjunctive mood of the verb to be is **be** in the present tense and **were** in the past tense, regardless of what the subject is.
-
 - 例句 1：If it **rains** tomorrow, we will cancel the event. 
   --> 非虚拟语气，而是真实条件
 - 例句 2：If I **were** you I should go to see the doctor.
@@ -451,6 +450,8 @@ http://englishplus.com/grammar/00000031.htm
 - 例句 4：I **should have called** Emily this morning, but I forgot.
   --> 对于过去事情的虚拟，要用过去完成时态 
 
+
+
 # 独立主格结构
 
 **The wind failing,** we lowered the sail. 风力减弱，我们放下了船帆。
@@ -459,25 +460,18 @@ http://englishplus.com/grammar/00000031.htm
 
 The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**常起状语的作用，表示时间、原因、条件、行为方式、伴随。**
 
-例句：Weather **permitting**, we will have a barbecue tomorrow.
+- 例句：Weather **permitting**, we will have a barbecue tomorrow.
+  翻译：如果天气好的话，明天我们一起烤肉。（表示条件）
+- 例句：The **night** dark and frosty, he wrapped her up with great care.
+  翻译：夜又黑又冷，所以他把她裹得严严实实的。（表示原因）
+- 例句：Evenings he read aloud, his wife **sewing** by his side.
+  翻译：晚上他朗声读书，妻子在他身边缝衣服。（表示伴随情况）
+- 例句：Almost all metals are good conductors, silver **being** the best of all.
+  翻译：几乎所有的金属都是良导体，而银则是最好的导体。（表示补充说明）
+- 例句：A well-regulated militia, **being** necessary to the security of a free State, the right of the people to keep and bear Arms, shall not be infringed.
+  翻译：纪律优良之民众武装乃自由邦国安全所必需，故，人民持有并携带武器之权不受侵犯。
 
-翻译：如果天气好的话，明天我们一起烤肉。（表示条件）
 
-例句：The **night** dark and frosty, he wrapped her up with great care.
-
-翻译：夜又黑又冷，所以他把她裹得严严实实的。（表示原因）
-
-例句：Evenings he read aloud, his wife **sewing** by his side.
-
-翻译：晚上他朗声读书，妻子在他身边缝衣服。（表示伴随情况）
-
-例句：Almost all metals are good conductors, silver **being** the best of all.
-
-翻译：几乎所有的金属都是良导体，而银则是最好的导体。（表示补充说明）
-
-例句：A well-regulated militia, **being** necessary to the security of a free State, the right of the people to keep and bear Arms, shall not be infringed.
-
-翻译：纪律优良之民众武装乃自由邦国安全所必需，故，人民持有并携带武器之权不受侵犯。
 
 # 从句
 
@@ -663,7 +657,9 @@ doing 做状语，表示主动
 
 
 
-# 并列句
+# 句型
+
+## 并列句
 
 并列连词
 
@@ -686,3 +682,19 @@ FANBOYS:
 
 
 
+## 强调句
+
+句型：It is + 强调的部分 + that +  ....
+
+变化：It is / was + 强调的部分 + that / who + ...
+
+- **It is** only in recent years **that** it has gained evil reputation.
+- Men can solve the problems of natural disaster **only by** controlling the environmental pollution.
+  --> **It is** only by controlling the ... **that** men can ....
+
+
+
+注意，不能强调 形容词、动词：
+
+- **It was** obvious **that** ...
+- **It is** said **that** ...
