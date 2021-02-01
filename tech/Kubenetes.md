@@ -77,7 +77,7 @@ CMD ["python", "app.py"]
 
 
 
-## **容器镜像**
+## 容器镜像
 
 - 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
 - 是容器的静态视图
@@ -134,7 +134,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-### **Namespace**
+### Namespace
 
 - 作用：**隔离**。例如容器内部 ps，只能看到该容器内的进程
 - PID Namespace: 
@@ -148,7 +148,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-### **Cgroups**
+### Cgroups
 
 - Linux Control Group
 - 作用：**限制**一个进程组能够使用的资源上限，包括 CPU、内存、磁盘、网络带宽等等。
@@ -242,21 +242,24 @@ $ apt-get install kubeadm
 
   
 
-**Step 2. kubeadm init**
-
-kubeadm 常用命令
+**Step 2. kubeadm init  部署 Master 节点** 
 
 ```sh
-# 创建 master 节点
+# 1. 创建 master 节点
 kubeadm int --config kubeadm.yaml
+# 查看节点
+kubectl get nodes
+# 查看pods: STATUS = PENDING
+kubectl get pods -n kube-system 
 
-# 加入一个 node 节点
-kubeadm join {master ip/port}
+# 2. 部署网络插件: 新增一个 pod，并使 CoreDNS, kube-controller-manager等依赖网络的Pod STATUS = Running
+kubectl apply -f https://git.io/weave-kube-1.6
+
 ```
 
 
 
-**kubeadm init 工作流程**
+kubeadm init 工作流程
 
 - **Preflight checks** 检查：os版本、cgroups模块是否可用、...
 - 生成 k8s 对外提供服务所需的各种**证书和对应目录**
@@ -272,18 +275,37 @@ kubeadm join {master ip/port}
 
 
 
-**kubeadm join 工作流程**
+**Step 3. kubeadm join 部署 Worker 节点**
+
+```sh
+# 加入一个 node 节点
+kubeadm join {master ip/port}
+```
+
+
+
+kubeadm join 工作流程
 
 - 需要 bootstrap token，发起一次 ”不安全模式“ 的访问到 kube-apiserver，拿到 ConfigMap 中的 cluster-info (包含 apiserver 的授权信息)
 - 以后即可以 ”安全模式“ 连接 apiserver
 
 
 
+**Step 4. 部署 Dashboard 可视化插件**
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-rc6/aio/deploy/recommended.yaml
+```
 
 
 
+**Step 5. 部署存储插件**
 
+存储插件会在容器里挂载一个基于网络或者其他机制的远程数据卷，使得在容器里创建的文件，实际上是保存在远程存储服务器上，或者以分布式的方式保存在多个节点上，而与当前宿主机没有任何绑定关系。这样，无论你在其他哪个宿主机上启动新的容器，都可以请求挂载指定的持久化存储卷，从而访问到数据卷里保存的内容。这就是“持久化”的含义。
 
+- Ceph - Rook
+- GlusterFS
+- NFS
 
 
 
