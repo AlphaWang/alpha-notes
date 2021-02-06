@@ -356,9 +356,9 @@ A：既能接人、又能接物的动词，例如
 
 # 非谓语动词
 
-- doing
-- done
-- to do
+> 1. doing
+> 2. done
+> 3. to do
 
 ## 作用
 
@@ -417,6 +417,22 @@ A：既能接人、又能接物的动词，例如
 ### 分词短语 --> 做目的状语
 
 - They often go back to the product manager, **suggesting** a completely different feature to be built.
+
+
+
+**表示目的的短语：**
+
+> 1. **to do / in order to do / so as to do**
+> 2. **so that / in order that** + 句子（有情态动词）
+
+- He ran to the station. He wanted to catch the last train.
+  - He ran to the station **to / in order to / so as to** catch the last train.
+  - He ran to the station **so that / in order that** <u>would</u> catch the last train.
+- I opened the door quitely. I didn't want to disturb him.
+  - I opened the door quitely **not to / in order not to / so as not to** disturb him.
+  - I opened the door quitely **so that / in order that** <u>would</u> not disturb him.
+
+
 
 ### 现在分词 --> 作结果状语
 
