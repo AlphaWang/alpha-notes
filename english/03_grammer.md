@@ -53,6 +53,19 @@ A：既能接人、又能接物的动词，例如
 - He **lent** me a book. = He **lent** a book to me.
 - I **cooked** him a meal. = I **cooked** a meal for him.
 
+
+
+**双宾语动词的被动语态**
+
+- She gave me a pen.
+  --> I was given a pen by her.
+- She gave a pen to me.
+  --> A pen was given to me by her.
+
+
+
+
+
 ### 主谓宾补
 
 > I find you interesting.
