@@ -77,7 +77,7 @@ CMD ["python", "app.py"]
 
 
 
-## 容器镜像
+## 容器镜像 rootfs
 
 - 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
 - 是容器的静态视图
@@ -92,11 +92,11 @@ CMD ["python", "app.py"]
 - 只读层：ro + wh
   - readonly
   - whiteout 白障
-    
+  
 - Init层：ro + wh
   - 位于只读层和读写层之间。专门永利来存放 /etc/hosts, /etc/resolv.conf 等信息。
   - 这些文件本来属于只读的 Ubuntu 镜像的一部分，但是用户往往需要在启动容器时写入一些指定的值比如 hostname，所以就需要在可读写层对它们进行修改。但又不希望提交这些修改。
-    
+  
 - 可读写层：rw
   - Read write
   - 用来存放修改 rootfs 后产生的增量：Copy On Write.
@@ -306,6 +306,124 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-r
 - Ceph - Rook
 - GlusterFS
 - NFS
+
+
+
+# Kubectl 命令
+
+**yaml 运行**
+
+```sh
+$ kubectl create -f xx.yaml
+$ kubectl replace -f xx.yaml
+$ kubectl apply -f xx.yaml # 推荐
+
+$ kubectl get pods -l app=nginx
+```
+
+
+
+debug
+
+```sh
+$ kubectl describe pod xxx -n NAMESPACE
+
+$ kubectl exec -it POD_NAME -- /bin/bash
+```
+
+
+
+# API Object 
+
+## yaml 配置
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  selector:
+    matchLabels:
+      app: nginx
+  replicas: 2
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.7.9
+        ports:
+        - containerPort: 80
+```
+
+- kind
+  - API 对象的类型
+- metadata  
+  - API 对象的标识
+  - name
+  - labels
+  - annotations: 内部信息，用户不关心，k8s 组件本身会关注
+- spec
+  - 定义 Pod 模板：`spec.template`
+    - 定义 `spec.template.metadata.lables`
+    - 定义 容器镜像：`spec.template.spec.containers`
+  - 定义 Label Selector: `spec.selector.matchLabels`
+
+
+
+
+
+## Deployment
+
+定义：是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update.
+
+> **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod.
+
+
+
+## Pod
+
+定义：是k8s里最小的 API 对象，可以等价为一个应用（app，虚拟机），可以包含多个**紧密协作**的容器（container，用户程序）。
+
+> **紧密协作**：类似 进程 vs. 进程组
+
+
+
+**Pod 的作用**
+
+- 便于调度：有亲密关系的容器调度到同一个node
+
+- [容器设计模式]()：当你想在一个容器里跑多个功能不相关的应用时，应该优先考虑他们是不是更应该被描述成一个 Pod 里的多个容器。
+
+  - 例1：War 包 + Tomcat
+
+    > War: 定义为 Init Container，作为 sidecar 辅助容器，负责将war拷贝到指定 volume 目录；
+    > Tomcat: 将相应 volume 目录挂载到 webapps 目录
+
+  - 例2：容器的日志收集
+
+    > 主容器写入 /var/log；
+    >
+    > Sidecar 容器不断读取 /var/log，转发到 ES
+
+
+
+**Pod 的实现原理**
+
+- Pod 是一个逻辑概念：k8s 真正处理的还是 namespace, cgroups
+- Pod 里的所有容器，共享同一个 Network Namespace，可以声明共享同一个 Volume：原理是 关联同一个 “Infra 容器”
+- 
+
+
+
+
+
+
+
+
 
 
 
