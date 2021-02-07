@@ -396,7 +396,7 @@ spec:
 
 - 便于调度：有亲密关系的容器调度到同一个node
 
-- [容器设计模式]()：当你想在一个容器里跑多个功能不相关的应用时，应该优先考虑他们是不是更应该被描述成一个 Pod 里的多个容器。
+- [容器设计模式](https://www.usenix.org/conference/hotcloud16/workshop-program/presentation/burns)：当你想在一个容器里跑多个功能不相关的应用时，应该优先考虑他们是不是更应该被描述成一个 Pod 里的多个容器。
 
   - 例1：War 包 + Tomcat
 
