@@ -363,7 +363,21 @@ A：既能接人、又能接物的动词，例如
 
 
 
+## 将来完成时
 
+**形式：Will / Shall have done**
+
+1. by + 将来时间
+
+- He **will have arrived** <u>by this time tomorrow</u>.
+- He will phone us later today. He **will have received** his exam results <u>by then</u>.
+
+
+
+2. by the time + 一般现在时的句子
+
+- The conference **will have lasted** a full week <u>by the time</u> it ends.
+- <u>By the time he arrives</u> in Beijing, we **will have stayed** here for two days.
 
 
 
@@ -605,6 +619,13 @@ The wind 是逻辑主语，跟主语we不发生关系，即是“独立”；**�
 ### 时间状语从句
 
 - **When** buying proprietary enterprise software, xxx
+
+- **The moment** you **leave** this tent, you will get a big surprise.
+  The moment 引出时间状语从句
+
+> 时间状语从句用 一般现在时 表示将来
+
+
 
 ### 条件状语从句
 
