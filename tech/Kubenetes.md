@@ -390,6 +390,9 @@ spec:
 
 > **紧密协作**：类似 进程 vs. 进程组
 
+- Pod: 类似虚拟机
+- Container: 类似用户程序
+
 
 
 **Pod 的作用**
@@ -415,7 +418,79 @@ spec:
 
 - Pod 是一个逻辑概念：k8s 真正处理的还是 namespace, cgroups
 - Pod 里的所有容器，共享同一个 Network Namespace，可以声明共享同一个 Volume：原理是 关联同一个 “Infra 容器”
-- 
+
+
+
+**Pod 生命周期**
+
+- **Pending**: yaml文件已经提交给k8s，API对象已被创建 并保存在 Etcd 中。
+- **Running**：调度成功，并跟一个具体节点绑定。
+- **Scceeded**：所有容器运行完毕并退出。常见于运行一次性任务。
+- **Failed**：有容器以非0状态码退出。
+- **Unknown**：Pod状态不能被 `kubelet` 汇报给 `kube-apiserver`，可能是主从节点通信问题。
+
+
+
+**Pod Yaml 字段**
+
+- NodeSelector：用于将 Pod 与 Node 进行绑定。下例表示这个pod 只能运行在有 `disktype: ssd` label 的节点上。
+
+  ```
+  apiVersion: v1
+  kind: Pod
+  ...
+  spec:
+   nodeSelector:
+     disktype: ssd
+  ```
+
+  
+
+- NodeName：表示该Pod 已经经过了调度。用户可设置它来骗过调度器。
+- HostAliases：定义 Pod 的 /etc/hosts
+
+Container Yaml 字段
+
+- ImagePullPolicy：Always | Never
+- Lifecycle: postStart, preStop 时触发一系列钩子
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
