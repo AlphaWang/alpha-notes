@@ -433,9 +433,11 @@ spec:
 
 **Pod Yaml 字段**
 
-- NodeSelector：用于将 Pod 与 Node 进行绑定。下例表示这个pod 只能运行在有 `disktype: ssd` label 的节点上。
+Pod Level 
 
-  ```
+- `NodeSelector`：用于将 Pod 与 Node 进行绑定。下例表示这个pod 只能运行在有 `disktype: ssd` label 的节点上。
+
+  ```yaml
   apiVersion: v1
   kind: Pod
   ...
@@ -446,21 +448,214 @@ spec:
 
   
 
-- NodeName：表示该Pod 已经经过了调度。用户可设置它来骗过调度器。
-- HostAliases：定义 Pod 的 /etc/hosts
+- `NodeName`：表示该Pod 已经经过了调度。用户可设置它来骗过调度器。
 
-Container Yaml 字段
+- `HostAliases`：定义 Pod 的 /etc/hosts
 
-- ImagePullPolicy：Always | Never
-- Lifecycle: postStart, preStop 时触发一系列钩子
+- `restartPolicy`: 
+
+  - Always：只要容器不再运行状态，就自动重启。
+  - OnFailure：只有在容器异常时才自动重启。
+  - Never：适合关注容器退出后的日志、文件
+
+Container Level
+
+- `ImagePullPolicy`：Always | Never
+
+- `Lifecycle`: postStart, preStop 时触发一系列钩子
+
+- `readinessProbe`：决定该pod能否通过Service的方式访问到；
+
+- `livenessProbe` : 健康检查探针
+
+  ```yaml
+  livenessProbe:
+       httpGet:
+         path: /healthz
+         port: 8080
+         httpHeaders:
+         - name: X-Custom-Header
+           value: xx
+         initialDelaySeconds: 3
+         periodSeconds: 3
+  ```
 
 
 
+## Projected Volume
+
+Projected Volume 是一种特殊的 Volume，它不是为了存放容器里的数据，而是为容器提供预先定义好的数据。
+
+仿佛是被 k8s 投射进容器当中的。
+
+### Secret
+
+把 Pod 想要访问的加密数据，存放到 **Etcd** 中。然后就可以通过在 Pod 的容器里**挂载 Volume** 的方式，访问到这些 加密数据了。
+
+kubectl create
+
+```sh
+$ kubectl create secret generic user --from-file=./username.txt
+
+$ kubectl get secrets
+```
+
+或者用 yaml 创建
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata: 
+  name: mysecret
+type: Opaque
+data: 
+  user: YWRtaW4= //base64 encoded
+  pass: xxxx
+```
+
+> Base64 encode/decode:
+>
+> ​	echo -n 'password' | base64
+>
+> ​	echo 'MWYyZDFlMmU2N2Rm' | base64 --decode 
 
 
 
+**在 Pod 中使用 Secret**
+
+```yaml
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-projected-volume 
+spec:
+  containers:
+  - name: test-secret-volume
+    image: busybox
+    volumeMounts:
+    - name: mysql-cred
+      mountPath: "/projected-volume"
+      readOnly: true
+  volumes:
+  - name: mysql-cred
+    projected:
+      sources:
+      - secret:
+          name: user
+      - secret:
+          name: pass
+```
+
+- /projected-volume 目录下，会有两个文件 user, pass
+- Etcd 数据更新后，文件内容也会同步更新 - 有延时
 
 
+
+### ConfigMap
+
+与 Secrect 创建几乎一样。
+
+```sh
+# 从.properties文件创建ConfigMap
+$ kubectl create configmap ui-config --from-file=example/ui.properties
+
+# 查看这个ConfigMap里保存的信息(data)
+$ kubectl get configmaps ui-config -o yaml
+
+apiVersion: v1
+data:
+  ui.properties: |
+    color.good=purple
+    color.bad=yellow
+    allow.textmode=true
+    how.nice.to.look=fairlyNice
+kind: ConfigMap
+metadata:
+  name: ui-config
+  ...
+```
+
+
+
+### Downward API
+
+作用：让 Pod 里的容器能否直接获取到这个 Pod API 对象本身的信息。
+
+```
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: test-downwardapi-volume
+  labels:
+    ...
+spec:
+  containers:
+    - name: client-container
+      image: k8s.gcr.io/busybox
+      volumeMounts:
+        - name: podinfo
+          mountPath: /etc/podinfo
+          readOnly: false
+  volumes:
+    - name: podinfo
+      projected:
+        sources:
+        - downwardAPI:
+            items:
+              - path: "labels"
+                fieldRef:
+                  fieldPath: metadata.labels
+```
+
+- /etc/podinfo/labels 文件中会有当前 Pod 的 Labels 字段值。
+
+
+
+### ServiceAccountToken
+
+是一种特殊的 Secret，存储 Service Account 的授权信息。
+
+- 每个 Pod 都被自动声明 default-token-xxxx 的 Volume；
+- 路径：/var/run/secrets/kubernetes.io/serviceaccount
+
+
+
+## 工具对象
+
+### PodPreset
+
+作用：自动给对应的 Pod 加上其他必要的信息，例如 labels, annotations, volumes等。
+
+```yaml
+apiVersion: settings.k8s.io/v1alpha1
+kind: PodPreset
+metadata:
+  name: allow-database
+spec:
+  selector:
+    # spec.selector 用于选择pod
+    matchLabels:
+      role: frontend
+  env:
+    - name: DB_PORT
+      value: "6379"
+  volumeMounts:
+    - mountPath: /cache
+      name: cache-volume
+  volumes:
+    - name: cache-volume
+      emptyDir: {}
+```
+
+
+
+运用过 PodPreset的Pod会被自动加上一个annotation:
+
+`metadata.annotations: podpreset.admission.kubernetes.io/podpreset-allow-database: "resource version"`
+
+> 如果针对同一Pod定义了多个 PodPreset，则会自动合并，冲突字段不会被修改。
 
 
 
