@@ -311,7 +311,7 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-r
 
 # Kubectl 命令
 
-**yaml 运行**
+yaml 运行
 
 ```sh
 $ kubectl create -f xx.yaml
@@ -326,10 +326,38 @@ $ kubectl get pods -l app=nginx
 debug
 
 ```sh
+# 查看
 $ kubectl describe pod xxx -n NAMESPACE
-
+# 进入
 $ kubectl exec -it POD_NAME -- /bin/bash
 ```
+
+
+
+运维
+
+```sh
+# 扩缩容
+$ kubectl scale deployment nginx-deployment --replicas=4
+
+# 查看 deployment 对象的状态变化
+$ kubectl rollout status deployment/nginx-deployment
+
+# 编辑 etcd 里的 API对象
+$ kubectl edit deployment/nginx-deployment
+
+# 部署历史
+$ kubectl rollout history deployment/xx
+$ kubectl rollout history deployment/xx --revision=2 
+
+# 部署回滚
+$ kubectl rollout undo deployment/xx
+$ kubectl rollout undo deployment/xx --to-revision=2
+
+
+```
+
+
 
 
 
@@ -378,9 +406,83 @@ spec:
 
 ## Deployment
 
-定义：是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update.
+**定义**：
 
-> **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod.
+是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update。
+
+> **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod。
+
+
+
+**作用：**
+
+- Pod 水平扩缩容 （horizontal scaling out / in）
+
+  ```sh
+  $ kubectl scale deployment nginx-deployment --replicas=4
+  ```
+
+- Pod 的滚动更新：将集群中正在运行的多个 Pod 版本，交替逐一升级的过程。
+
+  ```sh
+  # 触发
+  $ kubectl edit deployment/xxx
+  $ kubectl set image deployment/xxx nginx=ningx:1.20
+  
+  # 回滚
+  $ kubectl rollout undo deployment/xx
+  
+  ```
+
+  
+
+**原理：**
+
+- 实际上是一个”两层控制器“，依赖 **ReplicaSet** 这个 API对象
+
+  - Deployment 控制 ReplicaSet
+  - ReplicaSet 控制 Pod
+
+- 通过 **ReplicaSet 的个数**来描述应用的版本；通过 **ReplicaSet 的属性**来保证Pod的副本数量。
+
+  ```sh
+  # edit deployment 后会触发滚动更新
+  1. 创建一个新的 ReplicaSet，初始Pod副本数是 0 
+  2. 将新 ReplicaSet Pod副本数增加一个
+  3. 将旧 ReplicaSet Pod副本数减少一个
+  ```
+
+Tips:
+
+每次修改 deployment 都会生成 新ReplicaSet对象，浪费资源。
+
+解决：kubectl rollout pause
+
+```sh
+$ kubectl rollout pause deployment/xxx
+$ kubectl edit / set image
+$ kubectl ...
+$ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
+```
+
+
+
+
+
+**Deployment Yaml 字段**
+
+- RollingUpdateStrategy
+
+  ```yaml
+  spec:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1 # 在一次滚动中，可以创建多少个新 Pod
+        maxUnavailable: 1 # 在一次滚动中，可以删除多少个旧 Pod
+  ```
+
+  
 
 
 
@@ -454,7 +556,7 @@ Pod Level
 
 - `restartPolicy`: 
 
-  - Always：只要容器不再运行状态，就自动重启。
+  - Always：只要容器不再运行状态，就自动重启。--> Deployment 控制的 Pod 重启策略只能是 Always.
   - OnFailure：只有在容器异常时才自动重启。
   - Never：适合关注容器退出后的日志、文件
 
@@ -656,6 +758,58 @@ spec:
 `metadata.annotations: podpreset.admission.kubernetes.io/podpreset-allow-database: "resource version"`
 
 > 如果针对同一Pod定义了多个 PodPreset，则会自动合并，冲突字段不会被修改。
+
+
+
+# 编排
+
+## 控制器模型
+
+**场景：**
+
+例如通过 Deployment 管理 Pod。
+
+
+
+**编排模式：control loop**
+
+- 又称`调谐循环`（`Reconcile Loop`），或者`同步循环`（`Sync Loop`）
+- 调谐结果：创建、更新一些 Pod（或者其他的 API 对象、资源），要么就是删除一些已经存在的 Pod（或者其他的 API 对象、资源）。
+
+```java
+for {
+  实际状态 := 获取集群中对象X的实际状态（Actual State，来自集群本身）
+  期望状态 := 获取集群中对象X的期望状态（Desired State，来自yaml）
+  if 实际状态 == 期望状态{
+    什么都不做
+  } else {
+    // Reconcile调谐
+    执行编排动作，将实际状态调整为期望状态
+  }
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
