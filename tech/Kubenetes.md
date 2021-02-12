@@ -402,90 +402,6 @@ spec:
 
 
 
-
-
-## Deployment
-
-**定义**：
-
-是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update。
-
-> **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod。
-
-
-
-**作用：**
-
-- Pod 水平扩缩容 （horizontal scaling out / in）
-
-  ```sh
-  $ kubectl scale deployment nginx-deployment --replicas=4
-  ```
-
-- Pod 的滚动更新：将集群中正在运行的多个 Pod 版本，交替逐一升级的过程。
-
-  ```sh
-  # 触发
-  $ kubectl edit deployment/xxx
-  $ kubectl set image deployment/xxx nginx=ningx:1.20
-  
-  # 回滚
-  $ kubectl rollout undo deployment/xx
-  
-  ```
-
-  
-
-**原理：**
-
-- 实际上是一个”两层控制器“，依赖 **ReplicaSet** 这个 API对象
-
-  - Deployment 控制 ReplicaSet
-  - ReplicaSet 控制 Pod
-
-- 通过 **ReplicaSet 的个数**来描述应用的版本；通过 **ReplicaSet 的属性**来保证Pod的副本数量。
-
-  ```sh
-  # edit deployment 后会触发滚动更新
-  1. 创建一个新的 ReplicaSet，初始Pod副本数是 0 
-  2. 将新 ReplicaSet Pod副本数增加一个
-  3. 将旧 ReplicaSet Pod副本数减少一个
-  ```
-
-Tips:
-
-每次修改 deployment 都会生成 新ReplicaSet对象，浪费资源。
-
-解决：kubectl rollout pause
-
-```sh
-$ kubectl rollout pause deployment/xxx
-$ kubectl edit / set image
-$ kubectl ...
-$ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
-```
-
-
-
-
-
-**Deployment Yaml 字段**
-
-- RollingUpdateStrategy
-
-  ```yaml
-  spec:
-    strategy:
-      type: RollingUpdate
-      rollingUpdate:
-        maxSurge: 1 # 在一次滚动中，可以创建多少个新 Pod
-        maxUnavailable: 1 # 在一次滚动中，可以删除多少个旧 Pod
-  ```
-
-  
-
-
-
 ## Pod
 
 定义：是k8s里最小的 API 对象，可以等价为一个应用（app，虚拟机），可以包含多个**紧密协作**的容器（container，用户程序）。
@@ -581,6 +497,172 @@ Container Level
          initialDelaySeconds: 3
          periodSeconds: 3
   ```
+
+
+
+## Deployment
+
+**定义**：
+
+是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update。
+
+> **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod。
+
+
+
+**作用：**
+
+- Pod 水平扩缩容 （horizontal scaling out / in）
+
+  ```sh
+  $ kubectl scale deployment nginx-deployment --replicas=4
+  ```
+
+- Pod 的滚动更新：将集群中正在运行的多个 Pod 版本，交替逐一升级的过程。
+
+  ```sh
+  # 触发
+  $ kubectl edit deployment/xxx
+  $ kubectl set image deployment/xxx nginx=ningx:1.20
+  
+  # 回滚
+  $ kubectl rollout undo deployment/xx
+  
+  ```
+
+  
+
+**原理：**
+
+- 实际上是一个”两层控制器“，依赖 **ReplicaSet** 这个 API对象
+
+  - Deployment 控制 ReplicaSet
+  - ReplicaSet 控制 Pod
+
+- 通过 **ReplicaSet 的个数**来描述应用的版本；通过 **ReplicaSet 的属性**来保证Pod的副本数量。
+
+  ```sh
+  # edit deployment 后会触发滚动更新
+  1. 创建一个新的 ReplicaSet，初始Pod副本数是 0 
+  2. 将新 ReplicaSet Pod副本数增加一个
+  3. 将旧 ReplicaSet Pod副本数减少一个
+  ```
+
+Tips:
+
+每次修改 deployment 都会生成 新ReplicaSet对象，浪费资源。
+
+解决：kubectl rollout pause
+
+```sh
+$ kubectl rollout pause deployment/xxx
+$ kubectl edit / set image
+$ kubectl ...
+$ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
+```
+
+
+
+
+
+**Deployment Yaml 字段**
+
+- RollingUpdateStrategy
+
+  ```yaml
+  spec:
+    strategy:
+      type: RollingUpdate
+      rollingUpdate:
+        maxSurge: 1 # 在一次滚动中，可以创建多少个新 Pod
+        maxUnavailable: 1 # 在一次滚动中，可以删除多少个旧 Pod
+  ```
+
+  
+
+## StatefulSet
+
+**目的**
+
+- Deployment 解决“无状态应用”，StatefulSet解决“有状态应用”。
+
+
+
+**原理**
+
+记录应用状态，在Pod被重新创建时能够为新Pod恢复这些状态。
+
+- **拓扑状态**：例如主从、按顺序启动 
+
+  > 将 Pod 的拓扑状态，按照 Pod "名字 + 编号"的方式固定下来。
+
+  - 在创建Pod的过程中，StatefulSet 给每个Pod的名字进行编号：`StatefulSetName-编号` 
+  - 严格按照编号顺序创建。“编号0” 进入Running状态之前，“编号1” 一直处于Pending状态。
+  - 为每个Pod 创建了唯一且不可变的“网络身份” （`StatefulSetName-编号.ServiceName`），保证 Pod 网络标识的稳定性。
+
+  
+
+- **存储状态**：例如一个数据库应用的多个存储实例。
+
+
+
+**Yaml** ：类似 Deployment，多了 spec.serviceName
+
+```yaml
+#Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+    name: web
+  clusterIP: None #Headless Serivce，用来暴露 Pod DNS
+  selector:
+    app: nginx
+    
+#StatefulSet    
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web
+spec:
+  serviceName: "nginx"  #比Deployment多的字段
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.9.1
+        ports:
+        - containerPort: 80
+          name: web
+```
+
+
+
+
+
+
+
+## Service
+
+访问方式
+
+- VIP
+  - Service 的虚拟IP
+- DNS
+  - 细分1：`Normal Service` svc-name.namespace-name.svc.cluster.local，解析后得到 Service VIP
+  - 细分2：`Headless Service` pod-name.svc-name.namespace-name.svc.cluster.local，解析后得到某个 Pod 的 IP 地址
 
 
 
