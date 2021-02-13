@@ -346,6 +346,9 @@ $ kubectl rollout status deployment/nginx-deployment
 # 编辑 etcd 里的 API对象
 $ kubectl edit deployment/nginx-deployment
 
+# set image: --record 记录到 rollout history
+$ kubectl set image deployment/xx yyy --record
+
 # 部署历史
 $ kubectl rollout history deployment/xx
 $ kubectl rollout history deployment/xx --revision=2 
@@ -557,7 +560,7 @@ Container Level
   - Deployment 控制 ReplicaSet
   - ReplicaSet 控制 Pod
 
-- 通过 **ReplicaSet 的个数**来描述应用的版本；通过 **ReplicaSet 的属性**来保证Pod的副本数量。
+- 通过 **ReplicaSet 的个数** 来描述应用的版本；通过 **ReplicaSet 的属性** 来保证Pod的副本数量。
 
   ```sh
   # edit deployment 后会触发滚动更新
@@ -566,9 +569,11 @@ Container Level
   3. 将旧 ReplicaSet Pod副本数减少一个
   ```
 
+
+
 Tips:
 
-每次修改 deployment 都会生成 新ReplicaSet对象，浪费资源。
+每次修改 deployment 都会生成 新 ReplicaSet 对象，浪费资源。
 
 解决：kubectl rollout pause
 
@@ -626,6 +631,27 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 
   - StatefulSet 为每个Pod分配并创建一个"同样编号"的PVC。
   - 即使 Pod 被删除，所对应的 PVC / PV 依然会被保留下来。
+
+
+
+**滚动更新：**
+
+- 只要修改了StatefulSet 的 Pod 模板，就会自动触发滚动更新。
+
+  ```sh
+  $ kubectl patch statefulset mysql --type='json' -p='[{"op": "replace", "path": "/spec/template/spec/containers/0/image", "value":"mysql:5.7.23"}]'
+  ```
+
+
+
+**版本控制**
+
+Q: 不像deployment 每次修改都会生成 新 ReplicaSet 对象，StatefulSet 直接管理 Pod，那么他是如何管理版本？
+
+A: **ControllerRevision**
+
+- ControllerRevision 专门用来记录控制器对象（StatefulSet, DaemonSet）的版本。
+- 原理：在data字段保存完整的API对象，在annotation字段保存创建该对象所使用的的 kubectl 命令。
 
 
 
@@ -979,6 +1005,47 @@ spec:
 - 当新节点加入集群，该Pod就会自动在该新节点创建出来。
 
 
+
+原理：控制器模型
+
+- 在控制循环中，从 Etcd 获取所有节点列表，然后根据节点上是否有被管理 Pod 的情况，来决定是否要创建或者删除一个 Pod。
+
+
+
+
+
+- 限制某些节点生效：`nodeAffinity`
+
+  ```yaml
+  # pod nodeAffinity
+  spec:
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: metadata.name
+              operator: In
+              values:
+              - node-geektime
+  ```
+
+  
+
+- 在某些污点节点(Taint)也生效：`toleration` 
+
+  - 以此实现在 NotReady （e.g. NetworkReady = false）的节点上运行 Daemon Pod。
+
+  ```yaml
+  # pod tolerations
+  spec:
+    tolerations:
+    - key: node.kubernetes.io/unschedulable
+      operator: Exists
+      effect: NoSchedule
+  ```
+
+  
 
 
 
