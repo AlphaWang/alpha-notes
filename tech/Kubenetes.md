@@ -584,7 +584,7 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 
 **目的**
 
-- Deployment 解决“无状态应用”，StatefulSet解决“有状态应用”。
+- Deployment （ReplicaSet） 解决“无状态应用”，StatefulSet 解决“有状态应用”。
 
 
 
@@ -594,15 +594,20 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 
 - **拓扑状态**：例如主从、按顺序启动 
 
-  > 将 Pod 的拓扑状态，按照 Pod "名字 + 编号"的方式固定下来。
+  > 编号：将 Pod 的拓扑状态，按照 Pod "名字 + 编号"的方式固定下来。
 
-  - 在创建Pod的过程中，StatefulSet 给每个Pod的名字进行编号：`StatefulSetName-编号` 
-  - 严格按照编号顺序创建。“编号0” 进入Running状态之前，“编号1” 一直处于Pending状态。
+  - 在创建Pod的过程中，StatefulSet 给每个Pod的名字进行编号：`StatefulSetName-编号` 。严格按照编号顺序创建。“编号0” 进入Running状态之前，“编号1” 一直处于Pending状态。
   - 为每个Pod 创建了唯一且不可变的“网络身份” （`StatefulSetName-编号.ServiceName`），保证 Pod 网络标识的稳定性。
+  - 通过 <u>Headless Service</u> 为每个Pod生成带有同样编号的 DNS 记录。
 
   
 
 - **存储状态**：例如一个数据库应用的多个存储实例。
+
+  > PVC：重启Pod后会根据特定的名称查到旧Pod遗留下来的同名PVC
+
+  - StatefulSet 为每个Pod分配并创建一个"同样编号"的PVC。
+  - 即使 Pod 被删除，所对应的 PVC / PV 依然会被保留下来。
 
 
 
@@ -620,7 +625,8 @@ spec:
   ports:
   - port: 80
     name: web
-  clusterIP: None #Headless Serivce，用来暴露 Pod DNS
+  #Headless Serivce，以便暴露 Pod DNS
+  clusterIP: None 
   selector:
     app: nginx
     
@@ -630,7 +636,8 @@ kind: StatefulSet
 metadata:
   name: web
 spec:
-  serviceName: "nginx"  #比Deployment多的字段
+  #比Deployment多的字段
+  serviceName: "nginx"  
   replicas: 2
   selector:
     matchLabels:
@@ -646,6 +653,18 @@ spec:
         ports:
         - containerPort: 80
           name: web
+        volumeMounts: # PVC
+        - name: www
+          mountPath: /usr/share/nginx/html
+  volumeClaimTemplates: # PVC
+  - metadata:
+      name: www
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 1Gi
 ```
 
 
@@ -658,21 +677,110 @@ spec:
 
 访问方式
 
-- VIP
+- **VIP**
   - Service 的虚拟IP
-- DNS
-  - 细分1：`Normal Service` svc-name.namespace-name.svc.cluster.local，解析后得到 Service VIP
-  - 细分2：`Headless Service` pod-name.svc-name.namespace-name.svc.cluster.local，解析后得到某个 Pod 的 IP 地址
+- **DNS**
+  - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
+  - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
 
 
 
-## Projected Volume
+## Volume
+
+### PVC & PV
+
+目的：隐藏 Volume 的管理、存储服务器的地址等敏感信息。
+
+- PVC: Persistent Volume Claim，相当于接口；屏蔽存储细节。
+- PV: Persistent Volume，相当于实现
+
+
+
+PVC 定义
+
+```yaml
+# PVC
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: pv-claim
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+       
+```
+
+Pod 里使用这个PVC
+
+```yaml
+# POD
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pv-pod
+spec:
+  containers:
+    - name: pv-container
+      image: nginx
+      ports:
+        - containerPort: 80
+          name: "http-server"
+      volumeMounts:
+        - mountPath: "/usr/share/nginx/html"
+          name: pv-storage
+  volumes: # 使用PVC
+    - name: pv-storage
+      persistentVolumeClaim: 
+        claimName: pv-claim
+```
+
+运维定义 PV
+
+```yaml
+# PV
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pv-volume
+  labels:
+    type: local
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  rbd:
+    monitors:
+    # 使用 kubectl get pods -n rook-ceph 查看 rook-ceph-mon- 开头的 POD IP 即可得下面的列表
+    - '10.16.154.78:6789'
+    - '10.16.154.82:6789'
+    - '10.16.154.83:6789'
+    pool: kube
+    image: foo
+    fsType: ext4
+    readOnly: true
+    user: admin
+    keyring: /etc/ceph/keyring
+```
+
+
+
+> Q：PVC 和 PV 是如何关联上的？
+
+
+
+
+
+### Projected Volume
 
 Projected Volume 是一种特殊的 Volume，它不是为了存放容器里的数据，而是为容器提供预先定义好的数据。
 
 仿佛是被 k8s 投射进容器当中的。
 
-### Secret
+#### Secret
 
 把 Pod 想要访问的加密数据，存放到 **Etcd** 中。然后就可以通过在 Pod 的容器里**挂载 Volume** 的方式，访问到这些 加密数据了。
 
@@ -736,7 +844,7 @@ spec:
 
 
 
-### ConfigMap
+#### ConfigMap
 
 与 Secrect 创建几乎一样。
 
@@ -762,7 +870,7 @@ metadata:
 
 
 
-### Downward API
+#### Downward API
 
 作用：让 Pod 里的容器能否直接获取到这个 Pod API 对象本身的信息。
 
@@ -797,7 +905,7 @@ spec:
 
 
 
-### ServiceAccountToken
+#### ServiceAccountToken
 
 是一种特殊的 Secret，存储 Service Account 的授权信息。
 
