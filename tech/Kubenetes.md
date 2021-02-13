@@ -477,7 +477,7 @@ Pod Level
 
   - Always：只要容器不再运行状态，就自动重启。--> Deployment 控制的 Pod 重启策略只能是 Always.
   - OnFailure：只有在容器异常时才自动重启。
-  - Never：适合关注容器退出后的日志、文件
+  - Never：适合关注容器退出后的日志、文件，或批处理任务Job
 
 Container Level
 
@@ -956,6 +956,96 @@ spec:
 
 - 每个 Pod 都被自动声明 default-token-xxxx 的 Volume；
 - 路径：/var/run/secrets/kubernetes.io/serviceaccount
+
+
+
+## 离线计算类
+
+### Job
+
+yaml
+
+```yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: pi
+spec:
+  template:
+    spec:
+      containers:
+      - name: pi
+        image: resouer/ubuntu-bc 
+        command: ["sh", "-c", "echo 'scale=10000; 4*a(1)' | bc -l "]
+      restartPolicy: Never #离线计算的Pod永远不该被重启
+  backoffLimit: 4 #离线作业失败后Job Controller会不断尝试创建新Pod，直至backoffLimit
+  activeDeadlineSeconds: 100 #最长运行时间
+  
+  parallelism: 2 #并行度，最多可以启动多少个Pod同时运行
+  completions: 2 #Job的最小完成数
+```
+
+
+
+控制器：Job Controller
+
+- Job Controller 控制的对象，直接就是Pod；
+- Job Controller 控制循环：Reconcile，根据 running、completed Pod数目 & parallelism、completions 计算出在这个周期里应该创建或删除的Pod数目。
+
+
+
+使用 Job 的模式：
+
+- 外部管理器 + Job 模板
+
+  yaml里定义变量，创建job时替换变量（例如用 shell sed）；
+
+- 拥有固定任务数目的并行 Job
+
+  指定 completions；
+
+- 执行 parallelism，但不设置固定的 completions
+
+  需要在Pod逻辑里判断何时任务完成、退出；
+
+
+
+### CronJob
+
+是一个Job对象的控制器！
+
+Yaml:
+
+```yaml
+
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  name: hello
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Allow
+  jobTemplate: 
+    spec:
+      template:
+        spec:
+          containers:
+          - name: hello
+            image: busybox
+            args:
+            - /bin/sh
+            - -c
+            - date; echo Hello from the Kubernetes cluster
+          restartPolicy: OnFailure
+```
+
+concurrencyPolicy: Job还没执行完，新Job又产生了
+
+- Allow：允许同时存在多个Job；
+- Forbid：该创建周期被跳过；
+- Replace：没执行完的Job会忽略；
+
+
 
 
 
