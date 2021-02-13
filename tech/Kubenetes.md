@@ -484,6 +484,24 @@ Container Level
 
 - `readinessProbe`：决定该pod能否通过Service的方式访问到；
 
+  ```yaml
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              # 通过TCP连接的方式进行健康检查
+              command: ["mysql", "-h", "127.0.0.1", "-e", "SELECT 1"]
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 1
+  ```
+
+  
+
 - `livenessProbe` : 健康检查探针
 
   ```yaml
@@ -614,7 +632,7 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 **Yaml** ：类似 Deployment，多了 spec.serviceName
 
 ```yaml
-#Service
+# Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -625,21 +643,19 @@ spec:
   ports:
   - port: 80
     name: web
-  #Headless Serivce，以便暴露 Pod DNS
-  clusterIP: None 
+  clusterIP: None  #Headless Serivce，以便暴露 Pod DNS
   selector:
     app: nginx
     
-#StatefulSet    
+# StatefulSet    
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: web
 spec:
-  #比Deployment多的字段
-  serviceName: "nginx"  
+  serviceName: "nginx" #比Deployment多的字段：Headless Service Name 
   replicas: 2
-  selector:
+  selector:  #该StatefulSet要管理的pod必须携带特定label
     matchLabels:
       app: nginx
   template:
@@ -661,7 +677,7 @@ spec:
       name: www
     spec:
       accessModes:
-      - ReadWriteOnce
+      - ReadWriteOnce  #可读写，且一个PV只能挂载在一个宿主机上
       resources:
         requests:
           storage: 1Gi
@@ -669,7 +685,10 @@ spec:
 
 
 
+实例：
 
+- MySQL 集群：https://github.com/oracle/kubernetes-website/blob/master/docs/tasks/run-application/mysql-statefulset.yaml
+- 
 
 
 
@@ -706,7 +725,7 @@ metadata:
   name: pv-claim
 spec:
   accessModes:
-  - ReadWriteOnce
+  - ReadWriteOnce # 可读写，且一个PV只能挂载在一个宿主机上
   resources:
     requests:
       storage: 1Gi
@@ -948,6 +967,18 @@ spec:
 `metadata.annotations: podpreset.admission.kubernetes.io/podpreset-allow-database: "resource version"`
 
 > 如果针对同一Pod定义了多个 PodPreset，则会自动合并，冲突字段不会被修改。
+
+
+
+### DaemonSet
+
+作用：在k8s集群里运行 Daemon Pod
+
+- Daemon Pod 运行在k8s集群里的每个节点上；
+- 每个节点只有一个这样的 Pod 实例；
+- 当新节点加入集群，该Pod就会自动在该新节点创建出来。
+
+
 
 
 
