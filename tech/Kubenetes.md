@@ -200,7 +200,7 @@ kube-schedule
 
 
 
-Kube-controller-manager
+kube-controller-manager
 
 - 负责容器编排
 
@@ -959,7 +959,7 @@ spec:
 
 
 
-## 离线计算类
+## Batch
 
 ### Job
 
@@ -1189,6 +1189,7 @@ Admission:
 Dynamic Admission Control (**Initializer**)
 
 - 热插拔式的 Admission机制，无需重新编译重启 API Server；
+- https://github.com/resouer/kubernetes-initializer-tutorial
 
 
 
@@ -1254,13 +1255,126 @@ Dynamic Admission Control (**Initializer**)
   - 用户自定义的pod
   - Configmap 里定义的 envoy 容器
 
+
+
+## RBAC
+
+基本概念
+
+- Role：角色。实际是一组规则，定义了一组对 K8S API对象的操作权限； 
+- Subject：被作用者。
+- RoleBinding：定义角色和被作用者的绑定关系
+
+
+
+### Role
+
+Role 是一个 API 对象。
+
+```yaml
+# role.yaml
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  namespace: mynamespace  #指定能产生作用的 namespace
+  name: example-role
+rules:    # 定义权限规则
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "watch", "list"] # 
+```
+
+- 所有权限：verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+
+
+### RoleBinding
+
+RoleBinding 也是一个 API 对象。
+
+```yaml
+# role-binding.yaml
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: example-rolebinding
+  namespace: mynamespace #指定能产生作用的 namespace
+subjects: #关联Subject
+- kind: User # Subject-1: User
+  name: example-user
+  apiGroup: rbac.authorization.k8s.io
   
+- kind: ServiceAccount  # Subject-2：ServiceAccount
+  name: example-sa 
+  namespace: mynamespace
+  
+roleRef:  #关联Role
+  kind: Role
+  name: example-role
+  apiGroup: rbac.authorization.k8s.io
+```
+
+
+
+```yaml
+# svc-account.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: mynamespace
+  name: example-sa
+```
+
+
+
+依次创建 svc-account, role, role-binding，K8S 会为该 ServiceAccount 分配一个 Secret.
+
+- 这个 Secret 就是用来跟 API Server进行交互的授权文件（Token）；
+
+```sh
+
+$ kubectl get sa -n mynamespace -o yaml
+
+- apiVersion: v1
+  kind: ServiceAccount
+  metadata:
+    creationTimestamp: 2018-09-08T12:59:17Z
+    name: example-sa
+    namespace: mynamespace
+    resourceVersion: "409327"
+    ...
+  secrets:
+  - name: example-sa-token-vmfg6 #分配了一个 Secret
+```
 
 
 
 
 
+### ClusterRole / ClusterRoleBinding
 
+Role / RoleBinding 的问题：
+
+- 必须指定Namespace，无法作用于 Non-Namespaced 对象（例如 Node）；
+- 无法作用于所有 Namespace；
+
+
+
+
+
+# 扩展
+
+## 自定义
+
+### 自定义 API 对象
+
+https://time.geekbang.org/column/article/41876
+
+
+
+### 自定义控制器
+
+https://time.geekbang.org/column/article/42076
 
 
 
