@@ -1169,6 +1169,93 @@ for {
 
 
 
+## 声明式API
+
+- kubectl apply: 对原有 API对象的 Patch 操作；	
+  - 一次能处理多个写操作，并具备 Merge 能力。
+- kubectl replace: 替换原有的 API 对象；
+
+
+
+## Dynamic Admission Control
+
+Admission:
+
+- 当一个API对象被提交给 API Server之后，在正式处理之前需要进行一些”初始化“性质的工作，例如自动加上某些 Label。
+- Admission Controller 可以选择性地编译进 API Server 中，在API 对象创建之后被立即调用。
+
+
+
+Dynamic Admission Control (**Initializer**)
+
+- 热插拔式的 Admission机制，无需重新编译重启 API Server；
+
+
+
+步骤（例： lstio 为 pod 自动注入 Envoy 容器）
+
+- 定义 Envoy 容器，保存到 ConfigMap
+
+  ```yaml
+  
+  apiVersion: v1
+  kind: ConfigMap
+  metadata:
+    name: envoy-initializer
+  data:
+    config: |
+      containers:
+        - name: envoy
+          image: lyft/envoy:845747db88f102c0fd262ab234308e9e22f693a1
+          command: ["/usr/local/bin/envoy"]
+          args:
+            - "--concurrency 4"
+            - "--config-path /etc/envoy/envoy.json"
+            - "--mode serve"
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+          volumeMounts:
+            - name: envoy-conf
+              mountPath: /etc/envoy
+      volumes:
+        - name: envoy-conf
+          configMap:
+            name: envoy
+  ```
+
+- 编写 Initializer，作为一个 Pod 部署到 k8s
+
+  ```yaml
+  apiVersion: v1
+  kind: Pod
+  metadata:
+    labels:
+      app: envoy-initializer
+    name: envoy-initializer
+  spec:
+    containers:
+      - name: envoy-initializer
+        image: envoy-initializer:0.0.1
+        imagePullPolicy: Always
+  ```
+
+  
+
+- CreateTwoWayMergePatch: 合并两个 pod
+
+  - 用户自定义的pod
+  - Configmap 里定义的 envoy 容器
+
+  
+
 
 
 
