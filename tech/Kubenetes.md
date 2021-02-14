@@ -720,13 +720,69 @@ spec:
 
 ## Service
 
-访问方式
+**作用：**
+
+- Pod 的 IP 不固定；
+- 负载均衡；
+
+
+
+**Yaml**
+
+```yaml
+# Service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: hostnames
+spec:
+  selector:
+    app: hostnames
+  ports:
+  - name: default
+    protocol: TCP
+    port: 80
+    targetPort: 9376
+```
+
+> 使用了 selector 字段来声明这个 Service 只代理携带了 app=hostnames 标签的 Pod。
+>
+> 并且，这个 Service 的 80 端口，代理的是 Pod 的 9376 端口。
+
+
+
+**Endpoints**
+
+Service Endpoints 是指被selector选中的 Pod；可以通过 `kubectl get ep` 命令查看。
+
+
+
+**访问方式**
 
 - **VIP**
-  - Service 的虚拟IP
+  - Service 的虚拟 IP
 - **DNS**
   - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
   - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
+
+
+
+**原理**
+
+kube-proxy 组件 + iptables
+
+- 创建 Service 时，Kube-proxy组件在宿主机上创建一条 iptables 规则；
+- Iptables 规则最终指向 pod.
+
+
+
+Q：当宿主机有大量 Pod，就会有大量 iptables 规则，会大量占用宿主机CPU资源。
+
+A：IPVS 模式的 Service.
+
+
+
+
 
 
 
