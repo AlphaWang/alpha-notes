@@ -1314,26 +1314,36 @@ roleRef:  #关联Role
   apiGroup: rbac.authorization.k8s.io
 ```
 
+- subjects.kind
 
+  - User
 
-```yaml
-# svc-account.yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  namespace: mynamespace
-  name: example-sa
-```
+    - 通过外部认证服务来提供，例如Keystone.
 
+  - ServiceAccount
 
+    ```yaml
+    # svc-account.yaml
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      namespace: mynamespace
+      name: example-sa
+    ```
 
-依次创建 svc-account, role, role-binding，K8S 会为该 ServiceAccount 分配一个 Secret.
+  - Group
+
+    - SA 对应的 Group：`system:serviceaccount:<Namespace名字>:<ServiceAccount名字>`
+
+      
+
+依次创建 svc-account, role, role-binding，K8S 会为该 ServiceAccount 分配一个 Secret。
 
 - 这个 Secret 就是用来跟 API Server进行交互的授权文件（Token）；
 
 ```sh
 
-$ kubectl get sa -n mynamespace -o yaml
+$ kubectl get ServiceAccount -n mynamespace -o yaml
 
 - apiVersion: v1
   kind: ServiceAccount
@@ -1349,14 +1359,53 @@ $ kubectl get sa -n mynamespace -o yaml
 
 
 
+### Pod 引用 SA
+
+```yaml
+# pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: mynamespace
+  name: sa-token-test
+spec:
+  containers:
+  - name: nginx
+    image: nginx:1.7.9
+  serviceAccountName: example-sa # 引用ServiceAccount，否则默认用 `default` SA
+```
+
+```sh
+$ ls /var/run/secrets/kubernetes.io/serviceaccount
+ca.crt namespace token
+```
+
+
+
+该 POD 使用 ca.crt 来访问 API Server，且只有 Role 里定义的权限。
+
 
 
 ### ClusterRole / ClusterRoleBinding
 
 Role / RoleBinding 的问题：
 
-- 必须指定Namespace，无法作用于 Non-Namespaced 对象（例如 Node）；
+- 必须指定 Namespace，无法作用于 Non-Namespaced 对象（例如 Node）；
 - 无法作用于所有 Namespace；
+
+
+
+kubectl get clusterroles
+
+- `system:xx` : 给 k8s 系统组件对应的 ServiceAccount 使用。
+- `cluster-admin`: 
+- `admin`
+- `edit`
+- `view`
+
+
+
+
 
 
 
