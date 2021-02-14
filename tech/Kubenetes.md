@@ -737,7 +737,7 @@ spec:
 目的：隐藏 Volume 的管理、存储服务器的地址等敏感信息。
 
 - PVC: Persistent Volume Claim，相当于接口；屏蔽存储细节。
-- PV: Persistent Volume，相当于实现
+- PV: Persistent Volume，相当于实现，通常由运维提供。
 
 
 
@@ -750,6 +750,7 @@ apiVersion: v1
 metadata:
   name: pv-claim
 spec:
+  storageClassName: manual
   accessModes:
   - ReadWriteOnce # 可读写，且一个PV只能挂载在一个宿主机上
   resources:
@@ -757,6 +758,86 @@ spec:
       storage: 1Gi
        
 ```
+
+
+
+运维定义 PV
+
+```yaml
+# PV
+kind: PersistentVolume
+apiVersion: v1
+metadata:
+  name: pv-volume
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  rbd:
+    monitors:
+    # 使用 kubectl get pods -n rook-ceph 查看 rook-ceph-mon- 开头的 POD IP 即可得下面的列表
+    - '10.16.154.78:6789'
+    - '10.16.154.82:6789'
+    - '10.16.154.83:6789'
+    pool: kube
+    image: foo
+    fsType: ext4
+    readOnly: true
+    user: admin
+    keyring: /etc/ceph/keyring
+```
+
+
+
+**Q：PVC 和 PV 是如何关联上的？**
+
+A: PersistentVolumeController，检查条件：
+
+- spec字段要匹配，例如 PV 的 storage 大小要满足 PVC 的要求；
+
+- storageClassName 要一致；
+
+
+
+**Volume Controller**
+
+Volume Controller 维护着多个控制循环，其中有一个循环是 `PersistentVolumeController`，用来帮 PVC 找到合适的 PV，进行绑定。
+
+- 绑定：将PV名称填到 PVC - spec.volumeName字段。
+
+
+
+**Q: 如何自动创建 PV？**
+
+A: Dynamic Provisioning，通过 `StorageClass` 对象作为创建 PV 的模板。运维人员只需创建有限个 StorageClass对象即可，当开发人员提交了包含StorageClass字段的PVC后，k8s会据此创建出对应的PV。
+
+StorageClass 定义如下内容：
+
+- PV 的属性，例如存储类型、Volume大小；
+- 需要用到的存储插件，例如Ceph等；
+
+```yaml
+# StorageClass.yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: block-service
+provisioner: kubernetes.io/gce-pd #存储插件
+parameters: #属性
+  type: pd-ssd
+```
+
+> PVC 里需要引用 storageClassName
+
+
+
+
+
+
 
 Pod 里使用这个PVC
 
@@ -782,38 +863,13 @@ spec:
         claimName: pv-claim
 ```
 
-运维定义 PV
-
-```yaml
-# PV
-kind: PersistentVolume
-apiVersion: v1
-metadata:
-  name: pv-volume
-  labels:
-    type: local
-spec:
-  capacity:
-    storage: 10Gi
-  accessModes:
-    - ReadWriteOnce
-  rbd:
-    monitors:
-    # 使用 kubectl get pods -n rook-ceph 查看 rook-ceph-mon- 开头的 POD IP 即可得下面的列表
-    - '10.16.154.78:6789'
-    - '10.16.154.82:6789'
-    - '10.16.154.83:6789'
-    pool: kube
-    image: foo
-    fsType: ext4
-    readOnly: true
-    user: admin
-    keyring: /etc/ceph/keyring
-```
 
 
 
-> Q：PVC 和 PV 是如何关联上的？
+
+
+
+
 
 
 
@@ -1427,9 +1483,11 @@ https://time.geekbang.org/column/article/42076
 
 
 
+### Operator
 
+https://time.geekbang.org/column/article/42493
 
-
+也是一个自定义控制器。
 
 
 
