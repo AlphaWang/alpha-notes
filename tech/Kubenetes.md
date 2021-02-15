@@ -751,19 +751,87 @@ spec:
 
 
 
+**spec.type**
+
+目的：为了从 k8s 集群外部，访问到 k8s 里创建的 Service. 
+
+> Service 的访问信息在 Kubernetes 集群之外，其实是无效的。
+
+
+
+- **NodePort**
+
+  - yaml
+
+    ```yaml
+    # NodePort Service
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: my-nginx
+      labels:
+        run: my-nginx
+    spec:
+      type: NodePort  #spec.type
+      ports:
+      - nodePort: 8080 #暴露端口
+        targetPort: 80 #Pod端口
+        protocol: TCP
+        name: http
+      - nodePort: 443
+        protocol: TCP
+        name: https
+      selector:
+        run: my-nginx
+    ```
+
+  - 访问方式：`<任何一台宿主机IP>:8080`
+
+  - IP 包离开宿主机发往 目的Pod时，会做一次 SNAT 操作。
+
+- **LoadBalancer**
+
+  - yaml
+
+    ```yaml
+    # LoadBalancer Service
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: example-service
+    spec:
+      ports:
+      - port: 8765
+        targetPort: 9376
+      selector:
+        app: example
+      type: LoadBalancer
+    ```
+
+  - 适用于公有云上的 k8s 服务：k8s 在LB Service被创建后，会调用 CloudProvider 在公有云上创建一个负载均衡服务，并把被代理的 Pod IP配置为负载均衡器后端。
+
+- **ExternalName**
+
+  - yaml
+
+    ```yaml
+    # ExternalName Service
+    apiVersion: v1
+    kind: Service
+    metadata:
+      name: my-service
+    spec:
+      type: ExternalName
+      externalName: my.database.example.com
+    ```
+
+  - 通过 Service 的 DNS 名字访问它的时候，返回的即是 externalName。
+
+
+
 **Endpoints**
 
-Service Endpoints 是指被selector选中的 Pod；可以通过 `kubectl get ep` 命令查看。
-
-
-
-**访问方式**
-
-- **VIP**
-  - Service 的虚拟 IP
-- **DNS**
-  - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
-  - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
+Service Endpoints 是指被 selector 选中的 Pod；可以通过 `kubectl get ep` 命令查看。
 
 
 
@@ -782,7 +850,58 @@ A：IPVS 模式的 Service.
 
 
 
+**访问方式**
 
+- **VIP**
+  - Service 的虚拟 IP
+- **DNS**
+  - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
+  - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
+
+
+
+## Ingress
+
+作用
+
+- **是 Service 的 Service**；通过访问的 URL，转发给不同的 Serivce；
+- 避免每个 Service 都要一个 负载均衡服务，降低成本。
+
+
+
+yaml
+
+```yaml
+# Ingress.yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: cafe-ingress
+spec:
+  tls:
+  - hosts:
+    - cafe.example.com
+    secretName: cafe-secret
+  rules: # IngressRule
+  - host: cafe.example.com
+    http:
+      paths:
+      - path: /tea    #根据不同路径，转发到不同的 Service
+        backend:
+          serviceName: tea-svc
+          servicePort: 80
+      - path: /coffee
+        backend:
+          serviceName: coffee-svc
+          servicePort: 80
+```
+
+
+
+Ingress Controller
+
+- Ingress 相当于接口，具体的 Ingress Controller 根据 Ingress 定义 提供对应的代理能力。
+- Nginx, HAProxy, Envoy, Traefik
 
 
 
