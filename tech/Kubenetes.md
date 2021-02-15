@@ -862,9 +862,11 @@ A：IPVS 模式的 Service.
 
 ## Ingress
 
+https://time.geekbang.org/column/article/69214
+
 作用
 
-- **是 Service 的 Service**；通过访问的 URL，转发给不同的 Serivce；
+- **是 Service 的 Service**；是k8s 对 ”**反向代理**“ 的抽象；通过访问的 URL，转发给不同的 Serivce；
 - 避免每个 Service 都要一个 负载均衡服务，降低成本。
 
 
@@ -901,7 +903,22 @@ spec:
 Ingress Controller
 
 - Ingress 相当于接口，具体的 Ingress Controller 根据 Ingress 定义 提供对应的代理能力。
-- Nginx, HAProxy, Envoy, Traefik
+
+- 种类：Nginx, HAProxy, Envoy, Traefik
+
+- 部署：
+
+  ```sh
+  $ kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/mandatory.yaml
+  ```
+
+  
+
+
+
+Example: Nginx Ingress Controller
+
+- https://github.com/resouer/kubernetes-ingress/tree/master/examples/complete-example
 
 
 
