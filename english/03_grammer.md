@@ -381,6 +381,24 @@ A：既能接人、又能接物的动词，例如
 
 
 
+## 将来完成进行时
+
+**形式：Will / Shall have been doing**
+
+- 将来完成时：表示结果
+  Soon the astronauts **will have repaired** the telescope.
+- 将来完成进行时：表示持续的过程
+  By Friday midday, they **will have been working** on it for seven days.
+
+
+
+- By next Sunday, they **will have finished** all the preparation.
+- By next Sunday, they **will have been preparing** for a month.
+
+
+
+
+
 # 非谓语动词
 
 > 1. doing
