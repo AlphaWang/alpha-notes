@@ -1671,6 +1671,138 @@ kubectl get clusterroles
 
 
 
+## 资源管理和调度
+
+### 资源模型 & QoS
+
+```yaml
+# 容器 yaml 字段
+spec.containers[].resources.requests.cpu: "250m"
+spec.containers[].resources.requests.memory: "64Mi"
+spec.containers[].resources.limits.cpu: "500m"
+spec.containers[].resources.limits.memory: "128Mi"
+```
+
+- 在调度的时候，kube-scheduler 只会按照 `requests` 的值进行计算。而在真正设置 Cgroups 限制的时候，kubelet 则会按照 `limits` 的值来进行设置。
+
+- 思路：用户在提交 Pod 时，可以声明一个相对较小的 `requests` 值供调度器使用；而 k8s 真正设置给容器 CGroups 的，则是相对较大的 `limits` 值。
+
+  > 在作业被提交后，会主动减小它的资源限额配置，以便容纳更多的作业、提升资源利用率。而当作业资源使用量增加到一定阈值时，会通过“快速恢复”过程，还原作业原始的资源限额，防止出现异常情况。
+  >
+  > 因为在实际场景中，大多数作业使用到的资源其实远小于它所请求的资源限额。
+
+
+
+**QoS 模型**
+
+不同的 requests + limits 设置会将 pod 划分到不同的 QoS 级别当中。
+
+- **Guaranteed**: Pod内所有容器都设置了 requests 和 limits，并且 requests == limits。
+  - `requests.cpu == limits.cpu` 时相当于 cpuset： 将容器绑定到某个CPU的核上。<u>生产环境的在线应用 Pod 推荐使用！</u>
+  - DaemonSet Pod 推荐使用 Guaranteed，因为被回收后会立即重建，回收毫无意义。
+- **Burstable**: Pod内至少一个容器设置了 requests。
+- **BestEffort**: requests和limits都没有设置。
+
+
+
+**作用：**当宿主机资源紧张时，用于对 Pod 进行资源回收（Eviction）：`BestEffort --> Bustable --> Guaranteed`
+
+
+
+当宿主机的 Eviction 阈值达到后，就会进入 `MemoryPressure` 或者 `DiskPressure` 状态，从而避免新的 Pod 被调度到这台宿主机上。
+
+> K8S 会为这种宿主机打上污点 taint。
+
+
+
+默认资源回收阈值：
+
+```
+memory.available<100Mi
+nodefs.available<10%
+nodefs.inodesFree<5%
+imagefs.available<15%
+```
+
+
+
+### 调度器 kube-scheduler
+
+职责：为新创建的 Pod 寻找一个最合适的节点。
+
+原理：两个独立的控制循环
+
+- **Informer Path**
+
+  - **监听**：启动一系列 Informer，监听 Etcd 中 Pod、Node、Service 等 API 对象的变化；
+  - **调度队列**：当一个待调度 Pod (nodeName为空) 被创建后，通过 Pod Informer 的 Handler，将其添加到 调度队列。
+  - **调度器缓存**：还负责对 scheduler cache 进行更新。
+
+- **Scheduling Path**
+
+  - **过滤**：从调度队列里取出 Pod，并从调度器缓存中取出节点列表，调用 <u>Predicates 算法</u>进行过滤。
+
+    > GeneralPredicates
+    >
+    > - PodFitsResources：检查 requests 字段 - CPU、内存；
+    > - PodFitsHost：检查宿主机名字是否与spec.nodeName 一致；
+    > - PodFitsHostPorts：端口是否已占用；
+    >
+    > - PodMatchNodeSelector：检查 pod nodeSelector / nodeAffinity 是否与节点匹配
+    >
+    > Volume 相关
+    >
+    > - NoDiskConflict：多个 Pod 声明挂载的持久化 Volume 是否有冲突；
+    > - MaxPDVolumeCountPredicate ：一个节点上某种类型的持久化 Volume 是不是已经超过了一定数目；
+    > - VolumeBindingPredicate：Pod 对应 PV 的 nodeAffinity
+    >
+    > 宿主机相关
+    >
+    > - PodToleratesNodeTaints：污点Taint vs. Toleration.
+    > - NodeMemoryPressurePredicate：检查节点内存是否充足。
+    >
+    > Pod 相关
+    >
+    > - 
+
+    
+
+  - **打分**：调用 <u>Priorities 算法</u>对节点打分。
+
+  - **Bind**: 设置 Pod 的 nodeName 字段。
+
+    > Assume 机制：只更新调度器缓存里的 Pod 和 Node 信息，而不远程访问 API Server。
+    > 同时创建一个 Goroutine 异步地向 API Server 发起更新 Pod 的请求。
+
+- **Admit**：当 Pod 完成调度需要在某个节点上运行之前，该节点的 kubelet 会进行 Admit 操作 再次验证 GeneralPredicates。（例如资源是否可用、端口是否冲突）
+
+
+
+**优先级（Priority）和抢占（Preemption）机制**
+
+目的：调度失败时如何处理？
+
+- 默认会暂时搁置，直到 Pod 被更新，或者集群状态发生变化。
+- 但有时希望 挤走 某些低优先级 Pod。
+
+
+
+如何定义优先级？
+
+- spec.priorityClassName
+
+
+
+抢占机制
+
+- 高优先级 Pod 调度失败时，会视图找一个节点（使得其中低优先级pod被删除后，可以调度过来）。
+
+- 然后将抢占着 的 spec.nominatedNodeName 设置为该节点，并放入 `unschedulableQ`，进入下一个调度周期。
+
+  > 并不会马上抢占，因为优雅退出期间 集群的可调度性可能会发生变化。
+
+  - 调度队列有两个：`activeQ` `unscheduableQ`
+
 
 
 # 监控
