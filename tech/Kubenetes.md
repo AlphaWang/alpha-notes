@@ -930,9 +930,21 @@ Example: Nginx Ingress Controller
 
 ## Volume
 
-### emptyDir
+### emptyDir & hostPath
 
 https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
+
+https://www.infoq.cn/article/ah1n57f8tge2wisquj00
+
+emptyDir
+
+- emptyDir 类型的 Volume 在 Pod 分配到 Node 上时被创建，Kubernetes 会在 Node 上自动分配一个目录，因此无需指定宿主机 Node 上对应的目录文件。 
+- 这个目录的初始内容为空，当 Pod 从 Node 上移除时，emptyDir 中的数据会被永久删除。
+
+hostPath
+
+- hostPath 类型则是映射 node 文件系统中的文件或者目录到 pod 里。
+- 即便 pod 已经被删除了，volume 卷中的数据还在。
 
 
 
@@ -942,6 +954,10 @@ https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
 
 - PVC: Persistent Volume Claim，相当于接口；屏蔽存储细节。
 - PV: Persistent Volume，相当于实现，通常由运维提供。
+
+> **持久化 Volume**：宿主机上的目录，具备“持久性”。即：这个目录里面的内容，既不会因为容器的删除而被清理掉，也不会跟当前的宿主机绑定。这样，当容器被重启或者在其他节点上重建出来之后，它仍然能够通过挂载这个 Volume，访问到这些内容。
+>
+> hostPath, emptyDir 则不属于 持久化 Volume。
 
 
 
@@ -954,7 +970,7 @@ apiVersion: v1
 metadata:
   name: pv-claim
 spec:
-  storageClassName: manual
+  storageClassName: manual # 用于自动创建PV
   accessModes:
   - ReadWriteOnce # 可读写，且一个PV只能挂载在一个宿主机上
   resources:
@@ -1015,11 +1031,15 @@ Volume Controller 维护着多个控制循环，其中有一个循环是 `Persis
 
 
 
-**Q: 如何自动创建 PV？**
+**StorageClass**
 
-A: Dynamic Provisioning，通过 `StorageClass` 对象作为创建 PV 的模板。运维人员只需创建有限个 StorageClass对象即可，当开发人员提交了包含StorageClass字段的PVC后，k8s会据此创建出对应的PV。
+> **Q: 如何自动创建 PV？**否则运维需要一个个手工创建 PV
+>
+> A: Dynamic Provisioning，通过 `StorageClass` 对象作为创建 PV 的模板。运维人员只需创建有限个 StorageClass对象即可，<u>当开发人员提交了包含StorageClass字段的PVC后，k8s会据此创建出对应的PV</u>。
 
-StorageClass 定义如下内容：
+
+
+StorageClass相当于 PV 的模板， 定义如下内容：
 
 - PV 的属性，例如存储类型、Volume大小；
 - 需要用到的存储插件，例如Ceph等；
@@ -1030,7 +1050,7 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: block-service
-provisioner: kubernetes.io/gce-pd #存储插件
+provisioner: kubernetes.io/gce-pd #指定PV的存储插件！！
 parameters: #属性
   type: pd-ssd
 ```
@@ -1069,11 +1089,41 @@ spec:
 
 
 
+**Local Persistent Volume**
 
+Local PV 定义
 
+```yaml
+#local-pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: example-pv
+spec:
+  storageClassName: local-storage
+  local: #LOCAL
+    path: /mnt/disks/vol1
+  nodeAffinity: #如果Pod要使用此PV，则必须运行在指定node
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: kubernetes.io/hostname
+          operator: In
+          values:
+          - node-1
+```
 
+Local StorageClass
 
-
+```yaml
+#local-storageclass.yaml
+kind: StorageClass
+apiVersion: storage.k8s.io/v1
+metadata:
+  name: local-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer #延迟绑定，否则affinity可能冲突
+```
 
 
 
