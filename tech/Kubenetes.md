@@ -481,7 +481,7 @@ Pod Level
 
 Container Level
 
-- `ImagePullPolicy`：Always | Never
+- `imagePullPolicy`：Always | Never
 
 - `Lifecycle`: postStart, preStop 时触发一系列钩子
 
@@ -833,6 +833,12 @@ spec:
 
 Service Endpoints 是指被 selector 选中的 Pod；可以通过 `kubectl get ep` 命令查看。
 
+```sh
+$ kubectl get endpoints <podname?>
+```
+
+
+
 
 
 **原理**
@@ -923,6 +929,12 @@ Example: Nginx Ingress Controller
 
 
 ## Volume
+
+### emptyDir
+
+https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
+
+
 
 ### PVC & PV
 
@@ -1350,7 +1362,13 @@ spec:
 
 
 
+yaml：
 
+- 类似 Deployment，但没有 replicas 字段。
+
+
+
+设置
 
 - 限制某些节点生效：`nodeAffinity`
 
@@ -1655,7 +1673,223 @@ kubectl get clusterroles
 
 
 
+# 监控
 
+## Prometheus
+
+运行机制
+
+- Pull 抓取 Metrics；
+- 保存到 TSDB，例如 OpenTSDB，InfluxDB；
+
+组件
+
+- `Pushgateway`：允许被监控对象以 Push 方式推送 Metrics 数据；
+- `Alertmanager`：根据 Metrics 灵活设置报警；
+- `Grafana`：可视化界面；
+
+
+
+Pull vs. Push
+
+- pull是拉动作，监听者主动调用被监听者的接口；
+  push是推动作，被监听者主动上报，监听者被动采集。
+- 拉动作有助于监听者自己控制频率和采样量，缺点是需要掌握所有被监听者的地址和端口，也就是要有注册中心；
+- 推动作有利于被监听者自己控制上报数量和频率，但有可能对监听者构成额外的压力，同时有信息丢失的风险；
+
+
+
+## Metrics
+
+
+
+**数据来源**
+
+宿主机监控数据
+
+- 通过 Node Exporter 暴露；一般以 DaemonSet 方式运行在宿主机上。
+
+- 暴露Load、CPU等信息，see https://github.com/prometheus/node_exporter#enabled-by-default 
+
+
+
+K8S 组件 Metrics （`/metrics` API）
+
+- API Server 组件：各个 Controller 的工作队列长度、请求的 QPS、延迟；
+
+- Kubelet 组件：
+
+
+
+K8S 核心监控数据 Core Metrics
+
+- 容器 Metrics
+  - 每个容器的 CPU、文件系统、内存、网络资源使用情况；
+  - 来自于 kubelet 内置的 `cAdvisor` 服务，该服务随 kubelet 启动。
+
+- Pod、Node、Service 等指标
+
+
+
+**Metrics Server**
+
+- 作用：把监控数据以标准 K8S API 暴露出来；
+
+  ```
+  http://127.0.0.1:8001/apis/metrics.k8s.io/v1beta1/namespaces/<namespace-name>/pods/<pod-name>
+  ```
+
+- 原理
+
+  - 从 kubelet Summary API 采集而来，包含 cAdvisor 数据 + kubelet 本身汇总的信息。
+  - Aggregator 模式：/apis/metrics.k8s.io/v1beta1 访问到 `kube-aggregator` 代理，被分发到 `kube-apiserver` 或者 `Metrics Server`。
+
+
+
+**USE 原则**
+
+按照如下三个维度来规划资源监控指标：
+
+- 利用率（Utilization），资源被有效利用起来提供服务的平均时间占比；
+- 饱和度（Saturation），资源拥挤的程度，比如工作队列的长度；
+- 错误率（Errors），错误的数量。
+
+> 关注 ”资源“ 
+
+
+
+**RED 原则**
+
+- 每秒请求数量（Rate）；
+- 每秒错误数量（Errors）；
+- 服务响应时间（Duration）。
+
+> 关注 “服务”
+
+
+
+## 日志
+
+三种日志方案：
+
+1. **在 Node 上部署 logging agent（DaemonSet，例如 Fluentd），将日志文件转发到后端存储里保存起来。**
+
+- 优点：一个节点只需要部署一个 agent，对应用和 Pod 没有侵入性。
+- 缺点：要求应用输出的日志，都必须是直接输出到容器的 stdout / stderr 里。
+
+
+
+2. **通过一个 sidecar 容器把日志文件重新输出到 sidecar 的 stdout / stderr 上**，再用第一种方案。
+
+   ```yaml
+   
+   apiVersion: v1
+   kind: Pod
+   metadata:
+     name: counter
+   spec:
+     containers:
+     - name: count
+       image: busybox # 输出日志到 /var/log/1.log
+       volumeMounts:
+       - name: varlog
+         mountPath: /var/log
+     # sidecar: 输出到stdout    
+     - name: count-log-1
+       image: busybox
+       args: [/bin/sh, -c, 'tail -n+1 -f /var/log/1.log']
+       volumeMounts:
+       - name: varlog
+         mountPath: /var/log
+     # app,sidecar共享volume
+     volumes:
+     - name: varlog
+       emptyDir: {}
+   ```
+
+- 缺点：同一日志文件会有两份。不推荐。
+
+
+
+3. **通过一个 sidecar 容器，把日志文件发送到远程存储。**
+
+```yaml
+# pod.yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: counter
+spec:
+  containers:
+  - name: count
+    image: busybox # 输出日志到 /var/log
+    volumeMounts:
+    - name: varlog
+      mountPath: /var/log
+      
+  - name: count-agent
+    image: k8s.gcr.io/fluentd-gcp:1.30
+    env:
+    - name: FLUENTD_ARGS
+      value: -c /etc/fluentd-config/fluentd.conf
+    volumeMounts:
+    - name: varlog
+      mountPath: /var/log
+    - name: config-volume
+      mountPath: /etc/fluentd-config
+      
+  volumes:
+  - name: varlog
+    emptyDir: {}
+  - name: config-volume
+    configMap: # Fluentd 的输入源在 ConfigMap 里配置
+      name: fluentd-config
+```
+
+
+
+```yaml
+# fluent-config.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-config
+data:
+  fluentd.conf: |
+    <source>
+      type tail
+      format none
+      path /var/log/1.log
+      pos_file /var/log/1.log.pos
+      tag count.format1
+    </source>
+    
+    <source>
+      type tail
+      format none
+      path /var/log/2.log
+      pos_file /var/log/2.log.pos
+      tag count.format2
+    </source>
+    
+    <match **>
+      type google_cloud
+    </match>
+```
+
+
+
+- 优点：部署简单，对宿主机友好；
+
+- 缺点：sidecar消耗资源；kubectl logs 看不到日志输出；
+
+  > 而方案2 的sidecar是用共用 volume，资源消耗不高
+
+
+
+Logrotate
+
+- https://linux.die.net/man/8/logrotate
 
 
 
