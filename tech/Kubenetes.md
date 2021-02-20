@@ -834,10 +834,23 @@ spec:
 Service Endpoints 是指被 selector 选中的 Pod；可以通过 `kubectl get ep` 命令查看。
 
 ```sh
-$ kubectl get endpoints <podname?>
+$ kubectl get endpoints <svc-name>
 ```
 
 
+
+**访问方式**
+
+- **VIP**
+
+  - Service 的虚拟 IP 
+
+    > ClusterIP 模式的 Service ?
+
+- **DNS**
+
+  - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
+  - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
 
 
 
@@ -855,14 +868,6 @@ Q：当宿主机有大量 Pod，就会有大量 iptables 规则，会大量占�
 A：IPVS 模式的 Service.
 
 
-
-**访问方式**
-
-- **VIP**
-  - Service 的虚拟 IP
-- **DNS**
-  - 细分1：**Normal Service**，`svc-name.namespace-name.svc.cluster.local`，解析后得到 Service VIP
-  - 细分2：**Headless Service**， `pod-name.svc-name.namespace-name.svc.cluster.local`，解析后得到某个 Pod 的 IP 地址
 
 
 
