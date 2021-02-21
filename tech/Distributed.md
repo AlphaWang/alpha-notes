@@ -1,23 +1,25 @@
 
 
-## 分布式理论
+# 分布式理论
 
-### CAP 定理
+## CAP 定理
 
-分区不可避免，C/A要进行取舍
+分区不可避免，C/A要进行取舍。
 
-**Consistency 一致性**
 
-- 数据在多个副本之间能够保持一致
+
+### **Consistency 一致性**
+
+- 数据在多个副本之间能够保持一致；
 
 - 强调数据正确
 
   - 每次读取都能读取到最新写入的数据
-- 但如果数据不一致，则无法访问
+  - 但如果数据不一致，则无法访问
   
   
 
-**Availability 可用性**
+### **Availability 可用性**
 
 - 系统提供的服务必须一直处于可用的状态
 
@@ -29,79 +31,61 @@
 
 
 
-**Partition Tolerance 分区容错性**
+### **Partition Tolerance 分区容错性**
 
 - 出现网络分区错误时，系统也需要能容忍
 
 - 不可用方法
 
-  - 1. 激进剔除
+  - 激进剔除
 
-       一旦发现节点不可达，则剔除，并选出新主
+    > 一旦发现节点不可达，则剔除，并选出新主。
+    >
+    > 问题：导致双主
 
-       问题：导致双主
+  - 保守停止
 
-  - 2. 保守停止
-
-       一旦发现节点不可达，则停止自己的服务
-
-       问题： 整个系统不可用
+    > 一旦发现节点不可达，则停止自己的服务。
+    >
+    > 问题： 整个系统不可用
 
 - 可用方法
 
-  - 1. **Static Quorum**
-
-       - 固定票数
-
-         大于固定票数的分区为活动分区
-
-         固定票数 <= 总节点数 <= 2*固定票数 - 1
-
-       - 问题
-
-         分区多时，不容易找到符合条件的分区
-
-         票数固定，不适用于动态加入节点
-
-  - 2. **Keep Majority**
-
-       - 保留多数节点的子集群
-
-         > 偶数时如何解决？
-         >
-         > 叠加策略：保留节点ID最小的
-
-       - 问题
-
-         分区多时，不容易找到符合条件的分区
-
-  - 3. **仲裁机制**
-
+  - **Static Quorum** 
+    - 固定票数：大于固定票数的分区为活动分区，`固定票数 <= 总节点数 <= 2 * 固定票数 - 1`
+    - 问题
+      - 分区多时，不容易找到符合条件的分区
+      - 票数固定，不适用于动态加入节点
+  - **Keep Majority** 
+    - 保留多数节点的子集群
+    - 问题
+      - 分区多时，不容易找到符合条件的分区
+      - 偶数时如何解决？叠加策略：保留节点ID最小的
+  - **仲裁机制** 
+    - 选主：拥有全局心跳信息，据此判断有多个少分区、保留那个子集群
     - 仲裁者为第三方组件
 
-      选主：拥有全局心跳信息，据此判断有多个少分区、保留那个子集群
-
-    - 问题：仲裁者的可靠性
-
-  - 4. **共享资源方式**
-
-########## 仲裁者的可靠性
-
-​				- 分布式锁：哪个子集群获得锁，就保留谁
-
-​				- 问题：如果获得锁后发生故障，但未释放锁？
+    - 问题
+      - 仲裁者的可靠性
+  - **共享资源方式**
+    - 分布式锁：哪个子集群获得锁，就保留谁
+    - 问题
+      - 如果获得锁后发生故障，但未释放锁？
 
 
 
-**CA 场景**：单机系统
+**CA 场景**
+
+单机系统
 
 - **含义**
-  - 关注一致性、可用性
-
-  - 需要全体一致性协议：例如 2PC
-
-  - 不能容忍网络错误：此时整个系统会拒绝写请求，变成只读
-
+  
+- 关注一致性、可用性
+  
+- 需要全体一致性协议：例如 2PC
+  
+- 不能容忍网络错误：此时整个系统会拒绝写请求，变成只读
+  
 - **例子**
 
   - Kafka  --> CP?
@@ -112,70 +96,68 @@
 
   - 单机版 MySql
 
-#### CP 场景
+
+
+**CP 场景**
 
 例如金钱交易
 
-**含义**
+- **含义**
+  - 关注一致性、分区容忍性
 
-- 关注一致性、分区容忍性
+  - 需要多数人一致性协议：例如Paxos
 
--  需要多数人一致性协议：例如Paxos
+  - 保证大多数节点数据一致，少数节点在没有同步到最新数据时会变成不可用状态。
+    在等待期间系统不可用
 
-- 保证大多数节点数据一致，少数节点在没有同步到最新数据时会变成不可用状态。
-  在等待期间系统不可用
+- **例子**
+  - Hbase
 
-**例子**
+  - Etcd
 
-- Hbase
+  - Consul
 
-- Etcd
+  - BigTable
 
-- Consul
+  - MongoDB
 
-- BigTable
-
-- MongoDB
-
-- Redis --> AP?
--  Kafka 
-  - Unclean 领导者选举，会导致 CP --> AP
-
-#### AP 场景
-
-最终一致性
-
-####### 放弃强一致性
-
-**含义**
-
-- 关心可用性、分区容忍性
-- 这样的系统不可能达成一致性
-
-**例子**
-
-- DynamoDB
-
-- Cassandra
-- Eureka
+  - Redis --> AP?
+  - Kafka 
+    - Unclean 领导者选举，会导致 CP --> AP
 
 
 
-### BASE 理论
+**AP 场景**
 
-#### Basiccally Available 基本可用
+最终一致性，放弃强一致性
+
+- **含义**
+  - 关心可用性、分区容忍性
+  - 这样的系统不可能达成一致性
+
+- **例子**
+  - DynamoDB
+
+  - Cassandra
+  - Eureka
+
+
+
+## BASE 理论
+
+### Basiccally Available 基本可用
 
 分布式系统出现故障的时候，允许损失部分可用性。
 
 例如：Latency 损失、降级。
 
-#### Soft State 软状态
+### Soft State 软状态
 
 允许系统存在中间状态，而该中间状态不影响系统整体可用性。
 
 例如：副本同步的延时。
 
-#### Eventual Consistency 最终一致性
+### Eventual Consistency 最终一致性
 
 系统中所有数据副本经过一定时间后，最终能够达到一致的状态
 
@@ -191,21 +173,21 @@
 
 - 单调写一致性 Monotonic write consistency
 
-### 挑战
+## 挑战
 
-#### 通讯异常
+**通讯异常**
 
 - 内存访问 10ns，网络访问 0.1-1ms
 
 - 延迟 100 倍
 
-#### 网络分区
+**网络分区**
 
 - 脑裂
 
 - 出现局部小集群
 
-#### 三态
+**三态**
 
 - 成功
 
@@ -213,67 +195,58 @@
 
 - 超时：发送时丢失、响应丢失
 
-#### 节点故障
+**节点故障**
 
 
 
 
 
-### 分布式中间件
+## 分布式中间件
 
-#### NoSql
+### NoSql
 
-##### Memcached
+**Memcached**
 
 memcached是lazy clean up, 那么如何保证内存不被占满？
 
-**内存机制：Slab**
+- **内存机制：Slab**
+  - 解决了内存碎片问题
+  - 但无法有效利用内存
 
-####### Slab
+- **vs. Reids**
+  - 数据类型
 
--  解决了内存碎片问题
-- 但无法有效利用内存
+  - 持久化
 
-**vs. Reids**
+  - 分布式
 
-- 数据类型
-
-- 持久化
-
-- 分布式
-
-- 内存管理 slot
+  - 内存管理 slot
 
 
 
-##### Redis
+**Redis**
 
-Redis知识图谱 http://naotu.baidu.com/file/3200a19ccc62cf25a318cdf75def4211
+- Redis知识图谱 http://naotu.baidu.com/file/3200a19ccc62cf25a318cdf75def4211
 
-##### MongoDB
+**MongoDB**
 
-常用命令
+- 常用命令
+  - show dbs / collections
 
-- show dbs / collections
+  - use db1
 
-- use db1
-
-- db.collection1.find();
-
+  - db.collection1.find();
 
 
-#### MQ
+### MQ
 
-##### RabbitMQ
+**RabbitMQ**
 
 特点
-
 - 轻量级
-
 - Exchange：处于Producer、Queue之间，路由规则灵活
 
 问题
-
 - 对消息堆积不友好。会导致性能急剧下降
 
 - 性能不佳
@@ -282,39 +255,38 @@ Redis知识图谱 http://naotu.baidu.com/file/3200a19ccc62cf25a318cdf75def4211
 
 
 
-##### RocketMQ
+**RocketMQ**
 
 特点
-
 - 时延小
 
 - Broker事务反查：支持事务消息
 
-  > Broker等不到produer的commit，则访问生产者接口，回查事务状态，决定是提交还是回滚
+> Broker等不到produer的commit，则访问生产者接口，回查事务状态，决定是提交还是回滚
 
 问题
-
 - 与周边生态系统的集成和兼容不佳
 
-##### Kafka
+
+
+**Kafka**
 
 特点
-
 - 集群。集群成员：对等，没有中心主节点
 - 与周边生态系统集成好
 - 性能好
 - CA
 
 问题
-
 - 异步收发消息时延小，但同步时延高
 
 - 批量发送，数据量小时反而时延高
 
-##### Pulsar
+
+
+**Pulsar**
 
 特点
-
 - 存储与计算分离
 
   - ZK：存储元数据
@@ -351,17 +323,9 @@ Redis知识图谱 http://naotu.baidu.com/file/3200a19ccc62cf25a318cdf75def4211
 
 
 
-#### ZooKeeper
+# 分布式协同
 
-See ref.
-
-
-
-## 分布式技术
-
-### 分布式协同
-
-#### 分布式互斥/锁
+## 分布式互斥/锁
 
 作用
 
@@ -560,7 +524,7 @@ Redisson RedLock算法 (?)
 
 
 
-#### 分布式选举
+## 分布式选举
 
 **作用**
 
@@ -653,7 +617,7 @@ ZooKeeper Atomic Broadcast
 
   
 
-#### 分布式共识
+## 分布式共识
 
 区块链
 
@@ -677,7 +641,7 @@ ZooKeeper Atomic Broadcast
 
 
 
-#### 分布式聚合
+## 分布式聚合
 
 目的
 
@@ -714,7 +678,7 @@ ZooKeeper Atomic Broadcast
     - UI 发布订阅：
       UI 写入后，订阅读服务，当有通知是更新UI
 
-#### 分布式事务
+## 分布式事务
 
 ##### ACID 特性
 
@@ -1325,7 +1289,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
   
 
-### 分布式计算
+# 分布式计算
 
 #### MapReduce
 
@@ -1337,7 +1301,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 
-### 分布式通信
+# 分布式通信
 
 #### RPC
 
@@ -1417,7 +1381,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 
-### 分布式存储
+# 分布式存储
 
 #### 三要素
 
@@ -1694,7 +1658,7 @@ public String right2(@RequestParam("id") int id) {
 
    	- 极热点缓存项失效后大量“并发”请求穿透
       	- 方案1：启动后台线程加载缓存，未加载前所有请求直接返回
-   	- 方案2：分布式锁，只有获取到锁的请求才能穿透
+      	- 方案2：分布式锁，只有获取到锁的请求才能穿透
 
    
 
@@ -1764,15 +1728,28 @@ public String right2(@RequestParam("id") int id) {
 
     
 
-## 分布式指标
+# 分布式指标
 
-### 高可靠
+## 可靠性 Reliability
+
+定义
+
+- 即便发生了某些错误（`fault`），系统仍可以继续工作（`fault-tolerant`，`resilient`）。
+
+目的
+
+- prevent `faults` from causing `failure`
+
+手段
+
+- 硬件冗余 --> 单机可靠性
+- 软件容错
 
 #### 负载均衡
 
 - 目标
   
-- 避免服务器过载
+  - 避免服务器过载
   
 - 手段
 
@@ -1980,7 +1957,7 @@ else if(breaker.isHalfOpen()) {
  - ​	配置值确定
    	-  压测
       	- 粒度不能过大：起不到保护作用
-   	- 粒度不能过小：容易误杀
+         	- 粒度不能过小：容易误杀
 
 ########## 容易误杀
 
@@ -2035,7 +2012,7 @@ timer.scheduleAtFixedRate(new Runnable(){
  - 队列算法
    	- 普通队列
       	- 优先级队列
-   	- 带权重的队列：对优先级队列的优化，避免低优先级队列被饿死
+      	- 带权重的队列：对优先级队列的优化，避免低优先级队列被饿死
 
 
 
@@ -2105,6 +2082,41 @@ return incr_by_co
     - 流控依赖资源存在瓶颈问题
       	- 本地批量预取
       	- 以限流误差为代价
+
+## 可扩展性 Scalability
+
+**定义**
+
+- 描述负载增高时系统的处理能力。
+  Scalability is the term we use to describe a system's ability to cope with increased load.
+
+  > 如何描述负载：Load Parameters
+  >
+  > - web服务器：Requests per second
+  > - 数据库：Ratio of reads to writes
+  > - 聊天室：Simultaneously active users
+  > - 缓存：Hit rate
+
+- 即：负载增高时，性能如何变化？负载增高时，如果要保持性能不变，需要如何增加资源？
+
+  > 如何描述性能：
+  >
+  > - Throughput
+  > - Response Time : Percentile
+
+#### 手段
+
+##### 无状态
+
+##### 拆分
+
+###### 数据库
+
+###### 业务
+
+###### 核心 vs. 非核心
+
+
 
 ### 高可用
 
@@ -2578,19 +2590,7 @@ https://www.infoq.cn/article/wechat-serial-number-generator-architecture
 
 ##### 异步
 
-### 可扩展性
 
-#### 手段
-
-##### 无状态
-
-##### 拆分
-
-###### 数据库
-
-###### 业务
-
-###### 核心 vs. 非核心
 
 ## 运维
 
@@ -2694,9 +2694,9 @@ https://www.infoq.cn/article/wechat-serial-number-generator-architecture
 
 ##### JMeter
 
-## 案例
+# 分布式系统案例
 
-### 计数系统设计
+## 计数系统设计
 
 #### 微博点赞数、评论数存储
 
