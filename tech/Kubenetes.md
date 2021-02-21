@@ -77,7 +77,7 @@ CMD ["python", "app.py"]
 
 
 
-## 容器镜像 rootfs
+## 容器镜像: rootfs
 
 - 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
 - 是容器的静态视图
@@ -521,7 +521,7 @@ Container Level
 
 
 
-## Deployment
+## Deployment / ReplicaSet
 
 **定义**：
 
@@ -1680,7 +1680,7 @@ $ kubectl get ServiceAccount -n mynamespace -o yaml
 
 
 
-### Pod 引用 SA
+### Pod 引用 ServiceAccount
 
 ```yaml
 # pod.yaml
