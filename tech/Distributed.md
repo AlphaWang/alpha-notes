@@ -1754,7 +1754,7 @@ public String right2(@RequestParam("id") int id) {
 
 ## 可靠性 Reliability
 
-定义
+### 定义：fault-tolerant / resilient
 
 - 即便发生了某些错误（`fault`），系统仍可以继续工作（`fault-tolerant`，`resilient`）。
 
@@ -1766,6 +1766,10 @@ public String right2(@RequestParam("id") int id) {
 
 - 硬件冗余 --> 单机可靠性
 - 软件容错
+
+
+
+### 手段
 
 #### 负载均衡
 
@@ -2107,40 +2111,88 @@ return incr_by_co
 
 ## 可扩展性 Scalability
 
-**定义**
+### 定义: 负载 - 性能
 
 - 描述负载增高时系统的处理能力。
   Scalability is the term we use to describe a system's ability to cope with increased load.
 
-  > 如何描述负载：Load Parameters
+  > 如何描述负载：`Load Parameters`
   >
   > - web服务器：Requests per second
   > - 数据库：Ratio of reads to writes
   > - 聊天室：Simultaneously active users
   > - 缓存：Hit rate
 
-- 即：负载增高时，性能如何变化？负载增高时，如果要保持性能不变，需要如何增加资源？
+- 即：负载增高时，如继续保持良好的性能。负载增高时，如果要保持性能不变，需要如何增加资源？
 
   > 如何描述性能：
   >
   > - Throughput
   > - Response Time : Percentile
 
-#### 手段
 
-##### 无状态
 
-##### 拆分
+### 手段
 
-###### 数据库
+#### Scale-up
 
-###### 业务
-
-###### 核心 vs. 非核心
+- 垂直扩展；
+- 升级到更强大的机器；
 
 
 
-### 高可用
+#### Scale-out
+
+- 水平扩展；
+- 将负载分布到多个小机器；
+
+要求：无状态
+
+
+
+#### elastic
+
+- 自动增加计算资源；
+
+
+
+## 可维护性 Maintainability
+
+### 定义
+
+易于维护
+
+- 易于修复缺陷；
+- 易于运维；
+- 易于排查故障；
+- 易于适配新平台；
+- 易于适配新场景；
+- 易于偿还技术债；
+- 易于增加新功能；
+
+
+
+### 手段
+
+#### 可运维性 Opeability
+
+
+
+
+
+#### 简单性 Simplicity
+
+
+
+
+
+#### 可演化性 Evolvability / Extensibility
+
+
+
+
+
+## 高可用
 
 #### 手段
 
@@ -2471,7 +2523,7 @@ https://segmentfault.com/a/1190000005988895
 
 ##### 服务调用者降级
 
-### 高性能
+## 高性能
 
 #### 手段
 
@@ -2592,7 +2644,7 @@ https://www.infoq.cn/article/wechat-serial-number-generator-architecture
 
 ##### 完成时间 Turnaround Time
 
-### 高并发
+## 高并发
 
 #### 手段
 
