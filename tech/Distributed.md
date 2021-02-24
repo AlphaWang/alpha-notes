@@ -494,8 +494,9 @@ String result = jedis.set(
 #### 4. Chubby
 
 - 客户端缓存
-  - 作用： 提升性能
-
+  
+- 作用： 提升性能
+  
 - 缓存一致性
 
   - 租期
@@ -1983,7 +1984,7 @@ else if(breaker.isHalfOpen()) {
  - ​	配置值确定
    	-  压测
       	- 粒度不能过大：起不到保护作用
-         	- 粒度不能过小：容易误杀
+              	- 粒度不能过小：容易误杀
 
 ########## 容易误杀
 
@@ -2150,9 +2151,9 @@ return incr_by_co
 
 
 
-#### elastic
+#### Elastic
 
-- 自动增加计算资源；
+- 负载增加时自动增加计算资源；
 
 
 
@@ -2176,19 +2177,27 @@ return incr_by_co
 
 #### 可运维性 Opeability
 
-
+- 可观测运行时行为和内部状态；
+- 自动化、与标准工具集成；
+- 避免依赖单个机器；
+- 良好的文档和操作模式；
+- 良好的默认行为；
+- 自我修复；同时给管理员手动控制；
+- 行为可预测；Minimizing suprises；
 
 
 
 #### 简单性 Simplicity
 
-
+- “抽象 Abstraction” 可以降低复杂性；
+  - facade
 
 
 
 #### 可演化性 Evolvability / Extensibility
 
-
+- Agile
+- 架构重构
 
 
 
