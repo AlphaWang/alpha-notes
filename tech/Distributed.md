@@ -1,5 +1,3 @@
-
-
 # 分布式理论
 
 ## CAP 定理
@@ -164,14 +162,12 @@
 变种：
 
 - 因果一致性 Causal Consistency
-
 - 读己之所写 Read Your Writes
-
 - 会话一致性 Session Consistency
-
 - 单调读一致性 Monotonic read consistency
-
 - 单调写一致性 Monotonic write consistency
+
+
 
 ## 挑战
 
@@ -559,104 +555,116 @@ String result = jedis.set(
 
 > 在所有存活节点中，选取ID最大的为主节点
 
-- 角色
-  - 普通节点
-  - 主节点
+角色
+- 普通节点
+- 主节点
 
-- 流程
-  1. 节点判断自己的ID是否为当前存活的最大ID，如果是，则直接向其他节点发送 Victory 消息，宣誓自己的主权。 
-  2. 节点向比自己ID大的节点发送 Election 消息，等待 Alive 回复。
-  3. 如果给定时间内未收到 Alive 回复，则认为自己成为主节点，向其他节点发送 Victory 消息
-  4. 如果收到 Alive 回复，则继续等待 Victory 消息；
+流程
+1. 节点判断自己的 ID 是否为当前存活的最大 ID，如果是，则直接向其他节点发送 Victory 消息，宣誓自己的主权。 
+2. 节点向比自己 ID 大的节点发送 Election 消息，等待 Alive 回复。
+3. 如果给定时间内未收到 Alive 回复，则认为自己成为主节点，向其他节点发送 Victory 消息
+4. 如果收到 Alive 回复，则继续等待 Victory 消息；
 
-- 特点
 
-  - 优点：选举速度快、算法复杂度低；
-  - 缺点：每个节点有全局的节点信息，额外信息存储多；
-  - 缺点：ID 大的节点不稳定时会触发频繁切主；
 
-  
+优点
 
-######## 缺点：每个节点有全局的节点信息，额外信息存储多
+- 选举速度快、算法复杂度低；
 
-######## 缺点：ID 大的节点不稳定时会触发频繁切主
+缺点
 
-###### 2. Raft 算法
+- 每个节点有全局的节点信息，额外信息存储多；
+- ID 大的节点不稳定时会触发频繁切主；
+
+
+
+#### 2. Raft 算法
 
 > 多数派投票选举
 
-- 角色
-  - Leader 节点
-  - Candidate 节点
-  - Follower 节点
+角色
+- Leader 节点
 
-- 流程
-  1. 初始化时都是Follower；开始选主时所有节点转化为Candidate，并向其他节点发送选举请求；
-  2. 其他节点根据收到的选举请求的先后顺序，回复是否同意成为主；
-  3. 若获得超过一半投票，则成成为主，状态变为 Leader；其他节点 Candidate --> Follower；
-  4. Leader 任期到了，则Leader --> Follower，进入新一轮选主
+- Candidate 节点
 
-- 特点
+- Follower 节点
 
-  - 优点：选举速度快、算法复杂度低
+流程
+1. 初始化时都是 Follower；开始选主时所有节点转化为 Candidate，并向其他节点发送选举请求；
+2. 其他节点根据收到的选举请求的**先后顺序**，回复是否同意成为主；
+3. 若获得超过一半投票，则成成为主，状态变为 Leader；其他节点 Candidate --> Follower；
+4. Leader 任期到了，则Leader --> Follower，进入新一轮选主
 
-  - 优点：稳定度较 Bully好：新节点加入时会触发选主，但不一定会触发切主
-  - 缺点：节点互相通信，通信量大
 
-  
 
-###### 3. ZAB 算法
+优点
 
-> 在Raft基础上，保证数据新的节点优先成为主：server_id + server_zxID
+- 选举速度快、算法复杂度低；
+- 稳定度较 Bully好：新节点加入时会触发选主，但不一定会触发切主；
 
-ZooKeeper Atomic Broadcast
+缺点
+
+- 节点互相通信，通信量大
+
+
+
+#### 3. ZAB 算法
+
+> ZooKeeper Atomic Broadcast：在 Raft 基础上，保证数据新的节点优先成为主：server_id + server_zxID
+
+
 
 每个节点都有唯一的三元组：
-- server_id: 本节点ID
-- server_zxID: 本节点存放的数据ID
-- epoch: 当前选举轮数
+- `server_id`: 本节点 ID
+- `server_zxID`: 本节点存放的数据 ID
+- `epoch`: 当前选举轮数
 
 原则：
-- server_zxID 最大者成为Leader;
-- 若相同，则 server_id 最大者成为Leader;
+- `server_zxID` 最大者成为Leader;
+- 若相同，则 `server_id` 最大者成为Leader;
 
 
 
-- 角色
-  - Leader
-  - Follower
-  - Observer
+角色
+- Leader
+- Follower
+- Observer
 
-- 流程
-  1. 刚启动时，都推选自己，选票信息 `<epoch, vote_id, vote_zxID>`
-  2. 因为 epoch\zxID 都相同，server_id较大者会成为推选对象；其他节点会更新自己的投票并广播
+流程
+1. 刚启动时，都推选自己，选票信息 `<epoch, vote_id, vote_zxID>`
+2. 因为 epoch\zxID 都相同，server_id较大者会成为推选对象；其他节点会更新自己的投票并广播
 
-- 特点
 
-  - 优点：性能高
-  - 优点：稳定性好，新节点加入会触发选主，但不一定触发切主
-  - 缺点：广播方式发送信息，通信量大
-  - 缺点：选举时间较长，除了投票还要对比节点ID和数据ID
 
-  
+优点
 
-## 分布式共识
+- 性能高；
+- 稳定性好，新节点加入会触发选主，但不一定触发切主；
+
+缺点
+
+- 广播方式发送信息，通信量大；
+- 选举时间较长，除了投票还要对比节点 ID 和数据 ID；
+
+
+
+## 分布式共识 -TBD
 
 区块链
 
-##### 算法
+### 算法
 
-###### 1. PoW: Proof of Work
+#### 1. PoW: Proof of Work
 
 比计算能力
 
 
-###### 2. PoS: Proof of Stake
+#### 2. PoS: Proof of Stake
 
 权益是指占有货币的数量和时间
 
 
-###### 3. DPoS: Delegated Proof of Stake
+#### 3. DPoS: Delegated Proof of Stake
 
 解决PoS的垄断wen't
 
@@ -670,157 +678,170 @@ ZooKeeper Atomic Broadcast
 
 - 聚合不同微服务的数据
 
-##### 手段
+### 手段
 
-###### 1. Aggregator / BFF
+#### 1. Aggregator / BFF
 
 - 每次计算，性能不好
 
-###### 2. Denormalize + Materialize the view
+
+
+#### 2. Denormalize + Materialize the view
 
 - 消费Stream，实时预聚合
 
-###### 3. CQRS
+
+
+#### 3. CQRS
 
 > Command Query Responsibility Segregation
 
-- 技术点
-  - Command: SQL 数据库
-  - Query: Cassandra / ES / Redis...
-  - 同步: CDC / MQ
+技术点
+- Command: SQL 数据库
+- Query: Cassandra / ES / Redis...
+- 同步: CDC / MQ
 
-- 问题
 
-  - 最终一致性，不实时
 
-  - 解决
-    - UI 乐观更新：
-      写入后 UI直接显示最新值；如果写入失败再回滚
-    - UI 拉模式：
-      UI 写入时带上version，轮询读服务查询version 更新UI
-    - UI 发布订阅：
-      UI 写入后，订阅读服务，当有通知是更新UI
+问题
+
+- 最终一致性，不实时；
+
+- 解决
+  - **UI 乐观更新**：写入后 UI直接显示最新值；如果写入失败再回滚。
+  - **UI 拉模式**：UI 写入时带上 version，轮询读服务查询 version 更新 UI。
+  - **UI 发布订阅**：UI 写入后，订阅读服务，当有通知是更新 UI。
+  
+  
 
 ## 分布式事务
 
-##### ACID 特性
+### ACID
 
-A 原子性
+**A 原子性**
 
 - 要么全部执行成功，要么全部不执行
   - 实现：Write-ahead log
-
 - 要么转账成功，要么转账失败
 
-C 一致性
+
+
+**C 一致性**
 
 - 事务操作前后，数据的完整性保持一致
   - 实现：事务语义
-
 - 总钱数不会变
 
-I 隔离性
+
+
+**I 隔离性**
 
 - 多个事务并发执行，不会互相干扰
   - 实现：Lock
-
 - A转账、B查余额，依赖于隔离级别
 
-D 持久性
+
+
+**D 持久性**
 
 - 重启后不变
   - 实现：Write-ahead log
-
 - 一旦事务成功，则其做的更新被永远保存下来
 
-##### 隔离级别
 
-Read Uncommitted
+
+### 事务隔离级别
+
+**Read Uncommitted**
 
 - 允许脏读、不可重复度、幻读
 
-Read Committed
+**Read Committed**
 
 - 查询只承认在`语句`启动前就已经提交完成的数据
 
 - 解决：脏读
 
-Repeatable Read
+**Repeatable Read**
 
 - 查询只承认在`事务`启动前就已经提交完成的数据
 
 - 解决：脏读、不可重复读
 
-Serialized
+**Serialized**
 
 - 对相关记录加读写锁
   - 串行化，不允许并发执行
-
 - 解决：脏读、不可重复读、幻读
 
-##### 传播 Propagation
+
+
+### 事务传播 Propagation
 
 - REQUIRED: 当前有就用当前的，没有就新建
-
 - SUPPORTS: 当前有就用当前的，没有就算了
-
 - MANDATORY: 当前有就用当前的，没有就抛异常
-
 - REQUIRES_NEW: 无论有没有，都新建
-
 - NOT_SUPPORTED: 无论有没有，都不用
-
 - NEVER: 如果有，抛异常
-
 -  NESTED: 如果有，则在当前事务里再起一个事务
 
-##### Spring分布式事务
+
+
+### Spring 分布式事务
 
 **种类**
 
-- **XA与最后资源博弈**
+- **XA 与最后资源博弈**
+  
   - 两阶段提交
-
-1. start MQ tran
-2. receive msg
-3. start JTA tran on DB
-4. update DB
-5. Phase-1 commit on DB tran
-6. commit MQ tran
-7. Phase-2 commit on DB tran
+  
+    ```
+    1. start MQ tran
+    2. receive msg
+    3. start JTA tran on DB
+    4. update DB
+    5. Phase-1 commit on DB tran
+    6. commit MQ tran
+    7. Phase-2 commit on DB tran
+    ```
+  
+    
 
 - **共享资源**
 
   - 原理
-    - 两个数据源共享同一个底层资源
-    -  例如ActiveMQ使用DB作为存储
-    - 使用DB上的connection控制事务提交
-
+    - 两个数据源共享同一个底层资源，例如 ActiveMQ 使用 DB 作为存储（ebay BES）
+    - 使用 DB 上的 connection 控制事务提交
+    
   - 要求
     - 需要数据源支持
+
+  
 
 - **最大努力一次提交**
   - 原理
     - 依次提交事务
     - 可能出错
     - 通过AOP或Listener实现事务直接的同步
+    
   - 例：JMS最大努力一次提交+重试
-
-1. start MQ tran
-2. receive msg
-3. start DB tran
-4. update DB
-5. commit DB tran
-6. commit MQ tran
-
-Step4 数据库操作出错，消息会被放回MQ，重新触发该方法；
-Step6 提交MQ事务出错，消息会被放回MQ，重新触发该方法；此时会重复数据库操作，需要忽略重复消息；
-
-​			- 适用于其中一个数据源是MQ，并且事务由读MQ消息开始
-
-​			- 利用MQ消息的重试机制
-
-​			- 重试时需要考虑重复消息
+  
+    ```
+    1. start MQ tran
+    2. receive msg
+    3. start DB tran
+    4. update DB
+    5. commit DB tran
+    6. commit MQ tran
+    
+    Step4 数据库操作出错，消息会被放回 MQ，重新触发该方法；
+    Step6 提交MQ事务出错，消息会被放回 MQ，重新触发该方法；此时会重复数据库操作，需要忽略重复消息；
+    ```
+  
+    - 适用于其中一个数据源是 MQ，并且事务由读 MQ 消息开始
+    - 利用 MQ 消息的重试机制
+    - 重试时需要考虑重复消息
 
 - **链式事务**
 
@@ -838,45 +859,44 @@ Step6 提交MQ事务出错，消息会被放回MQ，重新触发该方法；此�
 
     - DB + DB
 
-```java
-@Bean
-public PlatformTransactionManger trxManager() {
-  DataSourceTransactionManager userTM = new DataSourceTransactionManager(userDataSource());
-  DataSourceTransactionManager orderTM = ...
-  
-  // 顺序敏感，在前的后提交
-  ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
-}
-```
+      ```java
+      @Bean
+      public PlatformTransactionManger trxManager() {
+        DataSourceTransactionManager userTM = new DataSourceTransactionManager(userDataSource());
+        DataSourceTransactionManager orderTM = ...
+        
+        // 顺序敏感，在前的后提交
+        ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
+      }
+      ```
 
-​			- JPA + DB
+    - JPA + DB
 
-JPA factory:
-```java
-@Bean
-public LocalContainerEntityManagerFactoryBean entityManagerFactory() {
-  HibernateJpaVendorAdapter va = new ...;
-  LocalContainerEntityManagerFactoryBean factory = new ...;
-  factory.setJpaVendorAdapter(va);
-  factory.setDataSource(userDataSrouce());
-  return factory;
-}
+      ```java
+      // JPA Factory
+      @Bean
+      public LocalContainerEntityManagerFactoryBean entityManagerFactory() {
+        HibernateJpaVendorAdapter va = new ...;
+        LocalContainerEntityManagerFactoryBean factory = new ...;
+        factory.setJpaVendorAdapter(va);
+        factory.setDataSource(userDataSrouce());
+        return factory;
+      }
+      
+      // TRX Manger
+      @Bean
+      public PlatformTransactionManger trxManager() {
+        JpaTransactionManager userTM = new ...;
+        userTM.setEntityManagerFactory(entityManagerFactory().getObject());
+        
+        DataSourceTransactionManager orderTM = new DataSourceTransactionManager(orderDataSource())
+        
+        // 顺序敏感，在前的后提交
+        ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
+      }
+      ```
 
-```
-
-TRX Manger:
-```java
-@Bean
-public PlatformTransactionManger trxManager() {
-  JpaTransactionManager userTM = new ...;
-  userTM.setEntityManagerFactory(entityManagerFactory().getObject());
-  
-  DataSourceTransactionManager orderTM = new DataSourceTransactionManager(orderDataSource())
-  
-  // 顺序敏感，在前的后提交
-  ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
-}
-```
+      
 
 **选择**
 
@@ -897,6 +917,8 @@ public PlatformTransactionManger trxManager() {
 - 多个数据源
   - 链式事务、或其他事务同步方式
 
+
+
 **锁的实现方式**
 
 -  JmsListener.concurrent=1
@@ -907,11 +929,13 @@ public PlatformTransactionManger trxManager() {
 
 
 
-##### 刚性事务
+### 刚性事务
 
 https://matt33.com/2018/07/08/distribute-system-consistency-protocol/ 
 
-###### XA 协议
+#### XA 协议
+
+参与者：
 
 - TM 事务管理器
   - 协调者
@@ -927,18 +951,18 @@ https://matt33.com/2018/07/08/distribute-system-consistency-protocol/
 
   
 
-###### 2PC：两阶段提交
+#### 2PC：两阶段提交
 
 **流程**
 
-- *阶段一：投票 Voting*
+- ***阶段一：投票 Voting***
+  
   - CanCommit 
     - TM 协调者：向本地资源管理器发起执行操作的 CanCommit 请求；
-  - LOG
-    - RM 参与者：收到请求后，执行事务操作，记录日志但不提交；返回操作结果
-    - RM 参与者：Undo / Redo log
+  - LOG 
+    - RM 参与者：收到请求后，执行事务操作，记录日志（Undo / Redo log）但不提交；返回操作结果
 
-- *阶段二：提交 Commit*
+- ***阶段二：提交 Commit***
 
   - DoCommit
     - TM 协调者：收到所有参与者的结果，如果全是YES 则发送 DoCommit 消息；
