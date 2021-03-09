@@ -1880,7 +1880,7 @@ public String right2(@RequestParam("id") int id) {
 
 ## || 可靠性 Reliability
 
-### 定义：fault-tolerant / resilient
+### 定义: fault-tolerant / resilient
 
 - 即便发生了某些错误（`fault`），系统仍可以继续工作（`fault-tolerant`，`resilient`）。
 
@@ -1899,341 +1899,369 @@ public String right2(@RequestParam("id") int id) {
 
 #### 负载均衡
 
-- 目标
-  
-  - 避免服务器过载
-  
-- 手段
+目标
 
-  - 轮询
-  - 带权重的轮询
+- 避免服务器过载
 
-  
+手段
+
+- 轮询
+- 带权重的轮询
+
+
 
 #### 降级 Degradation
 
-- 手段
-  - 降低一致性
-    - 使用异步简化流程
-    - 降低数据一致性：缓存
-  - 停止次要功能
-    - 先限流再停止
-    - 例如双十一停止退货服务
-  - 简化功能
-  - 拒绝部分请求 --> 限流？
-  - 限流降级、开关降级
+手段
+- **降低一致性**
+  - 使用异步简化流程
+  - 降低数据一致性：缓存
+- **停止次要功能**
+  - 先限流再停止
+  - 例如双十一停止退货服务
+- **简化功能**
+- **拒绝部分请求** --> 限流？
+- **限流降级、开关降级**
 
-- 触发
-  - 吞吐量过大
-  - 响应时间过慢
-  - 失败次数过多
-  - 网络或服务故障
 
-- 原理
 
-  - hystrix fallback 原理
+触发
 
-    https://segmentfault.com/a/1190000005988895
+- 吞吐量过大时
+- 响应时间过慢时
+- 失败次数过多时
+- 网络或服务故障时
 
-  - 滚桶式统计
-    - 10秒滚动窗口
-    -  每1秒一个桶
-  -  RxJava Observable.window()实现滑动窗口
+
+
+原理
+
+- hystrix fallback 原理
+
+  https://segmentfault.com/a/1190000005988895
+
+- 滚桶式统计
+  - 10秒滚动窗口
+  -  每1秒一个桶
+  
+-  RxJava Observable.window()实现滑动窗口
+
+
 
 #### 熔断 Circuit Breaker
 
-保护服务调用发
+作用：保护服务调用方
 
-- 作用
-  - 防止程序不断尝试执行可能会失败的操作
-  - 防止浪费CPU时间去等待长时间的超时产生
-  - 防止雪崩
+- 防止程序不断尝试执行可能会失败的操作
+- 防止浪费CPU时间去等待长时间的超时产生
+- 防止雪崩
 
-- vs. 降级
-  
+
+
+vs. 降级
+
 - 降级概念更广，熔断是降级的一种
-  
-- 原理
-
-  - Hystrix实现
-
-    https://github.com/Netflix/Hystrix/wiki/How-it-Works#CircuitBreaker
-
-  - resilience4j https://resilience4j.readme.io/docs/circuitbreaker
-
-  - Jedis 封装示例
-
-    - open状态时定期检测可用性
-
-```java
-new Timer("RedisPort-Recover", true).scheduleAtFixedRate(new TimerTask() {
-  @Override
-  public void run() {
-    if (breaker.isOpen()) {
-      Jedis jedis = null;
-      try {
-  jedis = connPool.getResource();
-  jedis.ping(); // 验证 redis 是否可用
-  successCount.set(0); // 重置连续成功的计数
-  breaker.setHalfOpen(); // 设置为半打开态
-      } catch (Exception e) {
-      } finally {
-        if (jedis != null) {
-          jedis.close();
-      }
-    }
-   }
-   }
-}, 0, recoverInterval); // 初始化定时器定期检测 redis 是否可用
-```
 
 
 
-​		- 操作数据时判断状态
+原理
 
-```java
-//1. 断路器打开则直接返回空值
-if (breaker.isOpen()) { 
-  return null;  
-}
+- Hystrix实现 https://github.com/Netflix/Hystrix/wiki/How-it-Works#CircuitBreaker
 
-K value = null;
-Jedis jedis = null;
+- resilience4j https://resilience4j.readme.io/docs/circuitbreaker
 
-try {
-  jedis = connPool.getResource();
-  value = callback.call(jedis);
-  
-  //2. 如果是半打开状态
-  if(breaker.isHalfOpen()) {
-if(successCount.incrementAndGet() >= SUCCESS_THRESHOLD) {// 成功次数超过阈值
-failCount.set(0);  // 清空失败数   
-breaker.setClose(); // 设置为关闭态
+- Jedis 封装示例
+
+  - open状态时定期检测可用性
+
+    ```java
+    new Timer("RedisPort-Recover", true).scheduleAtFixedRate(new TimerTask() {
+      @Override
+      public void run() {
+        if (breaker.isOpen()) {
+          Jedis jedis = null;
+          try {
+      jedis = connPool.getResource();
+      jedis.ping(); // 验证 redis 是否可用
+      successCount.set(0); // 重置连续成功的计数
+      breaker.setHalfOpen(); // 设置为半打开态
+          } catch (Exception e) {
+          } finally {
+            if (jedis != null) {
+              jedis.close();
           }
-     }
-     return value;
-} catch (JedisException je) {
+        }
+       }
+       }
+    }, 0, recoverInterval); // 初始化定时器定期检测 redis 是否可用
+    ```
 
-// 3. 失败：如果是关闭态
-if(breaker.isClose()){ 
-if(failCount.incrementAndGet() >= FAILS_THRESHOLD){ // 失败次数超过阈值
- breaker.setOpen();  // 设置为打开态
-   }
-} 
+    
 
-//4. 失败：如果是半打开态
-else if(breaker.isHalfOpen()) {  
-  breaker.setOpen();    // 直接设置为打开态
-  } 
-  throw  je;
-  
-} finally {
-     if (jedis != null) {
-           jedis.close();
-     }
-}
-```
+  - 操作数据时判断状态
+
+    ```java
+    //1. 断路器打开则直接返回空值
+    if (breaker.isOpen()) { 
+      return null;  
+    }
+    
+    K value = null;
+    Jedis jedis = null;
+    
+    try {
+      jedis = connPool.getResource();
+      value = callback.call(jedis);
+      
+      //2. 如果是半打开状态
+      if(breaker.isHalfOpen()) {
+    if(successCount.incrementAndGet() >= SUCCESS_THRESHOLD) {// 成功次数超过阈值
+    failCount.set(0);  // 清空失败数   
+    breaker.setClose(); // 设置为关闭态
+              }
+         }
+         return value;
+    } catch (JedisException je) {
+    
+    // 3. 失败：如果是关闭态
+    if(breaker.isClose()){ 
+    if(failCount.incrementAndGet() >= FAILS_THRESHOLD){ // 失败次数超过阈值
+     breaker.setOpen();  // 设置为打开态
+       }
+    } 
+    
+    //4. 失败：如果是半打开态
+    else if(breaker.isHalfOpen()) {  
+      breaker.setOpen();    // 直接设置为打开态
+      } 
+      throw  je;
+      
+    } finally {
+         if (jedis != null) {
+               jedis.close();
+         }
+    }
+    ```
+
+    
 
 
 
- - 状态
+状态
 
-    - Closed
-      	- 记录失败次数
-    - Open
-      	- 失败次数超过阈值，则断开
-      	- 并且开启一个超时时钟 --> how?
+- Closed
+  - 记录失败次数
+- Open
+  - 失败次数超过阈值，则断开
+  - 并且开启一个超时时钟 --> how?
+- Half-Open
+  - 超时时钟到期，允许一定数量的请求调用服务
 
-   - Half-Open
-     - 超时时钟到期，允许一定数量的请求调用服务
 
-- 实践
-  - 错误类型
-    - 有些错误先走重试，比如限流、超时
-    - 有些错误直接熔断，比如远程服务器挂掉
-  - 日志监控
-  - 测试服务是否可用
-    - ping
-    - 不必等到真实流量才切回closed
-  - 手动重置
-  - 并发问题: atomic
-  - 资源分区
-    - 只对有问题的分区熔断，而不是整体
+
+实践
+
+- 错误类型
+  - 有些错误先走**重试**，比如限流、超时
+  - 有些错误直接**熔断**，比如远程服务器挂掉
+- 日志监控
+- 测试服务是否可用
+  - ping
+  - 不必等到真实流量才切回 closed
+- 手动重置
+- 并发问题: atomic
+- 资源分区
+  - 只对有问题的分区熔断，而不是整体
+
+
 
 #### 限流 Throttle
 
-保护服务提供方
-
-- 作用
-  - 对并发访问进行限速，对整体流量做塑形
-  - 保护服务调用方
-
-- 部署位置
-  - API 网关
-  - RPC 客户端
-
-- 后果
-  - 拒绝服务
-  - 服务降级
-  - 特权请求: 多租户
-  - 延时处理
-
-- 设计
-
-  - 限流规则
-
-    - 阈值的设置
-      - 配置中心，动态调整
-      -  yml, properties
-
-    ```
-    configs:
-    
-    - appId: app-1
-      limits:
-      - api: /v1/user
-        limit: 100
-        unit：60
-      - api: /v1/order
-        limit: 50
-    - appId: app-2
-      limits:
-      - api: /v1/user
-        limit: 50
-      - api: /v1/order
-        limit: 50
-    ```
+作用：保护服务提供方
+- 对并发访问进行限速，对整体流量做塑形
 
 
 
- - ​	配置值确定
+部署位置
+
+- API 网关
+- RPC 客户端
+
+
+
+后果
+
+- 拒绝服务
+- 服务降级
+- 特权请求：多租户
+- 延时处理
+
+
+
+设计
+
+- 限流规则
+
+  - 阈值的设置
+    - 配置中心，动态调整
+    -  yml, properties
+
+  ```
+  configs:
+  
+  - appId: app-1
+    limits:
+    - api: /v1/user
+      limit: 100
+      unit：60
+    - api: /v1/order
+      limit: 50
+  - appId: app-2
+    limits:
+    - api: /v1/user
+      limit: 50
+    - api: /v1/order
+      limit: 50
+  ```
+
+
+
+ - 配置值确定
    	-  压测
       	- 粒度不能过大：起不到保护作用
               	- 粒度不能过小：容易误杀
 
-########## 容易误杀
 
-	- 限流算法
- - 限流模式
-   	- 单机
-    - 分布式
-      	- 集中式管理计数器；例如 存到Redis；注意 Redis超时情况，设置合理超时时间
+限流模式
 
-########## 例如 存到Redis
-
-########## 注意 Redis超时情况，设置合理超时时间
-
-- 限流算法
-  - 固定窗口算法
-
-```java
-private AtomicInteger counter;
-
-public boolena isRateLimit() {
-  return counter.incrementAndGet() >= allowedLimit;
-}
-
-
-ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
-
-timer.scheduleAtFixedRate(new Runnable(){
-    @Override
-    public void run() {
-        counter.set(0);
-    }
-}, 0, 1, TimeUnit.SECONDS);
-```
+- 单机
+- 分布式
+  - 集中式管理计数器；例如 存到Redis；注意 Redis超时情况，设置合理超时时间
 
 
 
-- ​	计数器方式
+限流算法
 
-  - 缺点
+- **固定窗口算法**
 
-  - 无法限制短时集中流量：窗口边界流量
+  ```java
+  private AtomicInteger counter;
+  
+  // 判断限流
+  public boolena isRateLimit() {
+    return counter.incrementAndGet() >= allowedLimit;
+  }
+  
+  // 定期重置
+  ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor();
+  timer.scheduleAtFixedRate(new Runnable(){
+      @Override
+      public void run() {
+          counter.set(0);
+      }
+  }, 0, 1, TimeUnit.SECONDS);
+  ```
 
-    例如限制 10次/s，但无法限制下列场景：
+  - 原理：计数器方式
 
-    前一秒最后10ms --> 10次请求
-    后一秒最前10ms --> 10次请求
+  - 缺点：无法限制短时集中流量、窗口边界流量
+
+    > 例如限制 10次/s，但无法限制下列场景：
+    >
+    > 前一秒最后10ms --> 10次请求
+    > 后一秒最前10ms --> 10次请求
 
 
 
- - ​	滑动窗口算法
+ - **滑动窗口算法**
    	- 划分为多个小窗口
- - 队列算法
+
+
+
+ - **队列算法**
    	- 普通队列
-      	- 优先级队列
-      	- 带权重的队列：对优先级队列的优化，避免低优先级队列被饿死
+    - 优先级队列
+    - 带权重的队列：对优先级队列的优化，避免低优先级队列被饿死
 
 
 
-- 漏桶算法 Leaky Bucket
+- **漏桶算法 Leaky Bucket**
+  
   - 用队列实现，队满则拒绝
   - 速率控制较均匀、精确
-  - 不能处理突发流量
-
-- 令牌通算法 Token Bucket
+- 不能处理突发流量
+  
+  
+  
+- **令牌通算法 Token Bucket**
+  
   - 中间人：往桶里按照固定速率放入token，且总数有限制
   - 限速不精确，能处理突发流量
     - 桶的大小决定了突发流量处理量
-    - 流量小时积攒token，流量大时可以快速处理
+    - 流量小时积攒 token，流量大时可以快速处理
   - 令牌的存储
     - 单机： 变量
     - 分布式：Redis
+    
       - 性能优化：每次取一批令牌，减少请求redis的次数
+      
+      
+  
+- **基于响应时间的动态限流**
+  
+-  TCP: Round Trip Time拥塞控制算法
+  
+- **全局流控**
 
-- 基于响应时间的动态限流
-  -  TCP: Round Trip Time拥塞控制算法
-
-- 全局流控
   - Redis INCR + Lua
 
-```
--- 操作的 Redis Key
-local rate_limit_key = KEYS[1]
--- 每秒最大的 QPS 许可数
-local max_permits = ARGV[1]
--- 此次申请的许可数
-local incr_by_count_str = ARGV[2]
+    ```lua
+    -- 操作的 Redis Key
+    local rate_limit_key = KEYS[1]
+    -- 每秒最大的 QPS 许可数
+    local max_permits = ARGV[1]
+    -- 此次申请的许可数
+    local incr_by_count_str = ARGV[2]
+    
+    -- 当前已用的许可数
+    local currentStr = redis.call('get', rate_limit_key)
+    
+    local current = 0
+    if currentStr then
+        current = tonumber(currentStr)
+    end
+    
+    -- 剩余可分发的许可数
+    local remain_permits = tonumber(max_permits) - current
+    
+    local incr_by_count = tonumber(incr_by_count_str)
+    -- 如果可分发的许可数小于申请的许可数，只能申请到可分发的许可数
+    if remain_permits < incr_by_count then
+        incr_by_count = remain_permits
+    end
+    
+    -- 将此次实际申请的许可数加到 Redis Key 里面
+    local result = redis.call('incrby', rate_limit_key, incr_by_count)
+    -- 初次操作 Redis Key 设置 1 秒的过期
+    if result == incr_by_count then
+        redis.call('expire', rate_limit_key, 1)
+    end
+    
+    -- 返回实际申请到的许可数
+    return incr_by_co
+    ```
 
--- 当前已用的许可数
-local currentStr = redis.call('get', rate_limit_key)
+    
 
-local current = 0
-if currentStr then
-    current = tonumber(currentStr)
-end
+  - 考虑点
 
--- 剩余可分发的许可数
-local remain_permits = tonumber(max_permits) - current
-
-local incr_by_count = tonumber(incr_by_count_str)
--- 如果可分发的许可数小于申请的许可数，只能申请到可分发的许可数
-if remain_permits < incr_by_count then
-    incr_by_count = remain_permits
-end
-
--- 将此次实际申请的许可数加到 Redis Key 里面
-local result = redis.call('incrby', rate_limit_key, incr_by_count)
--- 初次操作 Redis Key 设置 1 秒的过期
-if result == incr_by_count then
-    redis.call('expire', rate_limit_key, 1)
-end
-
--- 返回实际申请到的许可数
-return incr_by_co
-
-```
-
-
-
- - 考虑点
     - 流控粒度问题
-      	- 分成若干 N毫秒 的桶 + 滑动窗口
+      	- 分成若干 N 毫秒的桶 + 滑动窗口
     - 流控依赖资源存在瓶颈问题
-      	- 本地批量预取
-      	- 以限流误差为代价
+       - 本地批量预取
+       - 以限流误差为代价
+
+
 
 ## || 可扩展性 Scalability
 
@@ -2326,131 +2354,119 @@ return incr_by_co
 
 
 
-## 高可用
+## || 高可用
 
-#### 手段
+### 手段
 
-##### 故障隔离 Bulkheads
+#### 故障隔离 Bulkheads
 
 https://resilience4j.readme.io/docs/bulkhead
 
-###### 故障隔离策略
+故障隔离策略
 
-####### 线程级隔离
+- **线程级隔离**
+  - 常用于单体应用
+  - 通信
+    - 共享变量
 
-######## 常用于单体应用
+- **进程级隔离**
+  - 通信
+    - 信号量
+    - 消息队列
+    - 共享内存
+    - RPC
 
-######## 通信
+- **资源隔离**
+  - 微服务服务隔离
+    - 服务注册时：接口名 + 分组参数
+    - 服务发现时：不同客户端的请求带的分组参数不一样，获取的服务器列表也就不一样了
+  - 通过容器隔离资源
 
-######### 共享变量
+- **用户隔离（多租户**）
+  - 服务共享
+  - 数据隔离
 
-####### 进程级隔离
 
-######## 通信
 
-######### 信号量
+隔离带来的问题
 
-######### 消息队列
+- 多板块数据的聚合：响应时间下降
+- 大数据仓库：增加数据合并复杂度
+- 故障雪崩
+- 分布式事务
 
-######### 共享内存
 
-######### RPC
 
-####### 资源隔离
+#### 故障恢复 Failover
 
-######## 微服务
+故障检测
 
-######### 服务注册时：接口名 + 分组参数
+- 心跳
+  - 固定心跳检测
+  - 基于历史心跳消息预测故障
 
-######### 服务发现时：不同客户端的请求带的分组参数不一样，获取的服务器列表也就不一样了
 
-######## 通过容器隔离资源
 
-####### 用户隔离（多租户）
+故障恢复
 
-######## 服务共享
+- 对等节点
+  - 随机访问另一个即可
 
-######## 数据隔离
+- 不对等节点
 
-###### 隔离带来的问题
+  - 选主：在多个备份节点上达成一致
+  - Poxos，Raft
 
-####### 多板块数据的聚合：响应时间下降
+  
 
-####### 大数据仓库：增加数据合并复杂度
+#### 超时控制
 
-####### 故障雪崩
+目的是不让请求一直保持，释放资源给接下来的请求使用
 
-####### 分布式事务
+设置
 
-##### 故障恢复 Failover
+- **ConnectTimeout**
+  - 建立连接阶段最长等待时间
+  - 1~5s即可
+    - 几秒连接不上，则可能永远连不上；配长了没意义
 
-###### 故障检测
+- **ReadTimeout**
+  - 从socket上读取数据的最长等待时间
+  - 设为 TP99 RT
+    - 过长：下游抖动会影响到客户端自己，线程hang
+    - 过短：影响成功率
 
-####### 心跳
 
-######## 固定心跳检测
 
-######## 基于历史心跳消息预测故障
+#### 重试 Retry
 
-###### 故障恢复
+场景
 
-####### 对等节点
+- 认为这个故障时暂时的，而不是永久的；例如网络抖动
 
-######## 随机访问另一个即可
+- 调用超时
 
-####### 不对等节点
+- 返回了某种可以重试的错误：繁忙中，流控中，资源不足...
 
-######## 选主：在多个备份节点上达成一致
+- 注意要幂等！
 
-######## Poxos，Raft
+  - 绝对值的修改 天然幂等
 
-##### 超时控制
+  - 相对值的修改
 
-###### 目的是不让请求一直保持，释放资源给接下来的请求使用
+    - 加 where 条件
+    - 转换成绝对值修改（先查出来）
 
-###### 设置
+    
 
-####### ConnectTimeout
+**重试策略(Spring)**
 
-######## 建立连接阶段最长等待时间
-
-######## 1~5s即可
-
-######### 几秒连接不上，则可能永远连不上；配长了没意义
-
-####### ReadTimeout
-
-######## 从socket上读取数据的最长等待时间
-
-######## 设为 TP99 RT
-
-######### 过长：下游抖动会影响到客户端自己，线程hang
-
-######### 过短：影响成功率
-
-##### 重试 Retry
-
-###### 场景
-
-####### 认为这个故障时暂时的，而不是永久的
-
-######## 网络抖动
-
-####### 调用超时
-
-####### 返回了某种可以重试的错误：繁忙中，流控中，资源不足...
-
-####### 注意要幂等！
-
-######## 绝对值的修改 天然幂等
-
-######## 相对值的修改
-
-######### 加 where 条件
-
-######### 转换成绝对值修改（先查出来）
-
-###### 重试策略(Spring)
+- NeverRetryPolicy：只调一次
+- AlwaysRetryPolicy：无限重试，直到成功
+- SimpleRetryPolicy：固定次数重试
+- TimeoutRetryPolicy：在超时时间内允许重试
+- CircuitBreakerRetryPolicy：有熔断功能的重试策略
+- CompositeRetryPolicy：组合
 
 ```java
 @Service
@@ -2465,63 +2481,31 @@ public interface MyService {
 
 ```
 
-####### NeverRetryPolicy
-
-######## 只调一次
-
-####### AlwaysRetryPolicy
-
-######## 无限重试，直到成功
-
-####### SimpleRetryPolicy
-
-######## 固定次数重试
-
-####### TimeoutRetryPolicy
-
-######## 在超时时间内允许重试
-
-####### CircuitBreakerRetryPolicy
-
-######## 有熔断功能的重试策略
-
-####### CompositeRetryPolicy
-
-######## 组合
-
-###### 退避策略(Spring)
-
-####### NoBackOffPolicy
-
-######## 立即重试
-
-####### FixedBackOffPolicy
-
-######## 固定时间退避
-
-######## sleeper | backOffPeriod
-
-####### UniformRandomBackOffPolicy
-
-######## 随机时间退避
-
-######## sleeper | minBackOffPeriod | maxBackOffPeriod
-
-####### ExponentialBackOffPolicy
-
-public static long getWaitTimeExp(int retryCount) {
-    long waitTime = ((long) Math.pow(2, retryCount) );
-    return waitTime;
-}
 
 
-######## 指数对比策略
+**退避策略(Spring)**
 
-####### ExponentialRandomBackOffPolicy
+- NoBackOffPolicy：立即重试
+- FixedBackOffPolicy：固定时间退避
+  - sleeper | backOffPeriod
 
-######## 指数对比策略，并引入随机乘数
+- UniformRandomBackOffPolicy：随机时间退避
+  - sleeper | minBackOffPeriod | maxBackOffPeriod
 
-###### 实现
+- ExponentialBackOffPolicy：指数退避策略
+
+  ```java
+  public static long getWaitTimeExp(int retryCount) {
+      long waitTime = ((long) Math.pow(2, retryCount) );
+      return waitTime;
+  }
+  ```
+
+- ExponentialRandomBackOffPolicy：指数对比策略，并引入随机乘数
+
+
+
+实现
 
 ```java
 public static void doOperationAndWaitForResult() {
@@ -2557,107 +2541,118 @@ do {
 
 ```
 
-#### 指标
 
-##### MTBF / (MTBF + MTTR)
 
-###### MTBF: Mean Time Between Failure
 
-###### MTTR: Mean Time To Repair
-
-##### VALET
-
-###### Volume - 容量
-
-####### TPS
-
-###### Availability - 可用性
-
-###### Latency - 时延
-
-###### Errors - 错误率
-
-###### Tickets - 人工介入
-
-#### 框架
-
-##### Hystrix
-
-###### HystrixCommand
-
-####### run()
-
-####### getFallback()
-
-####### 执行
-
-######## queue()
-
-######## observe()
-
-###### Spring Cloud Hystrix
-
-####### @HystrixCommand
-
-###### 请求合并、请求缓存
-
-###### 隔离
-
-####### 信号量隔离
-
-######## 轻量
-
-######## 不支持任务排队、不支持主动超时、异步调用
-
-######## 适用高扇出，例如网关
-
-####### 线程隔离
-
-######## 支持排队、超时、异步调用
-
-######## 线程调用会产生额外开销
-
-######## 适用有限扇出
-
-###### 监控
-
-####### hystrix.stream
-
-####### hystrix dashboard
-
-####### turbine
-
-######## 聚合
-
-######## 输出到dashboard
-
-##### Alibaba Sentinel
-
-##### Resilience4j
 
 #### 防雪崩
 
 https://segmentfault.com/a/1190000005988895
 
-##### 流量控制
+流量控制
 
-###### 网关限流
+- 网关限流
 
-###### 用户交互限流
+- 用户交互限流
 
-###### 关闭重试
+- 关闭重试
 
-##### 改进缓存模式
 
-###### 缓存预加载
 
-###### 同步改为异步刷新
+改进缓存模式
 
-##### 服务自动扩容
+- 缓存预加载
 
-##### 服务调用者降级
+- 同步改为异步刷新
 
-## 高性能
+
+
+服务自动扩容
+
+服务调用者降级
+
+
+
+### 指标
+
+#### MTBF / (MTBF + MTTR)
+
+MTBF: Mean Time Between Failure
+
+MTTR: Mean Time To Repair
+
+
+
+#### VALET
+
+- Volume - 容量，TPS
+
+- Availability - 可用性
+
+- Latency - 时延
+
+- Errors - 错误率
+
+- Tickets - 人工介入
+
+### 框架
+
+#### Hystrix
+
+HystrixCommand
+
+- run()
+- getFallback()
+- 执行
+  - queue()
+  -  observe()
+
+
+
+Spring Cloud Hystrix
+
+- @HystrixCommand
+
+
+
+请求合并、请求缓存
+
+- TBD
+
+
+
+隔离
+
+- 信号量隔离
+  - 轻量
+  - 不支持任务排队、不支持主动超时、异步调用
+  - 适用高扇出，例如网关
+
+- 线程隔离
+  - 支持排队、超时、异步调用
+  - 线程调用会产生额外开销适用有限扇出
+
+
+
+监控
+
+- hystrix.stream
+- hystrix dashboard
+- turbine
+  - 聚合
+  - 输出到dashboard
+
+#### Alibaba Sentinel
+
+TBD
+
+#### Resilience4j
+
+TBD
+
+
+
+## || 高性能
 
 #### 手段
 
