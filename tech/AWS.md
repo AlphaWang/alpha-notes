@@ -1,8 +1,8 @@
-# Organizational Complexity 
+# | Organizational Complexity 
 
-## 多账户策略
+## || 多账户策略
 
-### 身份账户
+### 身份账户 +实践
 
 > Identity Account Architecture
 
@@ -11,9 +11,9 @@
 
 
 
-<img src="/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210316221217896.png" alt="image-20210316221217896" style="zoom:67%;" />
+<img src="../img/aws/account-multi-account.png" alt="image-20210316221217896" style="zoom:67%;" />
 
-#### 实践
+**实践**
 
 **背景**
 
@@ -53,7 +53,7 @@
 
 - 将所有账户的所需日志**集中存储**在一个中心区域；
 
-<img src="/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210316221535050.png" alt="image-20210316221535050" style="zoom: 50%;" />
+<img src="../img/aws/account-log-account.png" alt="image-20210316221535050" style="zoom: 50%;" />
 
 ### 发布账户
 
@@ -61,7 +61,7 @@
 
 - **集中管理**整个企业预先批准的 AMI、aws CloudFormation 模板。
 
-<img src="/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210316221649988.png" alt="image-20210316221649988" style="zoom: 50%;" />
+<img src="../img/aws/account-publishing-account.png" alt="image-20210316221649988" style="zoom: 50%;" />
 
 
 
@@ -72,7 +72,7 @@
 - 建立主账户，**整合支付**所有成员子账户。
 - 统一支付、账单追踪、合并使用量
 
-<img src="/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210316221717053.png" alt="image-20210316221717053" style="zoom:50%;" />
+<img src="../img/aws/account-billing.png" alt="image-20210316221717053" style="zoom:50%;" />
 
 
 
@@ -82,19 +82,19 @@
 
 
 
-## AWS Organizations
+## || AWS Organizations
 
 目的：将多个 AWS 账户（成员账户）整合到集中管理的组织（主账户）中，进行账户管理、整合账单。
 
 - 我的账户 - 账单
 
-### 服务控制策略
+### 服务控制策略 +实践
 
 > SCP: Service Control Policy
 
 
 
-#### 实践
+**实践**
 
 主账户
 
@@ -113,9 +113,18 @@
 
 
 
-### 集中式日志存储架构
+## || 日志
 
-将所有账户的所需日志集中存储在一个中心区域，集中进行监控分析。
+
+
+### 集中式日志存储架构 +实践
+
+如何查看服务器日志？
+
+- 方法一：给开发人员分配 ssh 权限；
+- 方法二：集中式日志存储架构，将所有账户的所需日志集中存储在一个中心区域，集中进行监控分析。
+
+
 
 最佳实践：
 
@@ -135,29 +144,385 @@ AWS 提供的集中式日志解决方案：
 
 
 
-#### 实践
+**实践**
 
 将各个**账户**的日志 发送到**中央账户** S3 存储桶。
 
 
 
+- 中央账户：创建 S3 存储桶；并配置策略：权限 --> 存储桶策略。
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Sid": "AWSCloudTrailAclCheck20150319",
+              "Effect": "Allow",
+              "Principal": {
+                  "Service": "cloudtrail.amazonaws.com"
+              }, //or config.amazonaws.com
+              "Action": "s3:GetBucketAcl",
+              "Resource": "arn:aws:s3:::iloveawscn-central-config"
+          },
+          {
+              "Sid": "AWSCloudTrailWrite20150319",
+              "Effect": "Allow",
+              "Principal": {
+                  "Service": "cloudtrail.amazonaws.com"
+              },
+              "Action": "s3:PutObject",
+              "Resource": "arn:aws:s3:::iloveawscn-central-config/*",
+              "Condition": {
+                  "StringEquals": {
+                      "s3:x-amz-acl": "bucket-owner-full-control"
+                  }
+              }
+          }
+      ]
+  }
+  ```
+
+  
+
+- CloudTrail  转发配置
+
+  - 账户B : CloudTrail --> 创建跟踪 --> 存储位置：S3 存储桶
+
+- Config 日志转发配置
+  - 账户B: aws config --> 设置：S3 存储桶
+
+> Q: CloudTrail / Config 日志分别是什么时候生成？
 
 
-# Design for New Solutions
 
-##
+### CloudWatch Logs +实践
+
+在ec2上按照 CloudWatch Logs代理，将相关日志推动到 **CloudWatch 日志组**。接下来即可在cloudwatch日志组中检索日志。
+
+**实践**
+
+把 Linux 系统日志内容推送到 中央CloudWatch
+
+- 为 EC2 分配 **IAM 角色**，以便允许 EC2 创建日志组、发送到日志组；
+
+  - IAM --> 角色 - 创建角色 --> 选择EC2 --> 附加策略：CloudWatchAgentServerPolicy
+  - EC2 --> 实例 --> 设置 - 附加/替换 IAM 角色 --> 选择上一步的角色；
+
+- 在 EC2 上安装并配置 **CloudWatch Logs代理**；
+
+  - 安装：`yum install -y awslogs`
+
+  - 配置：
+
+    ```sh
+    $ cd /etc/awslogs
+    # 两个配置文件 awscli.conf, awslogs.conf
+    
+    $ vi awscli.conf
+    [plugins]
+    cwlogs = cwlogs
+    [default]
+    region = us #根据实际配置region
+    
+    $ vi awslogs.conf
+    ...
+    [/var/logs/messages] #对应会创建日志组
+    file = /var/logs/messages
+    ```
+
+- 启动 CloudWatch Logs代理；
+
+  - `systemctl start awslogsd`
+  - 代理本身的日志文件：/var/log/awslogs.log
+
+- 验证：CloudWatch --> 日志组 --> /var/logs/messages
 
 
 
-# Migration Planning
+## || 权限策略
 
 
 
-# Cost Control
+### S3 存储桶策略
+
+S3 访问策略
+
+- 基于资源
+  - ACL 访问控制列表
+  - 存储桶策略
+- 基于用户
+
+实践
+
+- 配置允许所有人访问：
+
+  - S3 --> 权限 --> unselect “阻止全部公共访问权限”；选择文件 --> 公开
+
+- 允许特定IP 段的存储桶策略：
+
+  - S3 --> 权限 --> 存储桶策略
+
+    ```json
+    {
+       "Version":"2012-10-17",
+       "Id":"S3PolicyId1",
+       "Statement":[
+          {
+             "Sid":"statement1",
+             "Effect":"Deny",
+             "Principal":"*",
+             "Action":[
+                "s3:*"
+             ],
+             "Resource":"arn:aws:s3:::examplebucket/*",
+             "Condition":{
+                "NotIpAddress":{ //除这个ip之外的 都deny
+                   "aws:SourceIp":"192.168.143.188/32"
+                }
+             }
+          }
+       ]
+    }
+    ```
 
 
 
-# Continuous Improvement for Existing Solutions
+### 跨账户 S3 存储桶访问
+
+将 S3 访问权限授予不同的 aws 账户。
+
+- 访问目的：Account A 
+
+  - S3 --> 权限 --> 存储桶策略
+
+  ```json
+  {
+      "Version": "2012-10-17",
+      "Statement": [
+          {
+              "Sid": "cross",
+              "Effect": "Allow",
+              "Principal": {
+                  "AWS": "arn:aws:iam::256454142732:root"
+              },
+              "Action": "s3:*",
+              "Resource": [
+                  "arn:aws:s3:::iloveawscn", //当前存储桶的ARN
+                  "arn:aws:s3:::iloveawscn/*"
+              ]
+          }
+      ]
+  }
+  ```
+
+- 访问来源：Account B
+
+  - IAM --> 用户 --> 访问秘钥
+
+  - 将 A 和 B 的凭证配置到 CLI Credentials 配置文件
+
+    - cat .aws/credentials
+
+      ```
+      [accounta]
+      aws_access_key_id = 
+      aws_secret_access_key = 
+      
+      [accountb]
+      aws_access_key_id = 
+      aws_secret_access_key = 
+      ```
+
+  - 访问：`aws s3 ls s3://iloveaswcn/ --profile accountb` 
+
+  - 上传：`aws s3 cp accountb_file s3://iloveawscn/ --profile accountb`
+
+  - Q: 用 accounta 下载 accountb_file 会报403，为什么？
+
+    - ACL ! 
+
+### S3 标准 ACL
+
+基础知识
+
+- ACL 作为子资源附加到 存储桶或对象上；新对象默认会分配“资源拥有者完全访问权限”。
+- `get-object-acl` 查看附加的ACL具体内容；
+  `aws s3api get-object-acl --bucket iloveawscn --key accountb_file --profile accountb`
+
+
+
+标准 ACL：一系列预定义的授权
+
+- 创建时，通过 `x-amz-acl` 请求头指定；
+  `aws s3 cp acl.txt s3://iloveawscn/ --acl bucket-owner-full-control --profile accountb`
+
+- 标准 ACL 列表：
+
+  | ACL                       | 适用         | 所有者       | 其他                                           |
+  | ------------------------- | ------------ | ------------ | ---------------------------------------------- |
+  | private                   | bucket / obj | FULL_CONTROL | 其他人无权限                                   |
+  | public-read               | bucket / obj | FULL_CONTROL | READ                                           |
+  | public-read-write         | bucket / obj | FULL_CONTROL | READ, WRITE                                    |
+  | aws-exec-read             | bucket / obj | FULL_CONTROL | ec2 从 s3 获取对GET AMI 捆绑的read访问权限 (?) |
+  | authenticated-read        | bucket / obj | FULL_CONTROL | AuthenticatedUsers组有READ权限                 |
+  | bucket-owner-read         | obj          | FULL_CONTROL | 存储桶拥有者可以READ                           |
+  | bucket-owner-full-control | obj          | FULL_CONTROL | 存储桶拥有者 FULL_CONTROL                      |
+  | log-delivery-write        | bucket       |              | LogDelivery 组可以对桶 WRITE / READ_ACP        |
+
+  
+
+
+
+
+
+
+
+# | Design for New Solutions
+
+## || IAM
+
+> Identity and Access Management.
+
+IAM vs. Policy 
+
+- IAM 角色可附加多个策略。
+
+
+
+原则
+
+- 最小权限原则 Principle of Least Privilage
+
+
+
+### IAM 策略评估模型
+
+> IAM Policy Evaluation Logic
+
+![image-20210320161945826](../img/aws/iam-policy.png)
+
+- **Deny Evaluation**：是否有显示拒绝策略？-
+  - 隐式拒绝。
+- **Organizations SCPs**：组织是否有可应用的 SCP?
+- **Resource-based Policies**：被请求的资源是否有policy?
+- **IAM Permissions Boundaries**：当前 principal 是否有 permission boundary?
+- **Session Policies**：当前 principal 是否是使用 policy 的session?
+- **Identity-based Policies**：当前 principal 是否有基于identity的策略？
+
+
+
+**实践1**：新增S3策略
+
+- IAM --> 用户 --> 添加权限 --> AmazonS3ReadOnlyAccess
+  - s3:Get, s3:List
+
+
+
+**实践2**：有 N 个存储桶，只拒绝第 5 个
+
+- 允许访问所有：IAM --> 用户 --> 添加权限 --> AmazonS3FullAccess
+
+- 拒绝第5个：IAM --> 用户 --> 添加权限 --> 创建策略（策略编辑器）
+
+  - 服务 --> 选择 S3
+
+  - 操作 --> 选择所有；选择切换以拒绝权限
+
+  - 资源 --> 添加 ARN --> 输入存储桶名称
+
+  - 编辑策略 --> 删除部分自动生成的内容 (???)
+
+    ```json
+    {
+      "Statement": [
+        {
+          "Sid": "VisualEditor1",
+          "Effect": "Deny",
+          "Action": "s3:*",
+          "Resource": "arn:aws:s3:::iloveawscn5"
+        }
+      ]
+    }
+    ```
+
+  - 附加策略到用户：
+
+> 说明 显式拒绝策略的优先级高于允许策略。
+
+
+
+### 通过附加 IAM 角色访问 S3
+
+- IAM 角色 --> 附加策略：S3ReadyOnly
+- EC2 --> 设置IMA 角色 
+
+
+
+### AWS Securtiy Token Service
+
+通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
+
+将返回：
+
+- AccessKeyId: 
+- SecretAccessKey:
+- Token:
+- Expiration: 
+
+Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务会建立信任管理，通过STS 获取这些凭证。
+
+
+
+什么是临时安全凭证？
+
+- STS 创建可控制你的 aws 资源的临时安全凭证，将凭证提供给**受信任用户**。
+- 临时安全凭证是短期的，有效时间几分钟或几小时。-- 无需显式撤销、轮换。
+- 应用程序无需分配长期 AWS 安全凭证。
+
+
+
+<img src="../img/aws/iam-sts.png" alt="image-20210321201220791" style="zoom:67%;" />
+
+
+
+**实践：信任管理配置**
+
+- IAM --> 角色 - 选择角色 --> 信任关系  
+
+  ```json
+  //允许EC2代入该角色，调用 sts:AssumeRole 获取临时安全凭证
+  {
+    "Version": "",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "ec2.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole" //?
+      }
+    ]
+  }
+  ```
+
+  
+
+
+
+
+
+
+
+# | Migration Planning
+
+
+
+# | Cost Control
+
+
+
+# | Continuous Improvement for Existing Solutions
 
 
 
