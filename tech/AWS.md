@@ -324,7 +324,7 @@ S3 访问策略
 
     - cat .aws/credentials
 
-      ```
+      ```properties
       [accounta]
       aws_access_key_id = 
       aws_secret_access_key = 
@@ -380,9 +380,9 @@ S3 访问策略
 
 # | Design for New Solutions
 
-## || IAM
+## || 安全
 
-> Identity and Access Management.
+### IAM: Identity and Access Management.
 
 IAM vs. Policy 
 
@@ -396,7 +396,7 @@ IAM vs. Policy
 
 
 
-### IAM 策略评估模型
+**IAM 策略评估模型**
 
 > IAM Policy Evaluation Logic
 
@@ -452,14 +452,14 @@ IAM vs. Policy
 
 
 
-### 通过附加 IAM 角色访问 S3
+**实践：通过附加 IAM 角色访问 S3**
 
 - IAM 角色 --> 附加策略：S3ReadyOnly
 - EC2 --> 设置IMA 角色 
 
 
 
-### AWS Securtiy Token Service
+### STS: Securtiy Token Service
 
 通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
 
@@ -486,7 +486,7 @@ Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务
 
 
 
-**实践：信任管理配置**
+**实践1：信任管理配置**
 
 - IAM --> 角色 - 选择角色 --> 信任关系  
 
@@ -506,7 +506,161 @@ Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务
   }
   ```
 
+
+
+AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
+
+
+
+**实践2：本地开发模拟 EC2 IAM 角色同样的权限**
+
+- Local --> 编辑 credentials 文件 `vim ~/.aws/credentials`
+
+  ```properties
+  [accounta]
+  ...
   
+  [accountb]
+  ...
+  
+  [ec2role]
+  aws_access_key_id = 
+  aws_secret_access_key = 
+  aws_session_token = //来源自通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
+  ```
+
+- 通过临时凭证访问S3：`aws s3 ls --profile ec2role`
+
+
+
+**实践3：本地开发使用STS生成临时凭证** (推荐)
+
+是对实践2的优化。
+
+![image-20210321203047065](../img/aws/iam-sts-assumerole.png)
+
+只配置本地安全凭证：IAM --> 用户: zhangsan --> 安全证书：访问秘钥 --> 拷贝到 `.aws/credentials` 文件；
+
+--> 并不能访问 S3. 
+
+
+
+步骤：
+
+- 在 IAM 中建立一个跨账户**角色** stroll；
+
+  - IAM --> 角色 --> 创建 --> 选择受信任实体：其他 AWS 账户 - 输入zhangsan账户ID 
+
+    ```json
+    {
+      "Statement": [
+        "Principal": {
+          //受信任实体：aws账户
+          //区别于受信任实体EC2: "Service": "ec2.amazonaws.com"
+          "AWS": "arn:aws:iam::12345:root"
+        },
+        "Action": "sts:AssumeRole"
+      ]
+    }
+    ```
+
+    
+
+  - 附加一个 S3ReadOnly **权限策略**到 IAM 角色：IAM --> 角色 --> 附加权限策略 --> S3ReadOnly
+    
+
+- 给用户添加 **AssumeRole策略**：允许 IAM 用户（开发人员）STS Assume Role 权限，以便获得临时凭证访问 S3；
+
+  - IAM --> 用户：zhangsan --> 添加内联策略
+    - 服务 -->选择 STS
+    - 操作 --> AssumeRole
+    - 资源 --> 添加 ARN --> 拷贝stroll角色的 ARN （指定允许zhangsan承担的角色的ARN）
+      
+
+- 本地测试：
+  - 获取临时安全凭证：`aws sts assume-role --role-arn arn:aws:iam::256454142732:role/stroll --role-session-name stroll`
+  - 写入本地文件: `vi ~/.aws/credentials`
+  - 测试访问：`aws s3 ls --profile zhangsansts`
+
+
+
+**实践4：自动化获取临时凭证**
+
+实践3可优化：aws sts assume-role --> 拷贝设置 credentials
+
+思路：为AWS CLI 指定承担的角色。这样CLI 就会自动进行 AssumeRole调用。
+
+> 类似 EC2 自动获取临时凭证，也是因为EC2上附加了 IAM 角色。
+
+
+
+步骤：
+
+- 设置 credentials：`vi ~/.aws/credentials`
+
+  ```properties
+  [default]
+  aws_access_key_id = xx
+  aws_secret_access_key = xx
+  
+  [automate]
+  role_arn = arn:aws:iam::12345:role/stroll #角色
+  source_profile = default #用户访问秘钥所在的profile
+  ```
+
+- 测试： `aws s3 ls --profile automate` 即可访问成功。
+
+
+
+### KMS: Key Management Service
+
+用于加密密钥的生成、管理、审计。
+
+特点：
+
+- 完全托管
+- 集中式密钥管理
+- 管理AWS服务的加密
+- 成本低廉
+
+
+
+实践
+
+- 创建**客户主密钥 CMK**
+
+  - KMS --> 客户管理的密钥 --> 创建密钥 
+    - 密钥类型：对称√、非对称
+    - 密钥材料来源：KMS√、外部、自定义密钥库 CloudHSM
+  - 定义密钥管理权限：密钥管理员 --> 选择 IAM 用户或角色
+  - 定义密钥使用权限：
+    
+
+- 定义密钥管理员及**密钥用户**
+
+  - 创建 IAM 用户：IAM --> 用户 --> 创建；
+  - KMS --> 添加密钥用户 --> 获得 `访问密钥ID`、`私有访问密钥`
+    
+
+- 密钥用户使用`访问密钥ID`、`私有访问密钥` 来加密和解密数据
+
+  - 配置
+
+  
+
+注意：密钥不允许导出、只可在当前区域使用
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -518,11 +672,25 @@ Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务
 
 
 
+
+
+
+
 # | Cost Control
 
 
 
+
+
+
+
+
+
 # | Continuous Improvement for Existing Solutions
+
+
+
+
 
 
 
