@@ -396,7 +396,7 @@ IAM vs. Policy
 
 
 
-**IAM 策略评估模型**
+#### **IAM 策略评估模型**
 
 > IAM Policy Evaluation Logic
 
@@ -411,6 +411,8 @@ IAM vs. Policy
 - **Identity-based Policies**：当前 principal 是否有基于identity的策略？
 
 
+
+#### 实践：S3 IAM 策略
 
 **实践1**：新增S3策略
 
@@ -484,7 +486,7 @@ Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务
 
 <img src="../img/aws/iam-sts.png" alt="image-20210321201220791" style="zoom:67%;" />
 
-
+#### 实践：本地开发临时凭证
 
 **实践1：信任管理配置**
 
@@ -625,7 +627,7 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 
 
-实践
+#### **实践：朱密钥加密解密**
 
 - 创建**客户主密钥 CMK**
 
@@ -644,11 +646,80 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 - 密钥用户使用`访问密钥ID`、`私有访问密钥` 来加密和解密数据
 
-  - 配置
+  > 注意：密钥不允许导出、只可在当前区域使用
+
+  - 配置 CLI：`aws configure` --> 输入访问密钥、私有访问密钥、Region （IAM --> 用户 --> 安全证书 --> 创建访问密钥）
+  - 为用户添加权限：IAM --> 用户 --> 添加内联策略 -- 否则aws kms list-keys 会拒绝访问
+    - 服务 --> KMS
+    - 操作 --> listkeys
+  - 测试获取CMK： `aws kms list-keys` 列出当前账户所有 CMK
 
   
 
-注意：密钥不允许导出、只可在当前区域使用
+- 加密：`aws kms encrypt --key-id {密钥ID} --plaintext {待加密内容} --query CiphertextBlob --output text`
+
+  - --query CiphertextBlob: 只返回密文，不返回密钥ID、算法；
+  - --output text：去掉密文两边的引号；
+  - 解码后输出到二进制文件：`| base64 --decode > encryptfile`
+    
+
+- 解密：`aws kms decrypt --ciphertext-blob fileb://encryptfile --query Plaintext --output text | base64 --decode`
+
+  - --query Plaintext：只返回解密后文本，不返回密钥ID、算法；
+  - 解码：`| base64 --decode`
+
+  
+
+> 加密解密过程中，主密钥一直存储在 KMS 中 由aws进行保存；用户通过密钥ID来进行加密，保障了主密钥的安全性。
+
+
+
+#### KMS 信封加密
+
+将加密数据的数据密钥封入信封中进行存储、传输，使用离线的密钥在本地加解密，**不再使用主密钥直接加解密数据**。
+
+使用场景：
+
+- 当加密数据较大时。- KMS 最大支持4KB
+- 性能要求高时。- 因为降低了网络负载
+- 传输过程中的安全风险。 - 窃听、钓鱼
+
+
+
+**信封加密工作流程：**
+
+1. 创建客户主密钥 CMK；
+2. 调用 KMS generate-data-key 生成数据密钥（共两个，一个明文数据密钥，一个密文数据密钥）；
+3. 使用`明文数据密钥`加密文件；
+4. 将加密后的文件、`密文数据密钥`一同存储；并删除明文文件、明文数据密钥。
+
+![image-20210322093730803](../img/aws/kms-env.png)
+
+![image-20210322093808729](../img/aws/kms-env-sample.png)
+
+
+
+
+
+**信封解密工作流程：**
+
+1. 读取密文数据密钥、密文文件；
+2. 调用 KMS decrypt，解密`密文数据密钥`，得到`明文数据密钥`；
+3. 使用`明文数据密钥`解密文件；
+
+![image-20210322094222101](../img/aws/kms-decrypt.png)
+
+
+
+**实践：**
+
+- 生成数据密钥：`aws kms generate-data-key --key-id {CMK密钥ID} --key-spec AES_256`
+  - 密钥ID: 拷贝自 KMS --> 客户管理的密钥
+  - --key-spec: 密钥长度
+  - 返回值：Plaintext == 明文数据密钥，CiphertextBlob == 密文数据密钥；
+- 
+
+
 
 
 
