@@ -690,6 +690,10 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 1. 创建客户主密钥 CMK；
 2. 调用 KMS generate-data-key 生成数据密钥（共两个，一个明文数据密钥，一个密文数据密钥）；
+   - 生成数据密钥：`aws kms generate-data-key --key-id {CMK密钥ID} --key-spec AES_256`
+     - 密钥ID: 拷贝自 KMS --> 客户管理的密钥
+     - --key-spec: 密钥长度
+     - 返回值：Plaintext == 明文数据密钥，CiphertextBlob == 密文数据密钥；
 3. 使用`明文数据密钥`加密文件；
 4. 将加密后的文件、`密文数据密钥`一同存储；并删除明文文件、明文数据密钥。
 
@@ -710,14 +714,6 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 ![image-20210322094222101](../img/aws/kms-decrypt.png)
 
 
-
-**实践：**
-
-- 生成数据密钥：`aws kms generate-data-key --key-id {CMK密钥ID} --key-spec AES_256`
-  - 密钥ID: 拷贝自 KMS --> 客户管理的密钥
-  - --key-spec: 密钥长度
-  - 返回值：Plaintext == 明文数据密钥，CiphertextBlob == 密文数据密钥；
-- 
 
 
 
