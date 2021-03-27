@@ -190,6 +190,7 @@ AWS 提供的集中式日志解决方案：
   - 账户B : CloudTrail --> 创建跟踪 --> 存储位置：S3 存储桶
 
 - Config 日志转发配置
+  
   - 账户B: aws config --> 设置：S3 存储桶
 
 > Q: CloudTrail / Config 日志分别是什么时候生成？
@@ -627,7 +628,7 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 
 
-#### **实践：朱密钥加密解密**
+#### **实践：主密钥加密解密**
 
 - 创建**客户主密钥 CMK**
 
@@ -690,7 +691,7 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 1. 创建客户主密钥 CMK；
 2. 调用 KMS generate-data-key 生成数据密钥（共两个，一个明文数据密钥，一个密文数据密钥）；
-   - 生成数据密钥：`aws kms generate-data-key --key-id {CMK密钥ID} --key-spec AES_256`
+   - 实践 - 生成数据密钥：`aws kms generate-data-key --key-id {CMK密钥ID} --key-spec AES_256`
      - 密钥ID: 拷贝自 KMS --> 客户管理的密钥
      - --key-spec: 密钥长度
      - 返回值：Plaintext == 明文数据密钥，CiphertextBlob == 密文数据密钥；
@@ -712,6 +713,191 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 3. 使用`明文数据密钥`解密文件；
 
 ![image-20210322094222101](../img/aws/kms-decrypt.png)
+
+
+
+### Network ACLs
+
+**概念**
+
+- 网络ACL是无状态的；
+
+- 网络ACL 运行于子网级别，而安全组运行于实例级别；
+
+  > 网络ACL规则控制允许进入子网的数据流，而安全组规则控制允许进入实例的数据流。
+
+- VPC 中每一个子网都必须与网络ACL关联；-- 网络ACL : 子网 == 1 : N
+- 默认网络ACL 允许所有入站和出站的流量；自定义网路ACL默认拒绝所有入站和出站流量，直到添加规则；
+
+
+
+<img src="../img/aws/network-acl.png" alt="image-20210327102408612" style="zoom:50%;" />
+
+**网络ACL vs. 安全组**
+
+|             | 安全组                           | 网络ACL                                |
+| ----------- | -------------------------------- | -------------------------------------- |
+| 运行级别    | 实例级别                         | 子网级别                               |
+| 规则        | 仅支持允许规则                   | 支持允许规则、*拒绝规则*               |
+| 状态        | 有状态，返回的数据流会被自动允许 | 无状态，返回的数据流必须被规则明确允许 |
+| 规则判断(?) | 评估所有规则                     | 按照规则数字顺序，找到符合的规则即返回 |
+| 应用时机    | 只有与实例关联时 才会应用规则    | 自动应用与之关联的子网下所有实例       |
+
+
+
+**实战**：禁止特定 IP 访问 EC2 端口22
+
+- EC2 --> 安全组 --> 入站规则：允许22端口，无法配置拒绝规则；
+- VPC --> 网络ACL --> 选择默认ACL --> 确认关联子网 --> 默认入站规则 100 - 允许所有；
+  - 配置入站规则：添加 --> 编号设置为较小 --> DENY
+- 创建自定义ACL：默认 DENY all
+
+
+
+## || 灾备
+
+### 指标：RTO & RPO
+
+**RTO: 恢复时间目标**
+
+- 从业务中断到恢复到正常所需的时间；
+
+**RPO: 恢复点目标**
+
+- 可容忍的最大数据丢失量；
+
+
+
+
+
+### RDS 只读副本
+
+作用
+
+- 灾备
+- 读写分离
+
+适用场景
+
+- 适用于读取密集型数据库
+
+
+
+**实践：创建 RDS 只读副本**
+
+- RDS --> 操作 - 创建只读副本 -->
+  - 选择实例规格：同主数据库
+  - 目标区域：跨 zone 部署
+
+- 测试：
+
+  - 测试数据库端口连通性 `nc -zv  xxx.ap-northeast-1.rds.amazonaws.com 3306`
+
+    > 先要打开 RDS 公开可用性、以及 **VPC 安全组**中添加允许访问策略。
+
+  - 连接主库，创建 database；连接从库，测试 db 是否已同步。
+
+- 监控：
+
+  - RDS --> 只读副本 --> 监控 - CloudWatch --> 副本滞后
+
+
+
+### 负载均衡器
+
+类型：
+
+https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
+
+- Classic Load Balancer: 不推荐
+- Network Load Balancer：静态 IP (?)、极致性能
+- Application Load Balancer：灵活管理应用程序
+
+
+
+#### Classic Load Balancer 
+
+为什么不推荐 CLB？
+
+- 不支持本机 HTTP/2 协议；
+- 不支持 注册IP地址即目标，只支持 EC2 为目标；
+- 不支持服务名称指示 SNI；(?)
+- 不支持基于路径的路由；
+- 不支持负载均衡到同一实例上的多个端口；
+
+
+
+**实践**
+
+- EC2 启动 nginx
+
+  - ssh EC2，添加 nginx 源：`sudo rpm xxx`；安装 nginx `yum -y install nginx`
+  - 修改index文件：`vi /usr/share/nginx/html/index.html`，`systemctl start nginx`
+  - 配置安全组：允许 CLB 访问
+
+- 配置 CLB：EC2 --> 负载均衡器 --> 创建 - CLB
+
+  - 配置可用区 - 选择 VPC：与 ec2 要相同
+  - 配置**侦听器**：HTTP, 80 --> HTTP, 80
+  - 配置安全组：创建新SG，确保开放 80 端口
+  - 配置运行状况检查
+  - 添加 EC2 实例
+
+  
+
+#### Application Load Balancer
+
+功能
+
+- 支持 HTTP / HTTPS
+- 支持基于路径、基于主机的路由
+- 支持将 IP 地址注册为目标
+- 支持调用 Lambda 函数
+- 支持 SNI
+- 支持单个实例多个端口之间的负载均衡
+
+
+
+**实践：基于路径的路由**
+
+- 创建 ALB：EC2 --> 负载均衡器 --> 创建 - ALB
+  - 配置 VPC、可用区、安全组；
+  - 配置路由：新建“**目标组**” --> 目标类型：IP （？）
+  - 注册目标：输入 IP ，添加到列表
+- 新增**目标组**：EC2 --> 目标组 --> 创建
+  - 类型：IP
+  - 添加实例到目标组：目标组 --> 目标 --> 添加 IP 到列表
+- 配置路径路由：EC2 --> 负载均衡器 --> **侦听器** --> 编辑规则 - 添加
+  - 规则1 - IF : 路径 == `*images*`；规则 THEN: 转发至 == `images 目标组`
+  - 规则2 - IF : 路径 == `*about*`；规则 THEN: 转发至 == `about 目标组`
+
+<img src="../img/aws/alb-path-router.png" alt="image-20210327212414638" style="zoom:50%;" />
+
+
+
+#### 侦听器 & 目标组
+
+> 只用在 ALB、NLB；CLB 是直接在 LB层面配置“目标实例”。
+
+侦听器
+
+- 侦听器是LB 用于**检查连接请求**的进程。一个LB可以有多个侦听器。
+
+- 侦听器使用配置的**协议和端口** 检查来自客户端的连接请求；
+
+- 侦听器将请求 根据规则**路由**到已注册目标组。
+
+目标组
+
+- 目标组使用指定的**协议和端口**将请求**路由**到一个或多个注册目标，例如EC2、IP；
+
+
+
+<img src="../img/aws/target-group.png" alt="image-20210327211527211" style="zoom:50%;" />
+
+
+
+
 
 
 
