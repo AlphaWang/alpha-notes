@@ -904,8 +904,28 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 优势
 
 - 能处理突发流量；
+
 - 极致网络性能；
+
 - 支持将静态IP地址用于负载均衡器；还可为每个子网分配一个弹性IP地址 (?)
+
+  > 作用：每个NLB在每个可用区中提供单个静态IP地址，用户端发往该IP地址的流量会被负载分发到同可用区内的多个后端实例上，用户可以为NLB在每个可用区中分配固定的弹性IP，如此设计使得NLB能够被纳入企业现有的防火墙安全策略中，并且能够避免DNS缓存带来的问题。
+
+
+
+**实践：弹性IP**
+
+https://www.iloveaws.cn/2170.html
+
+- 申请弹性IP：EC2 --> 网络与安全 --> 弹性IP
+- 创建 NLB：EC2 --> 负载均衡器 --> 新建 - NLB
+  - 配置侦听器：协议 TCP
+  - 配置可用区：至少选择两个，将 **弹性IP** 配置到其中一个可用区；
+  - 配置路由目标组：新建目标组 --> 目标类型：实例，协议：TCP
+  - 注册目标：添加 EC2
+- 测试
+  - 弹性IP --> 找到被分配到的网络接口 --> 可以看到描述为 上述NLB在相应可用区的网络接口。
+  - 终端：`nslookup NLB_HOST` --> 获取到的IP地址 == *弹性IP - 公有IP地址*
 
 
 
@@ -930,6 +950,8 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 <img src="../img/aws/target-group.png" alt="image-20210327211527211" style="zoom:50%;" />
 
 
+
+### Auto Scaling
 
 
 
