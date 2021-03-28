@@ -1530,7 +1530,124 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
   - 至少一个备库写入成功
   - 至少一半备库写入成功
 
-  
+
+
+
+### 数据模型 & 查询语言
+
+> 从应用程序开发者角度，理解如何把数据交给db、如何从中查询数据
+
+数据模型分层，每一层向上提供清晰的数据模型、隐藏复杂性
+
+- 应用层：数据结构、API
+- 数据层：JSON、表、图
+- 数据库层：数据存储、查询
+- 硬件层：
+
+
+
+数据模型演进
+
+- **关系模型 Relational Model**
+  - Relations (tables), Tuples (rows)
+  - 网络模型 - 未能竞争过
+  - 层次模型 - 未能竞争过，无法多对多
+  - 网络模型 - 层次模型的泛化（multi-parents）
+- **文档模型 Document Model**
+  - NoSQL
+  - Schema Flexibility?
+    - **Schema-on-write** 写时模式，类似编译器类型检查 - 静态检查；
+    - **Schema-on-read** 读时模式，隐式数据结构，类似运行时类型检查 - 动态检查；适合于集合元素结构不一样时。
+
+
+
+查询的**数据局部性 Data Locality**
+
+- 频繁访问整个文档时有用。避免join。
+
+
+
+**查询语言类别**
+
+- **命令式 Imperative**
+  - 例如 SQL、CSS
+- **声明式 Declarative** 
+  - 例如 JS
+  - 优点：精确、易用、隐藏实现细节！
+  - 优点：并行执行会更快 - 因为只定义了模式而不定义算法 --> 依赖底层优化？
+
+
+
+**图模型 Graph-Like Data Model**
+
+- **Property Graph 属性图**
+
+  > Vertieces + Edges
+
+  - Vertices：顶点，包含：
+
+    - id
+    - outgoing edges
+    - incoming edges
+    - Properties (k-v)
+
+  - Edges：边；
+
+    - id
+    - tail vertex: 边的起点
+    - head vertex: 边的终点
+    - label
+    - Properties (k-v)
+
+    |          | 顶点 | 边       |
+    | -------- | ---- | -------- |
+    | 社交网络 | 人   | 关系     |
+    | 网页     | 页面 | 引用关系 |
+    | 铁路网络 | 车站 | 路线     |
+
+  - 查询
+
+    - Cypher Query Language
+    - Graph Queries in SQL
+
+- **Triple-Stores & SPARQL 三元存储**
+
+  > (Subject, predicate, object)
+  >
+  > ```
+  > _:lucy  a       :Person
+  > _:lucy  :name   "Lucy"
+  > _:lucy  :bornIn _:ca
+  > _:ca    a       :Location
+  > _:ca    :within _:usa
+  > ```
+
+- **Datalog**
+
+
+
+
+
+### 数据存储 & 查询
+
+> 从db角度，理解如何存储数据、如何找到数据。
+
+
+
+**Log-structured storage engine**
+
+- 追加log，而不更新已有记录
+  - 顺序写，性能好
+  - 易于并发、易于恢复 - 因为单线程写？
+- 分段存储：避免磁盘用尽
+  - 定期 Compact + Merge（避免文件碎片化）
+- 索引：哈希索引
+  - 缺点：必须能全部放入内存、范围查询效率低。
+- 
+
+**Page-oriented storage engine**
+
+
 
 ## || 数据分区
 
@@ -2415,8 +2532,9 @@ https://resilience4j.readme.io/docs/bulkhead
 故障恢复
 
 - 对等节点
-  - 随机访问另一个即可
-
+  
+- 随机访问另一个即可
+  
 - 不对等节点
 
   - 选主：在多个备份节点上达成一致
@@ -2492,11 +2610,13 @@ public interface MyService {
 
 - NoBackOffPolicy：立即重试
 - FixedBackOffPolicy：固定时间退避
-  - sleeper | backOffPeriod
-
+  
+- sleeper | backOffPeriod
+  
 - UniformRandomBackOffPolicy：随机时间退避
-  - sleeper | minBackOffPeriod | maxBackOffPeriod
-
+  
+- sleeper | minBackOffPeriod | maxBackOffPeriod
+  
 - ExponentialBackOffPolicy：指数退避策略
 
   ```java
