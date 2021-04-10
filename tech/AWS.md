@@ -615,6 +615,13 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 
 
+### ssh ec2 -TODO
+
+- 下载证书到本地 xx.pem
+- 登录 `ssh -i xx.pem IP`
+
+
+
 ### KMS: Key Management Service
 
 用于加密密钥的生成、管理、审计。
@@ -820,7 +827,7 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 为什么不推荐 CLB？
 
 - 不支持本机 HTTP/2 协议；
-- 不支持 注册IP地址即目标，只支持 EC2 为目标；
+- 不支持 注册IP地址即目标，**只支持 EC2 为目标**；
 - 不支持服务名称指示 SNI；(?)
 - 不支持基于路径的路由；
 - 不支持负载均衡到同一实例上的多个端口；
@@ -839,7 +846,7 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 
   - 配置可用区 - 选择 VPC：与 ec2 要相同
   - 配置**侦听器**：HTTP, 80 --> HTTP, 80
-  - 配置安全组：创建新SG，确保开放 80 端口
+  - 配置安全组：创建新 SG，确保开放 80 端口
   - 配置运行状况检查
   - 添加 EC2 实例
 
@@ -851,10 +858,10 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 
 - 支持 HTTP / HTTPS
 - 支持基于路径、基于主机的路由
-- 支持将 IP 地址注册为目标
+- 支持将 **IP 地址**注册为目标
 - 支持调用 Lambda 函数
 - 支持 SNI
-- 支持单个实例多个端口之间的负载均衡
+- 支持单个实例**多个端口**之间的负载均衡
 
 
 
@@ -883,7 +890,7 @@ https://aws.amazon.com/cn/elasticloadbalancing/features/#compare
 
 #### Network Load Balancer
 
-- 运行于第四层，只支持传输层协议：TCP、UDP、TLS。--> 区别于 ALB
+- 运行于第四层，**只支持传输层协议**：TCP、UDP、TLS。--> 区别于 ALB
 
 - 所以无法支持 应用层的功能，例如基于路径的路由、基于HTTP标头路由；
 
@@ -1075,7 +1082,9 @@ Auto Scaling 配置
 
 
 
-## || Elastic Beanstalk
+## || 部署
+
+### Elastic Beanstalk
 
 使用者只需要上传应用程序，Elastic Beanstalk 将自动处理容量预配置、负载均衡、Auto Scaling 和应用程序运行状况监控的部署细节。
 
@@ -1162,6 +1171,226 @@ Beanstalk 方式：
   > 创建临时 Auto Scaling 组、新实例；部署失败带来的影响最小；
   >
   > 类似 蓝绿部署；
+
+
+
+### Placement Groups 置放群组
+
+作用：决定实例启动在哪个底层硬件上、哪个机柜上。例如：
+
+- 放置在同一可用区，以实现实例之间的低延迟、高吞吐；
+- 分散放置在不同底层硬件和机柜，减少故障；
+
+
+
+三种放置策略：
+
+![image-20210410101119302](../img/aws/place-group.png)
+
+**集群置放群组 - Cluster**
+
+- 将实例尽量放置在一起
+- 在**同一个可用区**；
+- 适用于低延迟、高吞吐场景；
+
+> 建议：
+>
+> 1. 一次性启动所需实例数，不要临时添加；
+>
+> 2. 置放群组中的实例类型要一样
+
+
+
+实践：
+
+- EC2 --> 网络与安全 --> 置放群组 --> 新建
+- EC2 --> 启动实例 --> step3 ”配置实例“ - 选择置放群组
+
+
+
+**分区置放群组 - Partition**
+
+- 将实例分布在不同的”逻辑分区“；每个分区分配一个机柜，不同分区属于不同机柜；
+- 可在**同一区域**下的多个可用区，每个可用区可有最多7个分区。
+- 适用于大型分布式，和重复的工作负载，例如Hadoop Cassandra Kafka；
+
+
+
+**分布置放群组 - Spread**
+
+- 将实例放置在不同机柜；可以跨越**同一区域**中的多个可用区。
+
+> Q: 和分区置放群组的区别？
+
+
+
+
+
+## || VPC
+
+### VPC Endpoints 终端节点
+
+作用：使您能够将 VPC 通过 AWS 的私有网络连接到支持的 AWS 服务，而不需要通过internet。
+
+否则需要通过 Internet 网关经过 Internet 访问，无法保证安全和品质。
+
+<img src="../img/aws/vpc-endpoint.png" alt="image-20210410114923424" style="zoom:50%;" />
+
+
+
+问题排查：
+
+- 检查 DNS 解析配置
+- 检查路由表
+
+
+
+#### Gateway VPC Endpoints
+
+- 网关终端节点只支持 S3 和 DynamoDB；必须为每个 VPC 创建一个网关。
+- 需要更新**路由表**，创建到 AWS 服务的路由；
+- 在 VPC 级别定义，VPC 要启用 **DNS 解析**。
+- 无法扩展到 VPC 之外，例如 VPN连接、VPC对等连接、Transit Gateway、AWS Direct Connect、ClassicLink (?)
+
+<img src="../img/aws/vpc-endpoint-gateway.png" alt="image-20210410114809634" style="zoom:67%;" />
+
+
+
+实践：
+
+- 检查 EC2 配置：EC --> 
+
+  - 描述：没有共有 IP 和公有 DNS
+  - 子网 - 查看 --> 路由表：只有指向local的路由，没有指向网关或NAT网关/实例的路由 --> 所以无法访问 Internet，就无法访问 S3；
+  - 登录该 EC2 （通过另一台可访问 Internet 的 EC2 作为跳板机） --> `aws s3 ls`，无法访问
+
+- 创建 Endpoint：EC2 --> 终端节点 --> 创建
+
+  - 服务类别：AWS 服务 | 按名称查找 | 您的 AWS Marketplace 服务
+
+  - 服务名称：选择S3 - gateway
+
+  - VPC：
+
+  - 配置路由表：EC2 所在**子网的路由表**
+
+    > 会在该路由表中增加一条规则：目的地为S3，目标为endpint id。
+
+  - 策略：完全访问
+
+- 测试 `aws s3 ls` 可正常访问
+
+
+
+#### Interface VPC Interface 
+
+接口终端节点支持更多的AWS服务。
+
+<img src="../img/aws/vpc-endpoint-interface.png" alt="image-20210410170556114" style="zoom:67%;" />
+
+- 接口终端节点提供一个**弹性网络接口 ENI**，被分配一个所属子网的私有IP地址 10.0.1.6。
+
+- 还会生成几个特定的终端节点 **DNS 名称**，可用这些DNS名称与AWS服务通信。
+
+  > 如果勾选”启动私有DNS名称“，那么对应的公有DNS名称就不再解析成*aws服务的公有IP地址*，而是会解析成*接口终端节点的私有IP地址*。
+  >
+  > 如果未勾选呢？--> 则原来的公有DNS会失效？
+
+- 需要指定与接口终端节点关联的安全组，控制从VPC中的资源发送到接口终端节点的通信。
+- 本地数据中心可以通过AWS Direct Connect 或AWS站点到站点VPN访问接口终端节点。
+
+
+
+实践：
+
+- 创建 Endpoint：EC2 --> 终端节点 --> 创建
+  - 服务类别：AWS 服务
+  - 服务名称：选择 ec2 - interface
+  - VPC：
+  - 子网：选择 subnet2
+  - 启用私有 DNS 名称
+  - 安全组：控制从VPC中资源发往该终端节点网络接口的通信。
+- 测试 
+  - VPC --> 终端节点 
+    --> 子网 - 找到**网络接口** --> 安全组规则：放行所有
+    --> 详细信息 --> 查看分配的 **DNS 名称** 
+  - 登录 EC2 --> 执行 `aws ec2 describe-instances`，正常返回；
+
+
+
+#### 终端节点策略
+
+控制只允许 `特定的IAM用户` 通过这个终端节点 访问 `特定的资源`，且只可 `指定特定的动作`。示例：
+
+```json
+{
+  "Statement": [{
+    "Action": ["sqs:SendMessage"], 
+    "Effect": "Allow",
+    "Resource": "arn:aws:sqs:us-east-xx:MyQueue",
+    "Principal": {
+      "AWS": "arn:aws:iam:123333:user/MyUser"
+    }
+  }]
+}
+```
+
+- 不会覆盖或取代 IAM 用户策略、服务特定策略，只是多加一层控制、提供VPC终端节点级别的访问控制。
+
+
+
+**S3 存储桶策略 - 只允许从特定终端节点、或特定VPC 访问存储桶**
+
+- 允许特定终端节点 - `Condition: "aws:sourceVpce": "xxx"` 
+
+  > 注意 aws:sourceIp 对终端节点无法生效，因为它只能限制公有IP访问。
+
+  ```json
+  {
+    "Statement": [{
+      "Principal": "*",
+      "Action": ["s3:GetOject", "s3:PutObject", "s3:List*"], 
+      "Effect": "Deny",
+      "Resource": ["arn:aws:s3:::my_secure_bucket"],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpce": "vpce-1234"
+        }
+      }
+    }]
+  }
+  ```
+
+  
+
+- 允许特定VPC - `Condition: "aws:sourceVpc": "xxx"`
+
+  ```json
+  {
+    "Statement": [{
+      "Principal": "*",
+      "Action": "s3:*", 
+      "Effect": "Deny",
+      "Resource": ["arn:aws:s3:::my_secure_bucket"],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpc": "vpc-5678"
+        }
+      }
+    }]
+  }
+  ```
+
+  
+
+**访问S3故障排查**
+
+- 检查实例的**安全组**：出站规则要有允许相应的访问出站；
+- 检查 VPC 终端节点上的**终端节点策略**：是否允许EC2访问S3
+- 检查**路由表**：要有通过网关终端节点访问S3的规则
+- 检查 VPC **DNS设置**：需要启用 DNS 解析；
+- 检查 **S3 存储桶策略**
+- 检查 **IAM 权限**：确认EC2附加的角色是否允许访问 S3；
 
 
 
