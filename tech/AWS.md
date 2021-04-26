@@ -1520,11 +1520,45 @@ Beanstalk 方式：
 
 
 
+### VPC Site-to-Site VPN
+
+VPN
+
+- 在公有网络上建立专有网络，加密通讯。
+
+配置
+
+- 本地数据中心
+  - 配置软件或硬件VPN设备，要求VPN外部接口需要有一个可在Internet路由/访问的IP地址。
+- AWS端
+  - 创建一个虚拟专用网关（VGW），然后附加到 VPC。
+  - 创建一个客户网关，配置指定本地数据中心VPN设备公有IP。
+
+<img src="../img/aws/vpc-vpn.png" alt="image-20210419231113912" style="zoom:67%;" />
+
+- 配置路由表
+  - 静态路由
+    - 本地数据中心：将去往VPC私有网络 10.0.0.10/24的通信指向客户网关；
+    - AWS：将去往本地数据中心10.2.0.0/20的通信指向虚拟专用网关VGW；
+  - 或动态路由 BGP
+    - 在客户网关、虚拟专用网关配置 ASN；
+    - 好处：无需手动配置路由表，BGP 自动更新；
+
+![image-20210419231254879](../img/aws/vpc-vpn-router.png)
 
 
 
+例题：VPN 与 Internet 访问
+
+![image-20210419231831996](../img/aws/vpc-vpn-q-internet.png)
+
+![image-20210419231926298](../img/aws/vpc-vpn-q-internet2.png)
 
 
+
+**VPN CloudHub**
+
+将多个 Site-to-Site VPN 客户网关连接到一起。星型拓扑连接模型：可连接多个 本地数据中心。
 
 
 
