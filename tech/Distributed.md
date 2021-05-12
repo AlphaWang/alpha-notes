@@ -8,24 +8,26 @@
 
 **Consistency 一致性**
 
-- 数据在多个副本之间能够保持一致；
+数据在多个副本之间能够保持一致；
 
-- 强调数据正确
+强调数据正确
 
-  - 每次读取都能读取到最新写入的数据
-  - 但如果数据不一致，则无法访问
-  
-  
+- 每次读取都能读取到最新写入的数据
+- 但如果数据不一致，则无法访问
+
+> 区别 ACID 中的 C：事务操作前后，数据的完整性保持一致
+
+
 
 **Availability 可用性**
 
-- 系统提供的服务必须一直处于可用的状态
+系统提供的服务必须一直处于可用的状态；
 
-- 强调可用性
+强调可用性
 
-  - 每次读取都能得到响应数据
+- 每次读取都能得到响应数据
 
-  - 但不保证数据时正确的
+- 但不保证数据时正确的
 
 
 
@@ -33,7 +35,7 @@
 
 出现网络分区错误时，系统也需要能容忍
 
-不可用方法
+<u>不可用方法</u>
 
 - 激进剔除
 
@@ -47,7 +49,7 @@
   >
   > 问题： 整个系统不可用
 
-可用方法
+<u>可用方法</u>
 
 - **Static Quorum** 
   - 固定票数：大于固定票数的分区为活动分区，`固定票数 <= 总节点数 <= 2 * 固定票数 - 1`
@@ -165,15 +167,27 @@
 
 变种：
 
-- 因果一致性 Causal Consistency
 - **读己之所写 Read Your Writes**
+
   - 要求：自己写入成功的任何数据，下一刻一定能读到。
   - 实现：写入节点如果是 副本R1，则后续的读取操作也要打到该节点。
-- 会话一致性 Session Consistency
+
+  
+
 - **单调读一致性 Monotonic read consistency**
+
   - 要求：用户一旦读到某个值，就不会读到比这个值更旧的值。
-  - 实现：将用户与副本建立固定映射关系，避免在多个副本中切换。
+  - 实现：将用户与副本建立固定的映射关系，类似会话粘滞。
+
 - 单调写一致性 Monotonic write consistency
+
+- 前缀一致性 Consistent Prefix
+
+  - 保持因果顺序，例如现有 Q 再有 A
+
+- 会话一致性 Session Consistency
+
+- 因果一致性 Causal Consistency
 
 
 
@@ -1672,11 +1686,13 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 ## || 分布式数据库
 
-方案演进
+### 方案演进
 
 **1. 客户端组件 + 单体数据库**
 
 - Sharding-JDBC
+
+![image-20210512230600619](../img/distributed/db-shardingjdbc.png)
 
 
 
@@ -1684,12 +1700,16 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 - MyCat
 
-
+![image-20210512230708729](../img/distributed/db-mycat.png)
 
 **3. 单元化架构 + 单体数据库**
 
+对业务应用系统的彻底重构，应用系统被拆分成若干实例，配置独立的单体数据库，让每个实例管理一定范围的数据。当出现跨支行业务时，由应用层代码通过分布式事务组件保证事务的 ACID 特性。
+
 - 业务聚合？
 - https://time.geekbang.org/column/article/271373
+
+![image-20210512230808552](../img/distributed/db-bizcross.png)
 
 
 
