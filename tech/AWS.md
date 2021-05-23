@@ -570,16 +570,14 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
     
 
   - 附加一个 S3ReadOnly **权限策略**到 IAM 角色：IAM --> 角色 --> 附加权限策略 --> S3ReadOnly
-    
-
+  
 - 给用户添加 **AssumeRole策略**：允许 IAM 用户（开发人员）STS Assume Role 权限，以便获得临时凭证访问 S3；
 
   - IAM --> 用户：zhangsan --> 添加内联策略
     - 服务 -->选择 STS
     - 操作 --> AssumeRole
     - 资源 --> 添加 ARN --> 拷贝stroll角色的 ARN （指定允许zhangsan承担的角色的ARN）
-      
-
+  
 - 本地测试：
   - 获取临时安全凭证：`aws sts assume-role --role-arn arn:aws:iam::256454142732:role/stroll --role-session-name stroll`
   - 写入本地文件: `vi ~/.aws/credentials`
@@ -644,14 +642,12 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
     - 密钥材料来源：KMS√、外部、自定义密钥库 CloudHSM
   - 定义密钥管理权限：密钥管理员 --> 选择 IAM 用户或角色
   - 定义密钥使用权限：
-    
-
+  
 - 定义密钥管理员及**密钥用户**
 
   - 创建 IAM 用户：IAM --> 用户 --> 创建；
   - KMS --> 添加密钥用户 --> 获得 `访问密钥ID`、`私有访问密钥`
-    
-
+  
 - 密钥用户使用`访问密钥ID`、`私有访问密钥` 来加密和解密数据
 
   > 注意：密钥不允许导出、只可在当前区域使用
@@ -669,8 +665,7 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
   - --query CiphertextBlob: 只返回密文，不返回密钥ID、算法；
   - --output text：去掉密文两边的引号；
   - 解码后输出到二进制文件：`| base64 --decode > encryptfile`
-    
-
+  
 - 解密：`aws kms decrypt --ciphertext-blob fileb://encryptfile --query Plaintext --output text | base64 --decode`
 
   - --query Plaintext：只返回解密后文本，不返回密钥ID、算法；
@@ -1522,25 +1517,27 @@ Beanstalk 方式：
 
 ### VPC Site-to-Site VPN
 
-VPN
+VPN 虚拟专用网络
 
 - 在公有网络上建立专有网络，加密通讯。
+- 例如将公司数据中心 与 AWS VPC 建立链接，并通过私有IP加密通信。
 
 配置
 
 - 本地数据中心
-  - 配置软件或硬件VPN设备，要求VPN外部接口需要有一个可在Internet路由/访问的IP地址。
+  - 配置`软件或硬件VPN设备`，要求VPN外部接口需要有一个可在Internet路由/访问的IP地址。
 - AWS端
-  - 创建一个虚拟专用网关（VGW），然后附加到 VPC。
-  - 创建一个客户网关，配置指定本地数据中心VPN设备公有IP。
+  - 创建一个`虚拟专用网关（VGW）`，相当于在aws侧的VPN集线器；然后附加到 VPC。
+  - 创建一个`客户网关`，表示本地本地数据中心的VPN设备；配置指定本地数据中心VPN设备公有IP。
+  - 创建两条 VPN 隧道，提供冗余能力。
 
 <img src="../img/aws/vpc-vpn.png" alt="image-20210419231113912" style="zoom:67%;" />
 
 - 配置路由表
-  - 静态路由
-    - 本地数据中心：将去往VPC私有网络 10.0.0.10/24的通信指向客户网关；
-    - AWS：将去往本地数据中心10.2.0.0/20的通信指向虚拟专用网关VGW；
-  - 或动态路由 BGP
+  - 配置静态路由
+    - 本地数据中心：将去往VPC私有网络 10.0.0.10/24的通信指向`客户网关`；
+    - AWS：将去往本地数据中心10.2.0.0/20的通信指向`虚拟专用网关VGW`；
+  - 或配置动态路由 BGP - 允许网络之间自动交换彼此的网络路由信息
     - 在客户网关、虚拟专用网关配置 ASN；
     - 好处：无需手动配置路由表，BGP 自动更新；
 
@@ -1558,7 +1555,7 @@ VPN
 
 **VPN CloudHub**
 
-将多个 Site-to-Site VPN 客户网关连接到一起。星型拓扑连接模型：可连接多个 本地数据中心。
+将多个 Site-to-Site VPN `客户网关`连接到一起。星型拓扑连接模型：可连接多个 本地数据中心。
 
 
 
