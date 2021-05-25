@@ -1,3 +1,109 @@
+
+
+# 1. 计算 - Compute
+
+
+
+
+
+# 2. 存储 - Storage
+
+
+
+
+
+# 3. 数据库 - Database
+
+
+
+
+
+# 4. 网络 - Networking
+
+
+
+
+
+# 5. 安全 - Security
+
+
+
+## 5.1 网络安全
+
+
+
+## 5.2 IAM
+
+组
+
+![image-20210524233545918](/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210524233545918.png)
+
+
+
+角色
+
+
+
+策略
+
+
+
+# 6. 迁移 - Migration
+
+
+
+
+
+# 7. 高可用 - High Availability
+
+
+
+
+
+# 8. 部署 - Deployment
+
+
+
+
+
+# 9. 无服务架构 - Serverless
+
+
+
+
+
+# 10. 大数据 - Big Data
+
+
+
+
+
+# 11. 成本管理 - Cost Management
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 # | Organizational Complexity 
 
 ## || 多账户策略
