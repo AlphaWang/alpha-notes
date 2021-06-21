@@ -1,315 +1,283 @@
-# JVM
+[toc]
 
-## 内存区域
+# | 内存区域
 
-### 运行时数据区
+## || 运行时数据区
 
-#### 程序计数器
+### 程序计数器
 
-##### 线程私有
+- **线程私有**
+- 作用：记录各个线程执行的字节码地址
+- 异常：无 OOM
 
-##### 作用
 
-###### 记录各个线程执行的字节码地址
 
-##### 异常
+### JVM 栈
 
-###### OOM: 无
+- **线程私有**
 
-#### JVM 栈
+- 栈桢 Stack Frame
 
-##### 线程私有
+  - 局部变量表
 
-##### 栈桢 Stack Frame
+    > 存放方法参数、方法内定义的局部变量；
+    >
+    > 容量以slot为最小单位；
+    >
+    > 为了尽可能节省栈桢空间，局部变量表中的slot可以重用；
+    >
+    > 局部变量无“准备阶段”，无初始值
 
-###### 局部变量表
+  - 操作数栈
 
-####### 存放方法参数、方法内定义的局部变量
+    > 存放算术运算操作数、调用其他方法的参数
 
-####### 容量以slot为最小单位
+  - 动态连接
 
-####### 为了尽可能节省栈桢空间，局部变量表中的slot可以重用
+  - 返回地址
 
-####### 局部变量无“准备阶段”，无初始值
+    > 正常完成出口 -Normal Method Invocation Completion
+    >
+    > 异常完成出口 -Abrupt Method Invocation Completion
+    >
+    > 方法退出时的操作
+    >
+    > - 回复上层方法的局部变量表、操作数栈
+    >
+    > - 把返回值压入调用者栈桢的操作数栈
+    >
+    > - 调整PC寄存器的值，指向方法调用指令后面的一条指令
 
-###### 操作数栈
+- 异常
 
-####### 存放算术运算操作数、调用其他方法的参数
+  - **StackOverflowError**，当栈深度过大
 
-###### 动态连接
+  - **OOM**：动态扩展时无法申请到足够内存。但 Hotspot 虚拟机不允许动态扩展，所以“单线程情况下”其只会抛出 StackOverflowError
 
-###### 返回地址
+    > **OOME: unable to create native thread**
+    >
+    > 复现：如果`-Xss`设置过大，当创建大量线程时可能OOM.（每个线程都会创建一个栈）
 
-####### 正常完成出口 -Normal Method Invocation Completion
 
-####### 异常完成出口 -Abrupt Method Invocation Completion
 
-####### 方法退出时的操作
+### 本地方法栈
 
-######## 回复上层方法的局部变量表、操作数栈
+- 管理本地方法调用
 
-######## 把返回值压入调用者栈桢的操作数栈
 
-######## 调整PC寄存器的值，指向方法调用指令后面的一条指令
 
-##### 异常
+### 堆
 
-###### StackOverflowError
+- **线程共享**
 
-####### 栈深度过大
+  > 注意区别线程私有的分配缓冲区 TLAB，Thread Local Allocation Buffer
 
-###### OOM
+- 作用：存储对象实例、数组
 
-####### 动态扩展时无法申请到足够内存
+- 异常
 
-####### 但 Hotspot 虚拟机不允许动态扩展，所以“单线程情况下”其只会抛出 StackOverflowError
+  - **OOM**：内部不够实例分配、且堆也无法再扩展时，调整 `-Xms` `-Xmx`
 
-####### OOME: unable to create native thread
+    > **OOME: Java heap space**
+    >
+    > 复现：不断往list中加入对象
 
-######## 复现：如果`-Xss`设置过大，当创建大量线程时可能OOM.
 
-（每个线程都会创建一个栈）
 
-#### 本地方法栈
+### 方法区
 
-##### 管理本地方法调用
+- **线程共享**
 
-#### 堆
+- 作用：存储类信息、常量、静态变量、运行时常量
 
-##### 线程共享
+  > 扩展：运行时常量池的来源
+  >
+  > 1. class 文件常量池
+  > 2. 运行时动态放入：intern()
 
-###### 注意区别线程私有的分配缓冲区 TLAB
 
-###### Thread Local Allocation Buffer
 
-##### 作用
+- **方法区 vs. 永久代**
+  - 方法区是JVM规范
+  - HotSpot虚拟机使用永久代来实现
 
-###### 存储对象实例、数组
+- 演变
+  - Java7：将永久代的静态变量、字符串常量池 --> 合并到堆
 
-##### 异常
+  - Java8：替换为元空间 --> 存储在本地内存
 
-###### OOM
+    > 融合HotSpot 与 JRockit
+    >
+    > 避免永久代溢出 OOME: PermGen
 
-####### 内部不够实例分配、且堆也无法再扩展时
+- 异常
+  - **OOM**：String.intern 运行期间将新的常量放入池中（Java7 以后不能复现，因为移到堆中）、CGLib动态类
 
-`-Xms` `-Xmx`
+    > 例如大量String.intern()、用CGLib生成大量动态类、OSGi应用、大量JSP的应用（JSP第一次运行需要便以为Javale）
+    > `-XX:PermSize` `-XX:MaxPermSize`
 
-####### OOME: Java heap space
+- GC目标
 
-######## 复现：不断往list中加入对象
+  - 回收废弃的常量
 
-#### 方法区
+  - 卸载类型
 
-##### 线程共享
+    > 条件 
+    >
+    > 类的所有实例都已被回收
+    >
+    > 对应的类加载器已被回收
+    >
+    > 对应的Class对象未被引用
 
-##### 作用
 
-###### 存储类信息、常量、静态变量、运行时常量
 
-###### 扩展：运行时常量池的来源
+## || 其他
 
-####### 1. class 文件常量池
-
-####### 2. 运行时动态放入：intern()
-
-##### 方法区 vs. 永久代
-
-###### 方法区是JVM规范
-
-###### HotSpot虚拟机使用永久代来实现
-
-##### 演变
-
-###### Java7
-
-####### 将永久代的静态变量、字符串常量池 --> 合并到堆
-
-###### Java8
-
-####### 替换为元空间 --> 存储在本地内存
-
-- 融合HotSpot 与 JRockit
-- 避免永久代溢出 OOME: PermGen
-
-##### 异常
-
-###### OOM
-
-- 例如大量String.intern()
-- 用CGLib生成大量动态类
-- OSGi应用
-- 大量JSP的应用（JSP第一次运行需要便以为Javale）
-`-XX:PermSize` `-XX:MaxPermSize`
-
-####### String.intern
-
-######## 运行期间将新的常量放入池中
-
-######## Java7 以后不能复现，因为移到堆中
-
-####### CGLib动态类
-
-###### GC目标
-
-####### 回收废弃的常量
-
-####### 卸载类型
-
-######## 条件
-
-######### 类的所有实例都已被回收
-
-######### 对应的类加载器已被回收
-
-######### 对应的Class对象未被引用
-
-### 其他
-
-#### Direct Memory 堆外内存
+### Direct Memory 堆外内存
 
 https://www.baeldung.com/native-memory-tracking-in-jvm
 
-##### 创建
+创建
 
-###### NIO 通过 DirectByteBuffer 操作堆外内存：Buffer.isDirect()
+- NIO 通过 DirectByteBuffer 操作堆外内存：Buffer.isDirect()
 
-###### FileChannel.map()创建MappedByteBuffer
+- FileChannel.map() 创建 MappedByteBuffer：将文件按照指定大小直接映射为内存区域，
 
-将文件按照指定大小直接映射为内存区域，
+场景
 
-##### 场景
+- 创建和销毁开销大
 
-###### 创建和销毁开销大
+- 适用于场景使用、数据较大的场景
 
-###### 适用于场景使用、数据较大的场景
+回收
 
-##### 回收
+- -XX:MaxDirectMemorySize
 
-###### -XX:MaxDirectMemorySize
+- -XX:NativeMemoryTracking={summary|detail}
 
-###### -XX:NativeMemoryTracking={summary|detail}
+- 回收：FullGC时顺便清理，不能主动触发
 
-###### 回收：FullGC时顺便清理，不能主动触发
+异常
 
-##### 异常
+- **OOME: Direct buffer memory**
 
-###### OOM: Direct buffer memory
+  > 复现：unsafe.allocateMemory() 
+  >
+  > 特点：dump文件看不到明显异常
 
-####### 复现：unsafe.allocateMemory()
 
-###### 特点：dump文件看不到明显异常
 
-#### Threads 线程堆栈
+### Threads 线程堆栈
 
-##### 纵向异常：无法分配新的栈桢：StackOverflowError
+异常
 
-##### 横向异常：无法建立新的线程：OutOfMemoryError: unable to create new native thread
+- 纵向异常：无法分配新的栈桢：**StackOverflowError**
 
-#### Metaspace
+- 横向异常：无法建立新的线程：**OutOfMemoryError: unable to create new native thread**
 
-##### -XX:MetaspaceSize
--XX:MaxMetaspaceSize
 
-#### Code Cache
 
-##### JIT编译器使用
+### Metaspace
 
-##### -XX:InitialCodeCacheSize 
--XX:ReservedCodeCacheSize
+- -XX:MetaspaceSize
+- -XX:MaxMetaspaceSize
 
-#### Garbage Collection
 
-##### GC算法用off-heap数据结构来完成GC
 
-#### Symbols
+### Code Cache
 
-##### String常量池
+- JIT编译器使用
+- -XX:InitialCodeCacheSize 
+  -XX:ReservedCodeCacheSize
 
-## 对象
 
-### 类文件结构
 
-#### 对象头 Header
+### Garbage Collection
 
-##### Mark Word
+GC算法用off-heap数据结构来完成GC
 
-###### - HashCode
+### Symbols: String常量池
 
-###### - GC分代年龄
 
-###### - 锁状态标志
 
-###### - 线程持有的锁
 
-###### - 偏向线程ID
 
-###### - 偏向时间戳
+# | 对象
 
-##### 类型指针
+## || 类文件结构
 
-###### JVM通过这个指针来确定对象是哪个类的实例
+**对象头 Header**
 
-###### 数组对象还会存储长度
+- Mark Word
+  - HashCode
+  - GC分代年龄
+  - 锁状态标志
+  - 线程持有的锁
+  - 偏向线程ID
+  - 偏向时间戳
 
-#### 实例数据 Instance Data
+- 类型指针
+  - JVM通过这个指针来确定对象是哪个类的实例
+  - 数组对象还会存储长度
 
-##### 各种类型的字段内容（包含父类定义的）
+  
 
-#### 对齐填充 Padding
+**实例数据 Instance Data**
 
-#### 类文件结构
+- 各种类型的字段内容（包含父类定义的）
 
-##### 魔数、版本号
 
-###### 魔数类似于扩展名，但更安全
 
-##### 常量池
-constant_pool
+**对齐填充 Padding**
 
-###### 字面量 Literal
 
-####### Java 语言层面
 
-###### 符号引用 Symbolic Reference
+**类文件结构**
 
-- 类和接口的 全限定名
-- 字段名和描述符
-- 方法名和描述符
+- 魔数、版本号
 
-JVM做类加载时，会从常量池获得对应的“符号引用”，再在类创建时或运行时解析、翻译到具体的内存地址之中。
+  > 魔数类似于扩展名，但更安全
 
-####### 编译原理层面
+- 常量池 constant_pool
 
-##### 访问标志
-access_flags
+  - 字面量 Literal：Java 语言层面
 
-###### 类/接口层次的访问信息
+  - 符号引用 Symbolic Reference：编译原理层面
 
-####### 例如 类还是接口、是否public、是否abstract、是否final
+    > - 类和接口的 全限定名
+    >
+    > - 字段名和描述符
+    >
+    > - 方法名和描述符
+    >
+    > JVM做类加载时，会从常量池获得对应的“符号引用”，再在类创建时或运行时解析、翻译到具体的内存地址之中。
 
-###### 16 个比特位
+- 访问标志 access_flags
 
-##### 继承关系
+  > 类/接口层次的访问信息，例如 类还是接口、是否public、是否abstract、是否final；
+  >
+  > 16 个比特位
 
-###### this_class \ super_class \ interfaces
+- 继承关系
 
-###### 此处只存索引，在常量池中查找
+  > this_class \ super_class \ interfaces
+  >
+  > 此处只存索引，在常量池中查找
 
-##### 字段表集合
-field_info
+- 字段表集合 field_info
 
-###### - access_flag：是否public、static、final、volatile、transient
+  > access_flag：是否public、static、final、volatile、transient
+  >
+  > name_index: 简单名称，指向常量池
+  >
+  > descriptor_index: 描述符。字段数据类型，方法参数列表、返回值
+  >
+  > attributes: 属性表：额外信息，例如final定义的常量值
 
-###### - name_index: 简单名称，指向常量池
-
-###### - descriptor_index: 描述符。字段数据类型，方法参数列表、返回值
-
-###### - attributes: 属性表：额外信息，例如final定义的常量值
-
-##### 方法表集合
-
-- 类似字段表集合；
-- 方法体存放在属性表`Code`属性里
+- 方法表集合
+  - 类似字段表集合；
+  - 方法体存放在属性表`Code`属性里
 
 
 方法的字节码，
@@ -320,45 +288,52 @@ JVM执行指令，
 属性集合，
 
 
-###### 同上
 
-### 对象的访问定位
+## || 对象的访问定位
 
-#### 句柄访问
+### 句柄访问
 
-##### 概念
+概念
 
-###### 堆分为“句柄池”、“实例池”
+- 堆分为“句柄池”、“实例池”
 
-###### 栈中的reference指向句柄地址，而句柄则指向 对象实例数据、类型数据
+- 栈中的`reference`指向`句柄地址`，而句柄则指向 `对象实例数据、类型数据`
 
-##### 优点
+优点
 
-###### 对象被移动时（GC）只会改变句柄中的实例数据指针，而reference本身无需被修改
+- 对象被移动时（GC）只会改变句柄中的实例数据指针，而reference本身无需被修改
 
-#### 直接访问
 
-##### 概念
 
-###### 堆中只存储实例，实例数据会指向类型数据
+### 直接访问
 
-###### 栈中的reference指向对象地址
+概念
 
-##### 优点
+- 堆中只存储实例，实例数据会指向类型数据
 
-###### 速度更快
+- 栈中的reference指向对象地址
 
-###### 节省了一次指针定位的开销：reference --> 句柄 --> 实例/类型
+优点
 
-### 类加载
+- 速度更快
 
-#### 生命周期
+- 节省了一次指针定位的开销：reference --> 句柄 --> 实例/类型
 
-##### 在常量池找类的符号引用
 
-##### 加载 Loading
 
-查找字节流，并且据此创建类
+## || 类加载
+
+### 对象生命周期
+
+
+
+**1. 在常量池找类的符号引用**
+
+
+
+**2. 加载 Loading**
+
+> 作用：查找字节流，并且据此创建类
 
 - 根据全限定名来获取二进制字节流 `Class Loader`；
 - 将字节流所代表的静态存储结构转化为方法区的运行时数据结构；
@@ -366,185 +341,171 @@ JVM执行指令，
 
 注意：数组类本身不通过类加载器创建，而是有JVM直接创建。
 
-###### 作用
 
-####### 查找字节流，并且据此创建类
 
-###### 双亲委派模型
+双亲委派模型
 
-####### 类加载器
+- 类加载器
 
-######## 启动类加载器 
-Bootstrap ClassLoader
+  - 启动类加载器 Bootstrap ClassLoader
 
-######### 加载 jre/lib
+    > 加载 jre/lib
+    >
+    > 如何替换基础类库实现：-Xbootclasspath
 
-######### 如何替换基础类库实现：-Xbootclasspath
+  - 扩展类加载器 Extension ClassLoader
 
-######## 扩展类加载器 
-Extension ClassLoader
+    > 加载jre/lib/ext
+    >
+    >  Java9改名为平台类加载器
+    >
+    > 如何替换扩展类库实现：-Djava.ext.dirs=
 
-######### 加载jre/lib/ext
+  - 应用类加载器 Application ClassLoader
 
-######### Java9改名为平台类加载器
+    > 加载classpath
+    >
+    > 自定义：重写findClass, 而非loadClass
 
-######### 如何替换扩展类库实现：-Djava.ext.dirs=
 
-######## 应用类加载器 
-Application ClassLoader
 
-######### 加载classpath
+- 被破坏
 
-######## 自定义：重写findClass, 而非loadClass
+  - jdk1.2之前
+  - JNDI等SPI框架需要加载classpath代码
+  - OSGi: 网状
 
-####### 被破坏
+  
 
-######## jdk1.2之前
+**3. 连接 Linking**
 
-######## JNDI等SPI框架需要加载classpath代码
+> 作用：把原始的类定义信息 平滑地转入JVM运行的过程
 
-######## OSGi: 网状
+步骤
 
-##### 连接 Linking
+- **验证 Verification**
+  确保被加载类能够满足 Java 虚拟机的约束条件；否则抛出`VerifyError`
+  - 文件格式验证：魔数开头、版本号、可能抛出`VerifyError`
 
-###### 作用
+  - 元数据验证：是否有父类、是否实现了接口中要求的方法
 
-####### 把原始的类定义信息 平滑地转入JVM运行的过程
+  - 字节码验证：通过数据流和控制流分析，确定程序语义是否合法
 
-###### 步骤
+  - 符号引用验证：在讲符号引用转化为直接引用时进行（解析阶段），可能抛出`IllegalAccessError`, `NoSuchFieldError`, `NoSuchMethodError
 
-####### 验证 Verification
+- **准备 Preparation**
+  - 在方法区中，为静态变量分配内存，并设置初始值
 
-确保被加载类能够满足 Java 虚拟机的约束条件；否则抛出`VerifyError`
+- **解析 Resolution**
+  - 将常量池中的`符号引用` 替换为 `直接引用`
 
-- 文件格式验证：
-魔数开头、版本号、可能抛出`VerifyError`
 
-- 元数据验证：
-是否有父类、是否实现了接口中要求的方法
 
-- 字节码验证：
-通过数据流和控制流分析，确定程序语义是否合法
+**4. 初始化 Initialization**
 
-- 符号引用验证：
-在讲符号引用转化为直接引用时进行（解析阶段），可能抛出`IllegalAccessError`, `NoSuchFieldError`, `NoSuchMethodError`
+> 作用：执行类构造器<clinit>()方法
 
-######## 确保被加载类能够满足 Java 虚拟机的约束条件；否则抛出`VerifyError`
+触发
 
-####### 准备 Preparation
+- new / 反射
 
-######## 在方法区中，为静态变量分配内存，并设置初始值
+  > 5 种情况必须立即对类进行初始化：
+  >
+  > - new, getstatic  
+  > - 反射调用  
+  > - 先触发父类初始化  
+  > - main  
+  > - java7 REF_getStatic ?? 
 
-####### 解析 Resolution
+- 反例
+  - `SubClass.staticValue` 通过子类引用父类静态字段，子类不会被初始化
+  - MyClass[]` 通过数组定义来引用类，不会触发类初始化
+  - `MyCalss.CONSTANT_VALUE` 引用常量，不会触发类初始化
 
-######## 将常量池中的`符号引用` 替换为 `直接引用`
 
-##### 初始化 Initialization
 
-###### 作用
+步骤
 
-####### 执行类构造器<clinit>()方法
+- 执行clinit方法（静态代码块）
 
-###### 触发
+- 常量值赋值
 
-####### new / 反射
 
-5 种情况必须立即对类进行初始化：
-- new, getstatic  
-- 反射调用  
-- 先触发父类初始化  
-- main  
-- java7 REF_getStatic ?? 
 
-####### 反例
-
-######## `SubClass.staticValue` 通过子类引用父类静态字段，子类不会被初始化
-
-######## MyClass[]` 通过数组定义来引用类，不会触发类初始化
-
-######## `MyCalss.CONSTANT_VALUE` 引用常量，不会触发类初始化
-
-###### 步骤
-
-####### 执行clinit方法（静态代码块）
-
-####### 常量值赋值
-
-###### 初始化仅会被执行一次：可用于实现“单例”
+**初始化仅会被执行一次：可用于实现“单例”**
 
 - clinit包括 类变量赋值动作、静态语句块。
-- clinit保证多线程环境中被加锁、同步 
-
->> 类的初始化仅会被执行一次，可用来实现单例 
+- clinit保证多线程环境中被加锁、同步 - clint方法是带锁线程安全
 
 
-####### clint方法是带锁线程安全
 
-##### 分配内存
+**5. 分配内存**
 
-###### 指针碰撞
+- **指针碰撞**
+  - 当内存规整时适用
+  - 适用于Compact GC，例如Serial, ParNew
 
-####### 当内存规整时适用
+- **空闲列表**
+  - 当内存不连续时适用
+  - 适用于Mark-Sweep GC，例如CMS
 
-####### 适用于Compact GC，例如Serial, ParNew
+- **并发问题**
+  - CAS
+  - TLAB: Thread Local Allocation Buffer 本地线程分配缓冲：每个线程在堆中(Ede)预先分配一小块内存。
 
-###### 空闲列表
+**6. 使用 Using**
 
-####### 当内存不连续时适用
+**7. 卸载 Unloading**
 
-####### 适用于Mark-Sweep GC，例如CMS
 
-###### 并发问题
 
-####### CAS
 
-####### TLAB: Thread Local Allocation Buffer
 
-本地线程分配缓冲：每个线程在堆中(Ede)预先分配一小块内存。
+### ClassLoader
 
-##### 使用 Using
+**loadClass()**
 
-##### 卸载 Unloading
+- public方法
 
-#### ClassLoader
+- 执行父加载器逻辑
 
-##### loadClass()
-
+```java
 Class<?> c = findLoadedClass(name);
 
 if (parent != null) {
     c = parent.loadClass(name);
 }
-        
 // 如果父加载器没加载成功，调用自己的 findClass 去加载
 if (c == null) {
     c = findClass(name);
 }
 return c；
+```
 
-###### public方法
 
-###### 执行父加载器逻辑
 
-##### findClass(String name)
 
+**findClass(String name)**
+
+- 负责找到.class文件，解析成byte[]
+
+```java
 protected Class<?> findClass(String name){
+  //1. 根据传入的类名 name，到在特定目录下去寻找类文件，把.class 文件读入内存
+  ...         
 
-/1. 根据传入的类名 name，到在特定目录下去寻找类文件，把.class 文件读入内存
-...
-          
-
-//2. 调用 defineClass 将字节数组转成 Class 对象
-
-return defineClass(buf, off, len)；
+  //2. 调用 defineClass 将字节数组转成 Class 对象
+  return defineClass(buf, off, len)；
 }
-    
+```
 
 
-###### 负责找到.class文件，解析成byte[]
 
-##### defineClass()
+**defineClass()**
 
+- 负责将byte[] 解析成Class对象
+
+```java
 // 将字节码数组解析成一个 Class 对象，用 native 方法实现
 protected final Class<?> defineClass(
   byte[] b, 
@@ -553,441 +514,400 @@ protected final Class<?> defineClass(
        ...
     }
 }
-
-###### 负责将byte[] 解析成Class对象
-
-#### 异常
-
-##### ClassNotFoundException
-
-###### 当“动态加载”Class的时候找不到类会抛出该异常
-
-###### 一般在执行Class.forName()、ClassLoader.loadClass()或ClassLoader.findSystemClass()的时候抛出
-
-##### NoClassDefFoundError
-
-###### 编译成功以后，“执行”过程中Class找不到
-
-###### 由JVM的运行时系统抛出
-
-### 方法调用
-
-#### 变量类型
-
-##### 静态类型 Father f =
-
-##### 实际类型 f = new Son()
-
-#### 静态分派
-
-##### 依赖静态类型来定位方法
-
-##### 典型应用
-
-###### 方法重载
-
-#### 动态分派
-
-##### 依赖实际类型来定位方法
-
-##### 典型应用
-
-###### 方法重写
-
-### 编译：将字节码翻译成机器码
-
-#### 编译器
-
-##### 解释执行
-
-##### JIT (Just in Time Compilation)
-
-###### 即时编译，在运行时将热点代码编译成机器码
-
-###### 如何探测热点代码？
-
-####### 方法调用计数器 Invocation Counter
-
-####### 回边计数器 Back Edge Counter
-
-######## 循环体代码的执行次数
-
-##### AOT (Ahead of Time Compilation) 
-
-###### 避免JIT预热开销
-
-#### 编译优化
-
-##### 方法内联
-
-###### -XX:MaxFreqInlineSize
--XX:MaxInlineSize
-
-##### 逃逸分析 Escape Analysis
-
-###### 判断对象是否被外部方法引用，或外部线程访问
-
-###### 如果只在一个方法中使用，则在栈上创建对象
-
-###### 锁消除
-
-###### 标量替换
-
-####### 对象不被外部访问，且可被拆分时，则直接创建他的成员变量，而不创建对象
-
-#### 参数
-
-##### -Xint: 仅解释执行
-
-##### -Xcomp: 关闭解释器，最大优化级别；会导致启动变慢
-
-### 字节码指令
-
-#### Opcode 操作码  + Operands 操作数
-
-#### load 加载指令：将一个局部变量加载到操作栈
-
-#### store 存储指令：将一个数值从操作数栈 存储到局部变量表
-
-#### 运算指令：iadd, isub, ladd, lsub
-
-#### 类型转换指令：i2b, d2f
-
-#### 对象创建与访问指令：new, newarray, getfield
-
-#### 操作数栈管理指令：pop, swap
-
-#### 控制转移指令
-
-#### 方法调用和返回指令
-
-##### invokestatic
-
-###### 调用静态方法
-
-##### invokespecial
-
-###### 调用 实例构造器、私有方法、父类方法
-
-##### invokevirtual
-
-###### 调用所有的虚方法
-
-##### invokeinterface
-
-###### 调用接口方法
-
-##### invokedynamic
-
-###### 在运行时动态解析出调用点限定符所引用的方法
-
-##### ireturn
-
-#### 异常处理指令：athrow
-
-#### 同步指令：monitorenter, monitorexit
-
-## GC
-
-### GC 基础
-
-#### 引用类型
-
-##### 种类
-
-###### 强引用 Strong Reference
-
-###### 软引用 SoftReference
-
-####### 发生内存溢出之前，会尝试回收
-
-####### 应用场景：可用于实现内存敏感的缓存
-
-###### 弱引用 WeakReference
-
-####### 下一次垃圾回收之前，一定会被回收
-
-######## 只要GC，就会被回收？
-
-######## 额外条件：没有被其他强引用引用
-
-####### 可用来构建一种没有特定约束的关系，例如维护非强制性的映射关系
-
-####### 应用场景：缓存
-
-######## vs. SoftReference ???
-
-######## ThreadLocalMap.Entry
-
-###### 虚引用 PhantomReference 
-
-####### 不能通过它访问对象
-
-######## 必须配合ReferenceQueue使用
-
-```java
-Object counter = new Object();
-
-ReferenceQueue refQueue = new ReferenceQueue<>();
-
-PhantomReference<Object> p = new PhantomReference<>(counter, refQueue);
-
-counter = null;
-System.gc();
-
-try {
-    // Remove获取对象。
-    // 可以指定 timeout，或者选择一直阻塞
-    Reference<Object> ref = refQueue.remove(1000L);
-    if (ref != null) {
-        // do something
-    }
-} catch (InterruptedException e) { }
-
 ```
 
-######## 被 GC 的对象会被丢进这个 ReferenceQueue 里面。
+###### 
 
-####### 虚引用仅提供一种确保对象被finalize后做某些事的机制
+**异常**
 
-####### finalize 之后会变成虚引用
+- **ClassNotFoundException**
+  - 当 “动态加载” Class 的时候找不到类会抛出该异常
+  - 一般在执行Class.forName()、ClassLoader.loadClass()或ClassLoader.findSystemClass()的时候抛出
 
-####### 应用场景：跟踪对象被垃圾回收器回收的活动
+- **NoClassDefFoundError**
+  - 编译成功以后，“执行”过程中Class找不到
+  - 由JVM的运行时系统抛出
 
-##### 实践
 
-###### -XX:+PrintReferenceGC 打印各种引用数量
 
-###### Reference.reachabilityFence(this)
+## 方法调用
 
-####### 声明对象强可达
+**变量类型**
 
-```java
-class Resource {
+- 静态类型 Father f =
+- 实际类型 f = new Son()
 
- public void action() {
- try {
-     // 需要被保护的代码
-     int i = myIndex;
-     Resource.update(externalResourceArray[i]);
- } finally {
-     // 调用 reachbilityFence，明确保障对象 strongly reachable
-     Reference.reachabilityFence(this);
- }
- 
- 
- // 调用
- new Resource().action();
+**静态分派**
 
-```
+- 依赖静态类型来定位方法
+- 典型应用
+  - 方法重载
 
-#### GC回收判断
+**动态分派**
 
-##### 引用计数法
+- 依赖实际类型来定位方法
 
-###### 无法解决循环引用问题
+- 典型应用
 
-##### 可达性分析
+  - 方法重写
 
-###### GC Roots
+  
 
-####### 虚拟机栈中，本地变量表引用的对象
+## 编译
 
-####### 本地方法栈中，JNI引用的对象
+将字节码翻译成机器码
 
-####### 方法区中，类静态属性引用的对象
+**编译器**
 
-####### 方法区中，常量引用的对象
+- 解释执行
 
-####### 被同步锁持有的对象
+- JIT (Just in Time Compilation)
+  - 即时编译，在运行时将热点代码编译成机器码
+  - 如何探测热点代码？
+    - 方法调用计数器 Invocation Counter
+    - 回边计数器 Back Edge Counter：循环体代码的执行次数
 
-######## ？
+- AOT (Ahead of Time Compilation) 
+  - 避免JIT预热开销
 
-#### GC算法
 
-##### 标记-清除 Mark-Sweep
 
-###### 思想
+**编译优化**
 
-####### - 标记出所有需要回收的对象，标记完成后统一回收被标记的对象
+- 方法内联
 
-####### 关注延迟
+  > -XX:MaxFreqInlineSize
+  >
+  > -XX:MaxInlineSize
 
-###### 问题
+- 逃逸分析 Escape Analysis
+  - 判断对象是否被外部方法引用，或外部线程访问；如果只在一个方法中使用，则在栈上创建对象。
+  - 锁消除
+  - 标量替换：对象不被外部访问，且可被拆分时，则直接创建他的成员变量，而不创建对象
 
-####### 效率问题
 
-######## 如果大量对象需要回收，则要大量标记和清除
 
-####### 空间问题
+**参数**
 
-######## 内存碎片化
+- -Xint: 仅解释执行
+- -Xcomp: 关闭解释器，最大优化级别；会导致启动变慢
 
-##### 标记-复制 Copying
 
-###### 思想
 
-####### - 将可用内存划分为两块；
+## 字节码指令
 
-####### - 当一块用完时，将存活对象复制到另一块内存
+- Opcode 操作码  + Operands 操作数
 
-###### 问题
+- load 加载指令：将一个局部变量加载到操作栈
 
-####### 内存空间浪费
+- store 存储指令：将一个数值从操作数栈 存储到局部变量表
 
-####### 优化：Eden : Survivor = 8:1，只浪费10%
+- 运算指令：iadd, isub, ladd, lsub
 
-###### 适用
+- 类型转换指令：i2b, d2f
 
-####### 存活率低的场景
+- 对象创建与访问指令：new, newarray, getfield
 
-##### 标记-整理 Mark-Compact
+- 操作数栈管理指令：pop, swap
 
-###### 思想
+- 控制转移指令
 
-####### - 标记出所有需要回收的对象，让所有存活对象都向一端移动
+- 方法调用和返回指令
+  - invokestatic：调用静态方法
+  - invokespecial：调用 实例构造器、私有方法、父类方法
+  - invokevirtual：调用所有的虚方法
+  - invokeinterface：调用接口方法
+  - invokedynamic：在运行时动态解析出调用点限定符所引用的方法
+  - ireturn
 
-####### 关注吞吐量
+- 异常处理指令：athrow
 
-###### 问题
+- 同步指令：monitorenter, monitorexit
 
-####### 要移动内存，回收时更复杂
 
-######## 对比 标记清除：不移动内存，分配时更复杂
 
-####### 要移动内存，停顿时间会更长
+# | GC
 
-######## 对比标记清除：停顿时间短，但吞吐量低
+## || 引用类型
 
-###### 例子：老年代
 
-#### 实现细节
 
-##### 枚举根节点
+**强引用 Strong Reference**
 
-###### - 会发生停顿 STW
 
-###### - OopMap: 虚拟机知道哪些地方存放着对象引用，无需真正遍历方法区等
 
-##### 安全点
+**软引用 SoftReference**
 
-###### 程序执行时，只有达到安全点时才能暂停：
+- 发生内存溢出之前，会尝试回收
+- 应用场景：可用于实现内存敏感的缓存
 
-###### 种类
 
-####### - 方法调用
-- 循环跳转
-- 异常跳转
 
-###### 如何让所有线程都跑到最近的安全点停顿下来？
+**弱引用 WeakReference**
 
-####### 抢先式中断
+- 下一次垃圾回收之前，一定会被回收
 
-######## 先中断全部线程，如果发现有线程中断的地方不在安全点上，则恢复线程
+  > 只要GC，就会被回收？
+  >
+  > 额外条件：没有被其他强引用引用
 
-######## 少用
+- 可用来构建一种没有特定约束的关系，例如维护非强制性的映射关系
 
-####### 主动式中断
+- 应用场景：缓存
 
-######## GC简单地设置一个标志
+  - vs. SoftReference ???
+  - ThreadLocalMap.Entry
 
-######## 线程执行时主动轮询这个标志，当为真时则在最近的安全点中断挂起
+  
 
-##### 安全区域
+**虚引用 PhantomReference** 
 
-###### 目的
+- 不能通过它访问对象
 
-####### 解决安全点的问题
+  - 必须配合ReferenceQueue使用
 
-####### 程序不执行时（sleep/blocked），无法检查安全点
+  - 被 GC 的对象会被丢进这个 ReferenceQueue 里面。
 
-###### 手段
+    ```java
+    Object counter = new Object();
+    
+    ReferenceQueue refQueue = new ReferenceQueue<>();
+    
+    PhantomReference<Object> p = new PhantomReference<>(counter, refQueue);
+    
+    counter = null;
+    System.gc();
+    
+    try {
+        // Remove获取对象。
+        // 可以指定 timeout，或者选择一直阻塞
+        Reference<Object> ref = refQueue.remove(1000L);
+        if (ref != null) {
+            // do something
+        }
+    } catch (InterruptedException e) { }
+    ```
 
-####### 在一段代码片段中，引用关系不会发生变化，在这个区域中任意地方开始GC都是安全的。
+    
 
-####### 线程进入安全区域时：标记已进入
+- 虚引用仅提供一种确保对象被finalize后做某些事的机制；
+- finalize 之后会变成虚引用
+- 应用场景：跟踪对象被垃圾回收器回收的活动
 
-######## 此时VM发起垃圾收集时不用管这些已声明自己在安全区域的线程
 
-####### 线程离开安全区域时：检查VM是否完成根节点枚举(或其他需要STW的操作)
 
-######## 若未完成，则等待
+**实践**
 
-##### 跨代引用的问题
+- -XX:+PrintReferenceGC 打印各种引用数量
 
-###### 问题
+- Reference.reachabilityFence(this)
 
-####### 老年代会引用新生代，要把整个老年代加入到GC Root吗？
+  > 声明对象强可达 
+  >
+  > ```java
+  > class Resource {
+  > 
+  >  public void action() {
+  >  try {
+  >      // 需要被保护的代码
+  >      int i = myIndex;
+  >      Resource.update(externalResourceArray[i]);
+  >  } finally {
+  >      // 调用 reachbilityFence，明确保障对象 strongly reachable
+  >      Reference.reachabilityFence(this);
+  >  }
+  >  
+  >  
+  >  // 调用
+  >  new Resource().action();
+  > 
+  > ```
 
-###### 解决
 
-####### Remembered Set
 
-######## 在新生代上的一个全局数据结构，标识老年代的“哪一块内存”存在跨代引用
+## || GC回收判断
 
-######## MinorGC 时只需要将这些内存放入GC Root，而无需扫描整个老年代
+**引用计数法**
 
-######### 缩减GC Root扫描范围
+无法解决循环引用问题
 
-######## 代价
 
-######### 改变引用关系时，需要维护 Remembered Set
 
-######### 通过“写屏障 Write Barrier”，类似AOP，在每个赋值操作之后维护卡表
+**可达性分析**
 
-####### 实现方式
+GC Roots
 
-######## 字长精度
+- 虚拟机栈中，本地变量表引用的对象
+- 本地方法栈中，JNI引用的对象
+- 方法区中，类静态属性引用的对象
+- 方法区中，常量引用的对象
+- 被同步锁持有的对象 -?
 
-######### 精确记录一个机器字长，该字包含跨代指针
 
-######## 对象精度
 
-######### 精确记录到一个对象，该对象中有字段含有跨代指针
+## || GC算法
 
-######## 卡精度
+### 标记-清除 Mark-Sweep
 
-######### 精确到一块内存区域（Card Page），该区域内有对象含有跨代指针
+**思想**
 
-######### Card Table
+- 标记出所有需要回收的对象，标记完成后统一回收被标记的对象
+- 关注延迟
 
-######### 粒度更粗犷
+**问题**
 
-##### STW
+- 效率问题：如果大量对象需要回收，则要大量标记和清除
+- 空间问题：内存碎片化
 
-###### STW 的场景
 
-####### 扫描 GC Root
 
-######## 优化耗时：OopMap，避免检查所有执行上下文和全局引用位置 
+### 标记-复制 Copying
 
-####### 从 GC Root 往下遍历对象图
+**思想**
 
-######## 问题：对象消失
+- 将可用内存划分为两块；
+- 当一块用完时，将存活对象复制到另一块内存
 
-######### 两个条件同时满足时，会回收掉不该回收的对象
+**问题**
 
-########## 赋值器“插入”了从<黑色对象>到<白色对象>的新引用
+- 内存空间浪费
+- 优化：Eden : Survivor = 8:1，只浪费10%
 
-########## 赋值器“删除”了全部从<灰色对象>到该<白色对象>的引用
+**适用**
 
-######### 解决
+- 存活率低的场景
 
-########## 增量更新 Incremental Update
 
-########### <黑色对象>一旦新插入指向<白色对象>的引用之后，它就变回 <灰色对象>
 
-########### 记录插入的新引用；当并发扫描结束后 再将记录的黑色对象为根，重新扫描
+### 标记-整理 Mark-Compact
 
-########### CMS
+**思想**
 
-########## 原始快照 SATB, Snapshot At The Beginning
+- 标记出所有需要回收的对象，让所有存活对象都向一端移动
+- 关注吞吐量
 
-########### 记录删除的<灰色对象>到<白色对象>的引用；当并发扫描结束后 再将记录的灰色对象为根，重新扫描
+**问题**
 
-灰色对象出来的引用已被删除，重新扫描何用？？？
+- 要移动内存，回收时更复杂
 
-########### G1、Shenandoah
+  > 对比标记清除：不移动内存，分配时更复杂
+
+- 要移动内存，停顿时间会更长
+
+  > 对比标记清除：停顿时间短，但吞吐量低
+
+**例子：老年代**
+
+
+
+## || 实现细节
+
+### 枚举根节点
+
+- 会发生停顿 STW
+
+- OopMap: 虚拟机知道哪些地方存放着对象引用，无需真正遍历方法区等
+
+### 安全点
+
+- 程序执行时，只有达到安全点时才能暂停：
+
+- 种类
+  - 方法调用
+  - 循环跳转
+  - 异常跳转
+
+
+
+如何让所有线程都跑到最近的安全点停顿下来？
+
+- 抢先式中断
+  - 先中断全部线程，如果发现有线程中断的地方不在安全点上，则恢复线程
+  - 少用
+
+- 主动式中断
+  - GC简单地设置一个标志
+  - 线程执行时主动轮询这个标志，当为真时则在最近的安全点中断挂起
+
+
+
+**安全区域**
+
+目的
+
+- 解决安全点的问题：程序不执行时（sleep/blocked），无法检查安全点
+
+手段
+
+- 在一段代码片段中，引用关系不会发生变化，在这个区域中任意地方开始GC都是安全的。
+- 线程进入安全区域时：标记已进入
+  - 此时VM发起垃圾收集时不用管这些已声明自己在安全区域的线程
+
+- 线程离开安全区域时：检查VM是否完成根节点枚举(或其他需要STW的操作)
+  - 若未完成，则等待
+
+### 跨代引用的问题
+
+问题
+
+- 老年代会引用新生代，要把整个老年代加入到 GC Root 吗？
+
+解决
+
+- **Remembered Set**
+  - 在新生代上的一个全局数据结构，标识老年代的“哪一块内存”存在跨代引用
+  - MinorGC 时只需要将这些内存放入GC Root，而无需扫描整个老年代：缩减GC Root扫描范围
+  - 代价
+    - 改变引用关系时，需要维护 Remembered Set
+    - 通过“写屏障 Write Barrier”，类似AOP，在每个赋值操作之后维护卡表
+
+- 实现方式
+
+  - 字长精度：精确记录一个机器字长，该字包含跨代指针
+
+  - 对象精度：精确记录到一个对象，该对象中有字段含有跨代指针
+
+  - 卡精度：精确到一块内存区域（Card Page），该区域内有对象含有跨代指针
+
+    > Card Table
+    >
+    > 粒度更粗犷
+
+### STW
+
+STW 的场景
+
+- **扫描 GC Root**
+
+  - 优化耗时：OopMap，避免检查所有执行上下文和全局引用位置 
+
+- **从 GC Root 往下遍历对象图** 
+
+  - 问题：对象消失
+
+    - 两个条件同时满足时，会回收掉不该回收的对象
+
+      > 赋值器“插入”了从<黑色对象>到<白色对象>的新引用；
+      >
+      > 赋值器“删除”了全部从<灰色对象>到该<白色对象>的引用；
+
+  - 解决
+
+    - 增量更新 Incremental Update
+
+      > <黑色对象>一旦新插入指向<白色对象>的引用之后，它就变回 <灰色对象>；
+      >
+      > 记录插入的新引用；当并发扫描结束后 再将记录的黑色对象为根，重新扫描；
+      >
+      > CMS
+
+    - 原始快照 SATB, Snapshot At The Beginning
+
+      > 记录删除的<灰色对象>到<白色对象>的引用；当并发扫描结束后 再将记录的灰色对象为根，重新扫描 -- 灰色对象出来的引用已被删除，重新扫描何用？？？
+      >
+      > G1、Shenandoah
+
+- 
 
 ##### 内存分配策略
 
