@@ -1006,676 +1006,581 @@ STW 的场景
 
 实现
 
-####### 单线程
-
-####### Serial 的老年代版本
+- 单线程
+- Serial 的老年代版本
 
 场景
 
-####### CMS 发生失败时的后备预案
+- CMS 发生失败时的后备预案
+
+
 
 #### Parallel Old
 
 实现
 
-####### 标记-整理
-
-####### Parallel Scavenge的老年代版本
+- 标记-整理
+- Parallel Scavenge的老年代版本
 
 场景
 
-####### 吞吐量优先
+- 吞吐量优先
+
+
 
 #### CMS
-Concurrent Mark Sweep
+**Concurrent Mark Sweep**
 
 步骤
 
-####### 1.初始标记 (单线程，STW)
-Initial Mark
+1. **Initial Mark 初始标记 (单线程，STW)** 
 
-######## 仅标记 GC Roots 直接关联的对象
+- 仅标记 GC Roots 直接关联的对象
+- 速度很快
+- STW
 
-######### 速度很快
+2. **Concurrent Mark 并发标记 (单线程，并发)**
 
-######## STW
+- GC Roots Tracing 可达性分析，扫描整个堆里的对象图
 
-####### 2.并发标记 (单线程，并发)
-Concurrent Mark
+- 耗时长，但与用户线程一起工作
 
-######## GC Roots Tracing 可达性分析，扫描整个堆里的对象图
+3. **Remark 重新标记 (多线程，STW)**
 
-########  耗时长，但与用户线程一起工作
+- 修正上一步并发标记期间发生变动的对象 - 基于“增量更新”
 
-####### 3.重新标记 (多线程，STW)
-Remark
+- 多线程！
 
-######## 修正上一步并发标记期间发生变动的对象
+- STW
 
-######### 基于“增量更新”
+4. **Concurrent Sweep 并发清除 (单线程，并发)**
 
-######## 多线程！
+- 耗时长，但与用户线程一起工作
 
-######## STW
 
-####### 4.并发清除 (单线程，并发)
-Concurrent Sweep
 
-########  耗时长，但与用户线程一起工作
+**并发**
 
-并发
+- 并发体现在，清理工作与工作线程一起并发运行
 
-####### 并发体现在，清理工作与工作线程一起并发运行
-
-####### 减少回收停顿时间
+- 减少回收停顿时间
 
 算法
 
-####### 标记清除算法（其他收集器用标记整理）
+- 标记清除算法（其他收集器用标记整理）
 
-####### 会产生内存碎片
+- 会产生内存碎片
 
 缺点
 
-####### CPU资源敏感，吞吐量会降低
+- CPU资源敏感，吞吐量会降低
+  - 并发阶段会占用线程；导致应用程序变慢，吞吐量降低
 
-######## 并发阶段会占用线程
+- 无法处理浮动垃圾，可能 Concurrent Mode Failure
 
-######## 导致应用程序变慢，吞吐量降低
+  > 浮动垃圾：并发标记、并发清理阶段，用户线程继续运行，会有新的垃圾对象不断产生。
+  > `CMSInitiatingOccupancyFraction` == 触发CMS的启动阈值；不宜过高
 
-####### 无法处理浮动垃圾，可能 Concurrent Mode Failure
+- 不能等到老年代几乎满时再收集，要预留空间给浮动垃圾；若预留的内存无法满足程序需要，出现Concurrent Mode Failure；此时会 临时启用Serial Old收集，停顿时间长
 
-浮动垃圾：
-并发标记、并发清理阶段，用户线程继续运行，会有新的垃圾对象不断产生。
-
-`CMSInitiatingOccupancyFraction` == 触发CMS的启动阈值；不宜过高
-
-######## 不能等到老年代几乎满时再收集，要预留空间给浮动垃圾
-
-######## 若预留的内存无法满足程序需要，出现Concurrent Mode Failure
-
-######## 此时会 临时启用Serial Old收集，停顿时间长
-
-####### 内存碎片
-
-######## 会给大对象分配带来麻烦
-
-######## 缓解：提前触发FullGC时 开启内存碎片的合并整理
+- 内存碎片
+  - 会给大对象分配带来麻烦
+  - 缓解：提前触发FullGC时 开启内存碎片的合并整理
 
 
 
 ### G1
 
-###### Mix GC 步骤
+**Mix GC 步骤**
 
-####### 1.初始标记 (单线程，STW)
-Initial Marking
+1. **Initial Marking 初始标记 (单线程，STW)**
 
-######## 仅标记 GC Roots 直接关联的对象；并修改TAMS指针值
+- 标记 GC Roots 直接关联的对象；并修改TAMS指针值
 
-TAMS: Top at Mark Start，并发回收时新分配的对象会在TAMS指针位置之上；
-G1收集器默认TAMS之上的对象是被标记过的，不会对其进行回收
+- TAMS: Top at Mark Start，并发回收时新分配的对象会在 TAMS 指针位置之上；
+  G1收集器默认 TAMS 之上的对象是被标记过的，不会对其进行回收
 
-####### 2.并发标记 (单线程，并发)
-Concurrent Marking
+2. **Concurrent Marking 并发标记 (单线程，并发)**
 
+- GC Roots Tracing 可达性分析，扫描整个堆里的对象图
 - 耗时长，但与用户线程一起工作
-- GC Roots Tracing 可达性分析
 
-######## GC Roots Tracing 可达性分析，扫描整个堆里的对象图
+3. **Final Marking 最终标记 (多线程，STW)**
 
-####### 3.最终标记 (多线程，STW)
-Final Marking
+- 处理并发标记结束后遗留下来的 SATB 记录
+- SATB: 原始快照算法，Snapshot At the Beginning
 
-######## 处理并发标记结束后遗留下来的SATB记录
+4. **Live Data Counting and Evacuation 筛选回收 (多线程，STW)**
 
-SATB: 原始快照算法，Snapshot At the Beginning
+- 对Region的回收价值进行排序，把需要回收的Region内的存活对象复制到空Region
 
-####### 4.筛选回收 (多线程，STW)
-Live Data Counting and Evacuation
 
-######## 对Region的回收价值进行排序，把需要回收的Region内的存活对象复制到空Region
 
-###### 算法
+**算法**
 
-####### 新生代：并行的复制算法，STW
+- 新生代：并行的复制算法，STW -- 其实不区分新生代老年代？？？
+- 老年代：并发标记、整理则是增量的，并且是新生代GC是顺带进行
 
-######## 其实不区分新生代老年代？？？
+从整体上看：标记 - 整理
 
-####### 老年代：并发标记、整理则是增量的，并且是新生代GC是顺带进行
+从局部看：两个Region之间 标记 -复制
 
-####### 从整体上看：标记 - 整理
 
-####### 从局部看：两个Region之间 标记 -复制
 
-###### 场景
+**场景**
 
-####### 兼顾吞吐量和停顿时间
+- 兼顾吞吐量和停顿时间
 
-###### 特点
+**特点**
 
-####### 并行与并发
+- 并行与并发
+  - 充分利用多CPU, 多核
 
-######## 充分利用多CPU, 多核
+- 空间整合 
+  - -标记整理
 
-####### 空间整合 
+- 可预测的停顿
 
-######## -标记整理
+  - 停顿时间模型：允许使用者明确指定M毫秒内GC时间不得超过N毫秒；
 
-####### 可预测的停顿
+    > 原理：记录每个Region的回收耗时、RS里的脏卡数量等
 
-######## 停顿时间模型
+  - 将 Region 作为单次回收的最小单元；避免全区域GC
 
-######### 允许使用者明确指定M毫秒内GC时间不得超过N毫秒
 
-######### 原理：记录每个Region的回收耗时、RS里的脏卡数量等
 
-######## 将 Region 作为单次回收的最小单元
+**概念**
 
-######### 避免全区域GC
+- Region 分代收集
+  - G1将堆划分为大小相等的`Region`，新生代和老年代不再是物理隔离的
+  - Eden、Survivor、Old、Humongous：超过Region 50%的对象
+  - 每个Region大小一致，为1M~32M之间的某个2次幂
+  - 缺点：有空间浪费
 
-###### 概念
+- Remembered Set
 
-####### Region 分代收集
+  - 用来记录 region 之间对象的引用关系
+  - GC 时保证老年代到新生代的跨区引用仍然有效
 
-######## G1将堆划分为大小相等的`Region`，新生代和老年代不再是物理隔离的
+  
 
-######## Eden、Survivor、Old、Humongous
+**vs. CMS**
 
-######### 超过Region 50%的对象
+- G1包括Young GC 和 Mix GC；CMS 集中在老年代回收
+- G1 减少垃圾碎片产生
+  - 用region方式划分堆内存
+  - 可以做到局部区域的回收，不必每次都回收整个年轻代/年老代
+  - 基于标记整理算法
 
-######## 每个Region大小一致，为1M~32M之间的某个2次幂
+- 初始化标记阶段，搜索可达对象用到Card Table，实现方式不一样
 
-######## 缺点：有空间浪费
+- G1 可指定期望停顿时间
 
-####### Remembered Set
+- 弱点
 
-######## 用来记录region之间对象的引用关系
+  - 内存占用较高：每个Region都要有一份卡表
+  - 执行负载较高：卡表维护更繁琐；原始快照搜索算法，比起增量更新算法的额外负担
 
-######## GC时保证老年代到新生代的跨区引用仍然有效
+  
 
-###### vs. CMS
+### 低延迟收集器
 
-####### G1包括Young GC 和 Mix GC；CMS 集中在老年代回收
-
-####### G1 减少垃圾碎片产生
-
-######## 用region方式划分堆内存
-
-######## 可以做到局部区域的回收，不必每次都回收整个年轻代/年老代
-
-######## 基于标记整理算法
-
-####### 初始化标记阶段，搜索可达对象用到Card Table，实现方式不一样
-
-####### G1 可指定期望停顿时间
-
-####### 弱点
-
-######## 内存占用较高
-
-######### 每个Region都要有一份卡表
-
-######## 执行负载较高
-
-######### 卡表维护更繁琐
-
-######### 原始快照搜索算法，比起增量更新算法的额外负担
-
-#### 低延迟收集器
-
-##### Shenandoah
+#### Shenandoah
 
 https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
-###### 九个步骤
+**九个步骤**
 
-####### 1.初始标记 (STW)
-Initial Marking
+1. **Initial Marking 初始标记 (STW)**
 
-######## 仅标记 GC Roots 直接关联的对象
+- 仅标记 GC Roots 直接关联的对象
 
-TAMS: Top at Mark Start，并发回收时新分配的对象会在TAMS指针位置之上；
-G1收集器默认TAMS之上的对象是被标记过的，不会对其进行回收
+- TAMS: Top at Mark Start，并发回收时新分配的对象会在TAMS指针位置之上；
+  G1收集器默认TAMS之上的对象是被标记过的，不会对其进行回收
 
-######## 同G1
+- 同G1
 
-####### 2.并发标记 (并发)
-Concurrent Marking
+2. **Concurrent Marking 并发标记 (并发)**
 
 - 耗时长，但与用户线程一起工作
-- GC Roots Tracing 可达性分析
+- GC Roots Tracing 可达性分析，扫描整个堆里的对象图
 
-######## GC Roots Tracing 可达性分析，扫描整个堆里的对象图
+- 同G1
 
-######## 同G1
+3. **Final Marking 最终标记 (STW)**
 
-####### 3.最终标记 (STW)
-Final Marking
+- 处理并发标记结束后遗留下来的SATB记录
 
-######## 处理并发标记结束后遗留下来的SATB记录
+  > SATB: 原始快照算法，Snapshot At the Beginning
+  >
+  > 同G1
 
-SATB: 原始快照算法，Snapshot At the Beginning
+- 同时统计回收价值最高的Region，组成“回收集”
 
-######### 同G1
+4. **Concurrent Cleanup 并发清理**
 
-######## 同时统计回收价值最高的Region，组成“回收集”
+- 清理一个存活对象都没有的Region
 
-####### 4.并发清理
-Concurrent Cleanup
+5. **Cocurrent Evacuation 并发回收**
 
-######## 清理一个存活对象都没有的Region
+- 将回收集里的存活对象复制到未被使用的Region中
 
-####### 5.并发回收
-Cocurrent Evacuation
+- 通过“转发指针”解决并发问题
 
-######## 将回收集里的存活对象复制到未被使用的Region中
+6. **Initial Update Reference 初始引用更新 (STW)**
 
-######## 通过“转发指针”解决并发问题
+- 引用更新：把堆中所有指向旧对象的引用修正到复制后的新地址
 
-####### 6.初始引用更新 (STW)
-Initial Update Reference
+- 初始化阶段：确保所有收集器线程都已完成对象移动任务 -- 短时 STW
 
-######## 引用更新：把堆中所有指向旧对象的引用修正到复制后的新地址
+7. **Concurrent Update Reference 并发引用更新**
 
-######## 初始化阶段：确保所有收集器线程都已完成对象移动任务
+- 真正开始引用更新
 
-######### 短时 STW
+8. **Final Update Reference 最终引用更新 (STW)**
 
-####### 7.并发引用更新
-Concurrent Update Reference
+- 修正GC Roots中的引用
+- 短时 STW
 
-######## 真正开始引用更新
+9. **Concurrent Cleanup 并发清理**
 
-####### 8.最终引用更新 (STW)
-Final Update Reference
+- 回收 “回收集”里的Region
 
-######## 修正GC Roots中的引用
 
-######### 短时 STW
 
-####### 9.并发清理
-Concurrent Cleanup
+**vs. G1**
 
-######## 回收 “回收集”里的Region
+- 支持并发的整理算法
 
-###### vs. G1
+- 默认不使用分代收集：没有专门的新生代、老年代Region
+- 抛弃记忆集，改用连接矩阵（Connection Matrix）--  二维表格
 
-####### 支持并发的整理算法
 
-####### 默认不使用分代收集
 
-######## 没有专门的新生代、老年代Region
+#### ZGC
 
-####### 抛弃记忆集，改用连接矩阵（Connection Matrix）
+**特点**
 
-######## 二维表格
+- 内存布局： Region具有动态性
+  - 小型 Region：容量 2M，用于存放 <256K 的对象
+  - 中型 Region：容量 32M，用于存放 256K~4M 的对象
+  - 大型 Region：容量为 N*2M，用于存放 > 4M的单个对象
 
-##### ZGC
+- 并发整理算法
+  - 染色指针技术：直接把标记信息记在引用对象的指针上
+  - 全程可并发
 
-###### 特点
+**步骤**
 
-####### 内存布局
+1. **Concurrent Mark 并发标记**
 
-######## Region具有动态性
+- 遍历对象图做可达性分析；标记指针，而不是对象
 
-######### 小型 Region
+2. **Concurrent Prepare for Relocate 并发预备重分配**
 
-########## 容量 2M，用于存放 <256K 的对象
+- 统计要清理的Region，记录到重分配集（Relocation Set）
 
-######### 中型 Region
+3. **Concurrent Relocate 并发重分配**
 
-########## 容量 32M，用于存放 256K~4M 的对象
+- 将重分配集里的存活对象复制到新Region；
 
-######### 大型 Region
+- 并为重分配集中的每个Region维护一个转发表，记录从旧对象到新对象的转向关系
 
-########## 容量为 N*2M，用于存放 > 4M的单个对象
+4. **Concurrent Remap 并发重映射**
 
-####### 并发整理算法
+- 修正整个堆中指向重分配集旧对象的所有引用
 
-######## 染色指针技术
+- 这一步会合并到下一次并发标记阶段
 
-######### 直接把标记信息记在引用对象的指针上
 
-######## 全程可并发
 
-###### 步骤
+# | 问题排查
 
-####### 1. 并发标记
-Concurrent Mark
+## || GC
 
-######## 遍历对象图做可达性分析；标记指针，而不是对象
+### Young GC耗时
 
-####### 2. 并发预备重分配
-Concurrent Prepare for Relocate
+- 新生代太大
 
-######## 统计要清理的Region，记录到重分配集（Relocation Set）
+调整参数：
 
-####### 3. 并发重分配
-Concurrent Relocate
+-XX:G1NewSizePercent
 
-######## 将重分配集里的存活对象复制到新Region；
-
-######## 并为重分配集中的每个Region维护一个转发表，记录从旧对象到新对象的转向关系
-
-####### 4. 并发重映射
-Concurrent Remap
-
-######## 修正整个堆中指向重分配集旧对象的所有引用
-
-######## 这一步会合并到下一次并发标记阶段
-
-## 问题排查
-
-### GC
-
-#### Young GC耗时
-
-##### 新生代太大
-
-##### -XX:G1NewSizePercent
 -XX:G1MaxNewSizePercent
 
-#### MinorGC 频繁
+### MinorGC 频繁
 
-##### 解决
+**解决**
 
-###### 增大新生代空间
+- 增大新生代空间
 
-##### 增大新生代不会增加单次GC的耗时
 
-###### 复制 远比 扫描 耗时
 
-###### 只要GC后存活对象数量不多即可
+增大新生代不会增加单次GC的耗时？
 
-###### 适用于长期存活对象少的场景
+- 复制 远比 扫描 耗时
 
-#### FullGC 频繁
+- 只要 GC 后存活对象数量不多即可
 
-##### 监控
+- 适用于长期存活对象少的场景
 
-###### jstack
 
-####### CPU飚高，jstack看到主要是垃圾回收线程
 
-###### jstat
+### FullGC 频繁
 
-####### jstat 监控GC，看到FullGC非常多，并在增加
+**监控**
 
-##### 验证步骤
+- jstack
 
-###### top
+  > CPU飚高，jstack看到主要是垃圾回收线程
 
-####### 查看CPU占用情况，找到 进程PID
+- jstat
 
-###### top -Hp PID
+  > jstat 监控GC，看到 FullGC 非常多，并在增加
 
-####### 查看进程内各线程运行情况
 
-####### 找到线程ID，转换为16进制
 
-######## printf "%x" 10
+**验证步骤**
 
-###### jstack
+- `top`
 
-####### 按线程ID查找，确认是VM Thread，GC线程
+  > 查看CPU占用情况，找到 进程PID
 
-###### jstat -gcutil PID <interval> <count>
+- `top -Hp PID`
 
-####### 确认GC次数在增加
+  > 查看进程内各线程运行情况；
+  >
+  > 找到线程ID，转换为16进制：`printf "%x" 10`
 
-###### dump分析
+- `jstack`
 
-####### 找到哪个对象消耗内存
+  > 按线程ID查找，确认是VM Thread，GC线程
 
-####### 或者是否显式System.gc()调用？
+- `jstat -gcutil PID <interval> <count>`
 
-######## 直接搜索dump文件
+  > 确认GC次数在增加
 
-##### 解决思路
+- dump分析
 
-###### 保持老年代的相对稳定
+  > 找到哪个对象消耗内存；
+  >
+  >  或者是否显式System.gc()调用？- 直接搜索dump文件
 
-###### 不可有大量、长生存时间的大对象
 
-##### 解决手段
 
-###### 池化
+**解决思路**
 
-###### 减少创建大对象
+- 保持老年代的相对稳定
 
-####### 因为 大对象直接创建在老年代
+- 不可有大量、长生存时间的大对象
 
-###### 增大堆内存
 
-####### 每次要回收的空间岂不更多？？？应该用小内存机器 + 集群部署？
 
-###### -Xms == -Xmx
--XX:PermSize == -XX:MaxPermSize
+**解决手段**
 
-####### 避免运行时自动扩容
+- 池化
 
-####### 何时用？
+- 减少创建大对象
 
-######## 看GC日志，老年代总容量不断增加、且每次gc回收掉的内存过少时
+  > 因为 大对象直接创建在老年代
 
-###### -XX:+DisableExplicitGC
+- 增大堆内存
 
-####### 忽略掉 System.gc()
+  > 每次要回收的空间岂不更多？？？应该用小内存机器 + 集群部署？
 
-###### 选择低延迟收集器
+- -Xms == -Xmx, -XX:PermSize == -XX:MaxPermSize
 
-### 运行缓慢
+  > 避免运行时自动扩容
+  >
+  > 何时用？- 看GC日志，老年代总容量不断增加、且每次 gc 回收掉的内存过少时
 
-#### 可能原因
+- -XX:+DisableExplicitGC
 
-##### 代码有阻塞性操作？
+  > 忽略掉 System.gc()
 
-##### 线程停顿
+- 选择低延迟收集器
 
-###### 等待外部资源：数据库网络、网络
 
-###### 死循环
 
-###### GC
+## || 运行缓慢
 
-####### GC 本身耗时
+**可能原因**
 
-####### 或者等待线程达到安全点耗时
+- 代码有阻塞性操作？
 
-######## 例如 索引 int 循环 ：可数循环，不会插入安全点
+- 线程停顿
+  - 等待外部资源：数据库网络、网络
 
-###### 锁等待
+  - 死循环
 
-####### BLOCKED
+  - GC
 
-###### 线程 Wait?
+    >  GC 本身耗时；
+    >
+    > 或者等待线程达到安全点耗时，例如 索引 int 循环 ：可数循环，不会插入安全点
 
-####### WAITING
+  - 锁等待：BLOCKED
 
-##### 类加载时间长
+  - 线程 Wait： WAITING
 
-###### 排查
+- 类加载时间长
 
-####### jstat -class xx
+  > 排查：jstat -class xx
+  >
+  > 解决：-Xverify:none 禁止字节码验证环节
 
-###### 解决
+- JIT 编译时间长
 
-####### -Xverify:none 禁止字节码验证环节
+  > 问题： JIT 动态编译热点代码，能让程序越运行越快；但需要消耗资源，影响运行时间
+  >
+  > 解决： -Xinit 禁止编译器运作 --> 慎用
 
-##### JIT 编译时间长
 
-###### 问题
 
-####### JIT 动态编译热点代码，能让程序越运行越快；但需要消耗资源，影响运行时间
+**解决思路**
 
-###### 解决
+- 压测
 
-####### -Xinit 禁止编译器运作
+- jstack生成一系列线程转储日志
 
-######## 慎用
+- 分析线程转储日志，找WAITING、找deadlock
 
-#### 解决思路
 
-##### 压测
 
-##### jstack生成一系列线程转储日志
+## || 进程崩溃
 
-##### 分析线程转储日志，找WAITING、找deadlock
+**可能原因**
 
-### 进程崩溃
+- 等待的线程 和 Socket连接过多，超过虚拟机承受能力
 
-#### 可能原因
 
-##### 等待的线程 和 Socket连接过多，超过虚拟机承受能力
 
-### CPU 飙高
+## || CPU 飙高
 
-#### 可能原因
+**可能原因**
 
-##### Runtime.getRuntime.exec() 创建进程开销大
+- Runtime.getRuntime.exec() 创建进程开销大
 
-#### 解决
+**解决**
 
-##### 利用 Java API 替代 runtime.exec()
+- 利用 Java API 替代 runtime.exec()
 
-### 堆外内存
 
-#### 表现
 
-##### -XX:+HeapDumpOnOutOfMemoryError 无效，OOM时不会产生dump文件
+## || 堆外内存
 
-##### 基于监控发现问题：Memory - Heap Size
+**表现**
 
-##### 堆外内存不足时 也很难触发GC
+- -XX:+HeapDumpOnOutOfMemoryError 无效，OOM时不会产生dump文件
+- 基于监控发现问题：Memory - Heap Size
 
-###### 只能等到老年代满后 FullGC时，“顺便”清理堆外内存
+- 堆外内存不足时 也很难触发GC：只能等到老年代满后 FullGC时，“顺便”清理堆外内存
 
-#### 排查
 
-##### pmap
 
-###### 查看物理内存分配
+**排查**
 
-##### GDB
+- pmap：查看物理内存分配
 
-##### NMT
+- GDB
 
-###### Native Memory Tracking
+- NMT：Native Memory Tracking
 
-###### jcmd xx VM.native_memory summary.diff
+  > jcmd xx VM.native_memory summary.diff
 
-#### 解决
 
-##### -XX:MaxDirectMemorySize 调大
 
-### 内存溢出、泄漏
+解决
 
-#### 分析步骤
+- -XX:MaxDirectMemorySize 调大
 
-同样适用于 CPU 过高的场景
 
-##### top
 
-按 P: 按CPU排序；
-按 M: 按内存排序；
+## || 内存溢出、泄漏
 
-###### 找到耗内存的pid
+### **分析步骤**
 
-##### top -Hp pid
+（同样适用于 CPU 过高的场景）
 
-###### 查看线程占用资源
+- `top`：找到耗内存的pid
 
-###### 输入 P：按CPU占用排序
+  > 按 P: 按CPU排序；
+  > 按 M: 按内存排序；
 
-###### 输入 M: 按内存排序
+- `top -Hp pid`：查看线程占用资源
 
-##### jstack pid
+  > 按 P：按CPU占用排序；
+  >
+  > 按 M: 按内存排序
 
-###### 查看线程堆栈，排除IO阻塞，死锁
+- `jstack pid`：查看线程堆栈，排除IO阻塞，死锁
 
-##### jmap -heap pid
+- `jmap -heap pid`：查看堆内存占用
 
-###### 查看堆内存占用
+- dump分析
+  - Histogram
+  - with incomming reference
 
-##### dump分析
 
-###### Histogram
 
-###### with incomming reference
+### **提示信息**
 
-#### 提示信息
+- **OOM: Java heap space**
+  - 内存泄露
+  - 堆过小
+  - finalize() 滥用：定义finalize后，GC不会立即回收这些实例，而是将实例添加到一个 ReferenceQueue队列中。等finalize执行之后才回收。队列中对象过多会导致OOM
 
-##### OOM: Java heap space
+- **OOM: GC overhead limit exceeded**
+  - 原因：当GC花费 98%的CPU，但只回收了 2% 堆空间，并连续5次。
+  - 内存泄露
+  - 堆过小
 
-###### 内存泄露
+- **OOM: Requested array size exceeds VM limit**
+  - 创建了过大的数组
+  - 堆过小
 
-###### 堆过小
+- **OOM: MetaSpace**
+  - MaxMetaSpaceSize过小
 
-###### finalize() 滥用
+- **OOM: Unable to create native threads**
 
+  - 创建线程池失败
 
-定义finalize后，GC不会立即回收这些实例，而是将实例添加到一个 ReferenceQueue队列中。等finalize执行之后才回收。
+  - -Xss 每个线程栈空间过大
 
-队列中对象过多会导致OOM
+  - 操作系统限制
 
-##### OOM: GC overhead limit exceeded
+    > ulimit 限制 (max user processes)
+    >
+    > sys.kernel.threads-max 限制
+    >
+    > sys.kernel.pid_max 限制
 
-###### 原因：当GC花费 98%的CPU，但只回收了 2% 堆空间，并连续5次。
 
-###### 内存泄露
 
-###### 堆过小
-
-##### OOM: Requested array size exceeds VM limit
-
-###### 创建了过大的数组
-
-###### 堆过小
-
-##### OOM: MetaSpace
-
-###### MaxMetaSpaceSize过小
-
-##### OOM: Unable to create native threads
-
-###### 创建线程池失败
-
-###### -Xss 每个线程栈空间过大
-
-###### 操作系统限制
-
-- ulimit 限制 (max user processes)
-- sys.kernel.threads-max 限制
-- sys.kernel.pid_max 限制
-
-#### 编程问题
+### 编程问题
 
 https://www.baeldung.com/java-memory-leaks
 
-##### 滥用 大 static 字段
+- **滥用 大 static 字段**
 
-###### static 字段生命周期长
+static 字段生命周期长；除非应用停止，或对应的ClassLoder被GC
 
-###### 除非应用停止，或对应的ClassLoder被GC
+- **使用资源未关闭**
 
-##### 使用资源未关闭
+- **equals / hashCode 实现有误，导致大量重复key 加到集合里**
 
-##### equals / hashCode 实现有误，导致大量重复key 加到集合里
+- **内部类引用外部类**：阻止外部类被GC
 
-##### 内部类引用外部类
+- **滥用 finalize() 方法**
 
-###### 阻止外部类被GC
+被GC之前会被放到队列里，不能及时GC
 
-##### 滥用 finalize() 方法
+- **Interned String**
 
-###### 被GC之前会被放到队列里，不能及时GC
+intern() 后放在 永久代，生命周期长
 
-##### Interned String
-
-###### intern() 后放在 永久代，生命周期长
-
-##### ThreadLocal
+- **ThreadLocal**
 
 https://www.programmersought.com/article/2886751515/
 
@@ -1683,60 +1588,56 @@ https://www.jianshu.com/p/1342a879f523
 
 Thread引用 --> Thread --> ThreadLocalMap --> Entry --> value 泄漏
 
-###### 线程池中的线程生命周期长，导致对应的ThreadLocal生命周期也长
+线程池中的线程生命周期长，导致对应的ThreadLocal生命周期也长；
 
-###### ThreadLocal 本身是 弱引用，如果没有其他引用则可以被回收
-
-###### 但 value 本身不会回收，只要 线程 仍然存活
-
-###### 手段
-
-####### remove()
-
-####### 不可用set(null)
-
-Do not use ThreadLocal.set(null) to clear the value — it doesn't actually clear the value but will instead look up the Map associated with the current thread and set the key-value pair as the current thread and null respectively.
-https://www.baeldung.com/java-memory-leaks
+ThreadLocal 本身是 弱引用，如果没有其他引用则可以被回收；但 value 本身不会回收，只要 线程 仍然存活。
 
 
-####### 保护功能：get / set / remove 时都会清除 key==null的值
 
-##### 线程池
+> 手段
+>
+> - remove()
+> - 不可用set(null)
+>   Do not use ThreadLocal.set(null) to clear the value — it doesn't actually clear the value but will instead look up the Map associated with the current thread and set the key-value pair as the current thread and null respectively.
+>   https://www.baeldung.com/java-memory-leaks
+> - 保护功能：get / set / remove 时都会清除 key==null的值
 
-###### 使用无界队列
 
-###### 没有限制最大线程数量
 
-##### tomcat 配置问题
+- 线程池
 
-###### tomcat maxHttpHeaderSize 过大，导致每个tomcat工作线程过大
+使用了无界队列
 
-##### WeakHashMap 也可能不被回收！
+没有限制最大线程数量
 
-###### 例如 Value 引用了Key
+- **tomcat 配置问题**
 
-## 工具
+tomcat maxHttpHeaderSize 过大，导致每个tomcat工作线程过大
 
-### 系统工具
+- **WeakHashMap 也可能不被回收！**
 
-#### top
+例如 Value 引用了Key
 
-##### CPU,内存使用率
 
-##### top -Hp pid ：查看具体线程
 
-##### 交互
+# | 工具
 
-###### 1
+## 系统工具
 
-####### 查看分CPU统计
+### top
 
-###### H
+- CPU,内存使用率
 
-####### 查看每个线程
+- `top -Hp pid` ：查看具体线程
+- 交互
+  - 1: 查看分CPU统计
+  - H: 查看每个线程
 
-#### vmstat
+### vmstat
 
+- 监控进程上下文切换
+
+```
 procs
 r：等待运行的进程数
 b：处于非中断睡眠状态的进程数
@@ -1765,11 +1666,13 @@ sy：内核 CPU 系统使用时间
 id：空闲时间
 wa：等待 I/O 时间
 st：运行虚拟机窃取的时间
+```
 
-##### 监控进程上下文切换
+### pidstat
 
-#### pidstat
+- 监控线程上下文切换
 
+```
 pidstat -p pid -t 
 
 -p：指定进程号；
@@ -1781,38 +1684,55 @@ pidstat -p pid -t
 
 cswch/s：每秒主动任务上下文切换数量
 nvcswch/s：每秒被动任务上下文切换数量
+```
 
 
-##### 监控线程上下文切换
 
-#### lsof -i:8080
+### lsof -i:8080
 
-##### 端口查询
+端口查询
 
-### JDK工具
 
-#### jps -v
+
+## JDK工具
+
+### jps -v
+
+- 查看 java 进程列表
 
 -m: 输出main() 参数；
 -l: 输出主类全名；
 -v: 输出JVM参数；
 
 
-##### 查看 java 进程列表
 
-#### jinfo
+### jinfo
+
+- 查看修改VM参数
+
+
 
 修改参数：
 - jinfo -flag name=value
 - jinfo -flag[+|-] name
 
-##### 查看修改VM参数
 
-#### jstat
 
+### jstat
+
+- 用于查看分区内存：命令行版 JConsole
+- -class
+- -gccause：查看最近一次gc的原因
+- -gc / -gcutil
+  - jstat -gcutil PID <interval> <count>：定时输出各空间大小
+
+
+
+```
 jstat -gc vmid [interval] [count]
 
 jstat -options
+
 - class
 - gc
 - gcutil: 关注百分比
@@ -1835,44 +1755,36 @@ gc字段含义：
 `FGC`：从应用程序启动到采样时 old 代（全 gc）gc 次数；
 `FGCT`：从应用程序启动到采样时 old 代（全 gc）gc 所用时间 (s)；
 `GCT`：从应用程序启动到采样时 gc 用的总时间 (s)。
+```
 
-##### 用于查看分区内存
 
-###### 命令行版 JConsole
 
-##### -class
+### jmap
 
-##### -gccause
+- jmap -dump:live
+  - 生成heap dump
+  - :live 会触发FullGC，只转储活着的对象
 
-###### 查看最近一次gc的原因
+`jmap -dump:live,format=b,file=/pang/logs/tomcat/heapdump.bin 1`
 
-##### -gc / -gcutil
 
-###### jstat -gcutil PID <interval> <count>
 
-###### 定时输出各空间大小
+- jmap -heap <PID> 
 
-#### jmap
+查看堆内存使用情况
 
+```
 -dump: 生成堆转储快照；
 -F: 强制生成dump快照；
 -heap: 显示堆详细信息；
 -histo: 显示堆对象统计信息；
+```
 
 
-##### jmap -dump:live
 
-jmap -dump:live,format=b,file=/pang/logs/tomcat/heapdump.bin 1
+### jhat
 
-###### 生成heap dump
-
-###### :live 会触发FullGC，只转储活着的对象
-
-##### jmap -heap <PID> 
-
-###### 查看堆内存使用情况
-
-#### jhat
+- 简单分析 heap dump 
 
 jhat xx.hprof
 
@@ -1891,21 +1803,42 @@ Server is ready.
 http://localhost:7000/
 ```
 
-##### 简单分析 heap dump 
 
-#### jstack -l
 
+### jstack -l
+
+- 生成 thread dump
+
+- 分析死锁：找到BLOCKED的线程
+
+- 可通过编程方式：Thread.getAllStackTraces()
+
+```
 -l: 包含锁信息；
 -m: 包含本地方法堆栈；
+```
 
-##### 生成 thread dump
 
-##### 分析死锁：找到BLOCKED的线程
 
-##### 可通过编程方式：Thread.getAllStackTraces()
+### jcmd
 
-#### jcmd
+- **heap dump**
 
+jcmd <process id/main class> GC.heap_dump filename=Myheapdump
+
+- **thread dump**
+
+jcmd 17264 Thread.print
+
+- **VM.native_memory**
+
+jcmd 11 VM.native_memory baseline
+
+jcmd 11 VM.native_memory summary.diff
+
+
+
+```
 `jcmd 1 GC.heap_dump ${dump_file_name}`
 
 `jcmd 1 help`
@@ -1937,64 +1870,56 @@ VM.unlock_commercial_features
 VM.native_memory detail 
 VM.native_memory baseline
 VM.native_memory detail.diff
-
-
+```
 
 https://www.javacodegeeks.com/2016/03/jcmd-one-jdk-command-line-tool-rule.html
 
-##### heap dump
-
-jcmd <process id/main class> GC.heap_dump filename=Myheapdump
-
-##### thread dump
-
-jcmd 17264 Thread.print
 
 
-##### jcmd 11 VM.native_memory baseline
-jcmd 11 VM.native_memory summary.diff
+### javap
 
-#### javap
+- 分析class文件字节码
 
 `javap -verbose TestClass`
 
-##### 分析class文件字节码
 
-### GUI工具
 
-#### JConsole
+## GUI工具
 
-##### 内存：jstat
+### JConsole
 
-##### 线程：jstack
+- 内存：jstat
 
-##### 查看 MBean
+- 线程：jstack
 
-##### 查看分区内存
+- 查看 MBean
 
-#### VisualVM
+- 查看分区内存
 
-##### 插件
 
-##### 监视：dump
 
-##### Profiler
+### VisualVM
 
-###### CPU
+- 插件
 
-###### 内存
+- 监视：dump
 
-##### BTrace
+- Profiler
+  - CPU
+  - 内存
 
-###### 动态插入调试代码
+- BTrace
 
-###### 原理：Java Instrument，Arthas也是利用这个原理
+  - 动态插入调试代码
+  - 原理：Java Instrument，Arthas也是利用这个原理
 
-#### JMC：Java Mission Control
+  
+
+### JMC：Java Mission Control
 
 https://www.oracle.com/technetwork/java/javaseproducts/mission-control/java-mission-control-1998576.html
 
-##### server 需要添加启动参数
+- server 需要添加启动参数
 
 -Dcom.sun.management.jmxremote=true
 -Djava.rmi.server.hostname=127.0.0.1
@@ -2005,174 +1930,161 @@ https://www.oracle.com/technetwork/java/javaseproducts/mission-control/java-miss
 -XX:+UnlockCommercialFeatures
 -XX:+FlightRecorder
 
-##### 原理：JFR
-
-###### 运行时启动JFR记录
+- 原理：JFR，运行时启动JFR记录
 
 Jcmd <pid> JFR.start duration=120s filename=myrecording.jfr
 
 
-#### GC
 
-##### GC Viewer
+### GC Viewer
 
 https://sourceforge.net/projects/gcviewer/
 
-##### https://www.gceasy.io
+https://www.gceasy.io
 
-### instrument
 
-#### ClassFileTransformer
 
-#### Instrumentation
+## instrument
 
-## 参数
+- ClassFileTransformer
 
-### 运维
+- Instrumentation
 
-#### -XX:+HeapDumpOnOutOfMemoryError
 
-#### -Xverify:none -忽略字节码校验
 
-#### -Xint -禁止JIT编译器
 
-### 基本
 
-#### -Xms 
--Xmx
+# | 参数
 
-##### 最小堆，最大堆
+## || 运维
 
-##### 建议设置成一样大
+- **-XX:+HeapDumpOnOutOfMemoryError**
 
-###### 避免GC后调整堆大小带来压力
+- **-Xverify:none** -忽略字节码校验
 
-#### -Xmn
+- **-Xint** -禁止JIT编译器
 
-##### 新生代
 
-#### -Xss
 
-##### 栈内存大小
+## || 基本
 
-### 内存
+- **-Xms ，-Xmx**
 
-#### -XX:PermSize  
--XX:MaxPermSize
+最小堆，最大堆
 
-#### -XX:MetaspaceSize
--XX:MaxMetaspaceSize
+建议设置成一样大，避免GC后调整堆大小带来压力
 
-##### 元空间初始大小，若超过 则触发GC进行类型卸载
+- **-Xmn**
 
-##### 同时收集器会根据GC后的空间释放情况，动态调整 MetaspaceSize
+新生代
 
-#### -XX:MaxDirectMemorySize 
+- **-Xss**
 
-##### 直接内存
+栈内存大小
 
-#### -XX: NewRatio
 
-##### 老年代新生代比例
 
-##### 默认2
+## || 内存
 
-#### -XX: SurvivorRatio
+- **-XX:PermSize  -XX:MaxPermSize**
+- **-XX:MetaspaceSize -XX:MaxMetaspaceSize**
 
-##### 8:1:1
+元空间初始大小，若超过 则触发GC进行类型卸载
 
-#### -XX:MaxTenuringThreshold
+同时收集器会根据GC后的空间释放情况，动态调整 MetaspaceSize
 
-##### 转移到老年代的年龄
+- **-XX:MaxDirectMemorySize** 
 
-#### -XX:PetenureSizeThreshold
+直接内存
 
-##### 超过阈值则直接分配到老年代
+- **-XX: NewRatio**
 
-#### -XX:+AlwaysTenure -去掉Suvivor空间
+老年代新生代比例，默认2
 
-#### -XX:NativeMemoryTracking={summary|detail}
+- **-XX: SurvivorRatio**
 
-##### 堆外
+8:1:1
 
-### GC
+- **-XX:MaxTenuringThreshold**
 
-#### -XX:+DisableExplicitGC
+转移到老年代的年龄
 
-##### -忽略System.gc()
+- **-XX:PetenureSizeThreshold**
 
-#### -XX:+PrintReferenceGC // 打印各种引用数量
+超过阈值则直接分配到老年代
 
-#### -Xloggc:xx.log
+- -XX:+AlwaysTenure 
 
-#### 日志
+去掉Suvivor空间
 
-##### 查看GC基本信息
+- **-XX:NativeMemoryTracking={summary|detail}**
 
-###### -XX:+PrintGC
+堆外
 
-###### -Xlog:gc
+## || GC
 
-####### Java9
+- **-XX:+DisableExplicitGC**
 
-##### 查看GC详细信息
+-忽略System.gc()
 
-###### -XX:+PrintGCDetails
--XX:+PrintGCDateStamps
+- **-XX:+PrintReferenceGC** 
 
-###### -Xlog:gc*
+打印各种引用数量
 
-####### Java9
+- **-Xloggc:xx.log**
 
-##### 查看GC前后容量变化
 
-###### -XX:+PrintHeapAtGC
 
-###### -Xlog:gc+heap=debug
+**GC 日志**
 
-####### Java9
+- 查看GC基本信息
+  - **-XX:+PrintGC**
+  - **-Xlog:g**c - Java9
 
-##### 查看GC过程中用户线程并发时间、停顿时间
+- 查看GC详细信息
+  - **-XX:+PrintGCDetails**
+  - **-XX:+PrintGCDateStamps**
+  - **-Xlog:gc*** - Java9
 
-###### -XX:+PrintGCApplicationConcurrentTime / -XX:+PrintGCApplicationStoppedTime
+- 查看GC前后容量变化
+  - **-XX:+PrintHeapAtGC**
+  - **-Xlog:gc+heap=debug** - Java9
 
-###### -Xlog:safepoint
+- 查看GC过程中用户线程并发时间、停顿时间
+  - **-XX:+PrintGCApplicationConcurrentTime / -XX:+PrintGCApplicationStoppedTime**
+  - **-Xlog:safepoint**- Java9
 
-####### Java9
+- 查看Ergonomics机制：各分代大小、收集目标
+  - **-XX:+PrintAdaptiveSizePolicy** - 打印 G1 Ergonomics 相关信息
+  - **-Xlog:gc+ergo*=trace** - Java9
 
-##### 查看Ergonomics机制：各分代大小、收集目标
+- 查看收集后剩余对象的年龄分布
+  - **-XX:+PrintTenuringDistribution**
+  - **-Xlog:gc+age=trace** - Java9
 
-###### -XX:+PrintAdaptiveSizePolicy
+**G1**
 
-####### 打印 G1 Ergonomics 相关信息
+- -XX:G1NewSizePercent
+  -XX:G1MaxNewSizePercent
 
-###### -Xlog:gc+ergo*=trace
+- -XX: +G1HeapRegionSize - G1区域大小
 
-####### Java9
+## || 并发
 
-##### 查看收集后剩余对象的年龄分布
+- **-XX:-UseBiasedLocking** 关闭偏向锁
 
-###### -XX:+PrintTenuringDistribution
 
-###### -Xlog:gc+age=trace
 
-####### Java9
+## || 参数确定
 
-#### G1
+- 老年代大小
+  - FullGC之后，存活对象大小的 1.5~2 倍
 
-##### -XX:G1NewSizePercent
--XX:G1MaxNewSizePercent
 
-##### -XX: +G1HeapRegionSize
 
-###### G1区域大小
 
-### 并发
 
-#### -XX:-UseBiasedLocking 关闭偏向锁
 
-### 参数确定
 
-#### 老年代大小
 
-##### FullGC之后，存活对象大小的 1.5~2 倍
+
