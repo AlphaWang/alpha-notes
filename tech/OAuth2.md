@@ -24,11 +24,25 @@
 
 ## 角色
 
-1. 客户应用 Client Application
 
-2. 资源服务器 Resource Server 
 
-3. 授权服务器 Authorized Server
+### 1. 客户应用 Client Application
+
+- 第三方应用。
+
+
+
+### 2. 资源服务器 Resource Server 
+
+- 受保护的资源。
+
+
+
+### 3. 授权服务器 Authorized Server
+
+
+
+提供 API
 
 - /oauth2/authorize 授权
 - /oauth2/token 访问令牌
@@ -37,11 +51,17 @@
 
 
 
-4. 资源拥有者 Resource Owner
+### 4. 资源拥有者 Resource Owner
+
+- 登录用户。
+
+
 
 ## 信息
 
 ### 客户凭证 Client Credentials
+
+
 
 ### 令牌 Token
 
@@ -96,29 +116,43 @@
 ## || 典型OAuth Flow
 
 ### 1. 授权码模式 Authorization Code
-（A）用户访问客户端，后者将前者导向认证服务器。
 
-（B）用户选择是否给予客户端授权。
+![image-20210630103055094](../img/auth/access_code_flow.png)
 
-（C）假设用户给予授权，认证服务器将用户导向客户端事先指定的"重定向URI"（redirection URI），同时附上一个授权码。
+**Steps**
 
-（D）客户端收到授权码，附上早先的"重定向URI"，向认证服务器申请令牌。这一步是在客户端的后台的服务器上完成的，对用户不可见。
+1. 用户访问客户应用。
+2. 客户端**重定向**到授权服务器。
+3. 用户授权。
+4. 授权后，授权服务器生成授权码 Authorization Code，
+5. 并将用户**重定向**到客户应用事先指定的 Redirect URI，同时附上授权码 Authorization Code。
+6. 客户应用服务器收到授权码，附上早先的"重定向URI"，向授权服务器**申请令牌**。这一步是在客户应用的后台的服务器上完成的，对用户不可见。
+7. 认证服务器核对了授权码和重定向URI，确认无误后生成 access_token，
+8. 并向客户应用服务器发送访问令牌（access token）和更新令牌（refresh token）。
+9. 接下来用户就可以使用客户应用了。
 
-（E）认证服务器核对了授权码和重定向URI，确认无误后，向客户端发送访问令牌（access token）和更新令牌（refresh token）。
 
 
+**前端渠道 vs. 后端渠道**
 
-**流程**
+- 通过前端渠道，客户获取授权码Authorization Code
 
-通过前端渠道，客户获取授权码Authorization Code
-
-通过后端渠道，客户使用授权码去交换Access Token、以及可选的Refresh Token
+- 通过后端渠道，客户使用授权码去交换Access Token、以及可选的Refresh Token
 
 **场景**
 
-假定资源拥有者和客户在不同的设备上
+- 假定资源拥有者和客户在不同的设备上
 
-安全性好，因为令牌不会传递经过user-agent
+- 安全性好，因为令牌不会传递经过user-agent
+
+
+
+**为什么必须要有授权码？**
+
+Q: Step 4/5 跳过授权码，直接返回用 access token 不行吗？
+
+- 如果把安全保密性要求极高的访问令牌暴露在浏览器上，有访问令牌失窃的安全风险。所以只能把访问令牌返回给后端服务。但是，浏览器此时还处于被重定向到授权服务 --> 用户和客户应用之间的“连接”就断了，缺了 Step5 重定向。
+- 有了授权码的参与，访问令牌可以在后端服务之间传输，同时还可以重新建立用户和客户应用之间的“连接”。这样通过一个授权码，既“照顾”到了用户的体验，又“照顾”了通信的安全。
 
 
 
