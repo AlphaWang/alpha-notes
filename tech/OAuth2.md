@@ -416,6 +416,8 @@ Request
 
 - 原则：唯一性、不连续性、不可猜性。
 
+- 可用 JWT 
+
 - 生成后存下来：access_token -- scope; access_token -- app_id + user，并设置过期时间。
 
   > ```java
@@ -474,13 +476,77 @@ Request
 
 
 
+# | JWT 
+
+> JSON Web Token
+
+## JWT 结构
+
+结构体
+
+- HEADER
+  - `typ`  类型
+  - `alg` 签名算法
+- PAYLOAD
+  - `sub` Subject，令牌的主体
+  - `aud` Audience，the recipients that the JWT is intended for.
+  - `exp` Expiration Time，过期时间
+  - `iat` Issue at，颁发时间 
+  - `iss` Issuer
+- SIGNATURE
+
+
+
+更多字段：https://datatracker.ietf.org/doc/html/rfc7519 
+
+
+
+## JWT 代码使用
+
+JJWT 封装了 Base64URL 编码和对称 HMAC、非对称 RSA 的一系列签名算法。使用 JJWT，我们只关注上层的业务逻辑实现，而无需关注编解码和签名算法的具体实现。
+
+```java
+String sharedTokenSecret = "hellooauthhellooauthhellooauthhellooauth";//密钥
+Key key = new SecretKeySpec(sharedTokenSecret.getBytes(),
+                SignatureAlgorithm.HS256.getJcaName());
+
+//生成JWT令牌
+String jwts = Jwts.builder()
+    .setHeaderParams(headerMap)
+    .setClaims(payloadMap)
+    .signWith(key,SignatureAlgorithm.HS256)
+    .compact()
+
+//解析JWT令牌
+Jws<Claims> claimsJws  = Jwts.parserBuilder()
+    .setSigningKey(key).build()
+    .parseClaimsJws(jwts);
+JwsHeader header = claimsJws.getHeader();
+Claims body = claimsJws.getBody();  
+
+```
 
 
 
 
 
+## JWT 优缺点
+
+优点
+
+- 用计算代替存储。无需远程调用即可解析token内容。
+- 加密。
+- 无状态原则，增强可用性、伸缩性。
 
 
+
+缺点
+
+- 变更令牌状态之后，如何在已使用的令牌上生效？
+
+  > 解决1：密钥粒度缩小到用户级别，当用户取消授权后，同时修改密钥。--> 需要额外的密钥管理服务。
+  >
+  > 解决2：把用户密码作为 jwt 密钥。
 
 
 
