@@ -40,14 +40,12 @@
 
 ### 3. 授权服务器 Authorized Server
 
-
-
 提供 API
 
 - /oauth2/authorize 授权
 - /oauth2/token 访问令牌
 - /oauth2/introspect
-- /oauth2/revoke 撤回
+- /oauth2/revoke 撤回 
 
 
 
@@ -97,17 +95,15 @@
 
 # | 模式
 
-## || 概念
+概念
 
-### 前端渠道
+**前端渠道**
 
-授权服务器 - 资源拥有者
+- 授权服务器 - 资源拥有者
 
+**后端渠道**
 
-
-### 后端渠道
-
-授权服务器 - 资源服务器
+- 授权服务器 - 资源服务器
 
 
 
@@ -136,6 +132,8 @@
 **前端渠道 vs. 后端渠道**
 
 - 通过前端渠道，客户获取授权码Authorization Code
+
+  > 通过浏览器促成了授权码的交互流程；
 
 - 通过后端渠道，客户使用授权码去交换Access Token、以及可选的Refresh Token
 
@@ -257,6 +255,230 @@ Q: Step 4/5 跳过授权码，直接返回用 access token 不行吗？
 客户类型是第三方SPA
 
 -> 简化模式
+
+
+
+# | 授权服务器流程
+
+![auth_server_flow](../img/auth/auth_server_flow.png)
+
+
+
+## || 客户应用注册
+
+注册后存储的信息：
+
+- app_id
+- app_secret
+- redirect_uri
+- scope
+
+
+
+## || 颁发授权码
+
+Request
+
+```
+ curl -X GET -H "Accept: application/x-www-form-urlencoded" $authorization_endpoint
+ ?client_id=<client application id in DN format>
+ &redirect_uri=<registered client callback url>
+ &response_type=code
+ &scope=openid <custom scopes>
+ &state=<random guid>
+ &code_challenge= <code challenge>
+ &code_challenge_method =S256
+```
+
+Response
+
+```
+HTTP/1.1 302 Found
+Location: <registered redirect_uri>?code=<code>&state=<same guid from the request>
+```
+
+
+
+### 1. 验证基本信息
+
+- 验证客户应用合法性
+
+- 验证回调地址合法性。
+
+验证通过后，生成页面，提示资源拥有者进行授权。
+
+
+
+### 2. 验证权限范围1
+
+- 客户应用会传入权限范围
+- 授权服务器将传入的权限范围，与注册的 scope 做对比
+
+
+
+### 3. 生成授权请求页面
+
+- 用户可以在此页面选择 已注册的权限（多选），点击 approve；
+- approve 之后，生成授权码的流程才正式开始。
+
+Q: 这里和Step1/2 的页面不同？？
+
+
+
+### 4. 验证权限范围2
+
+- 收到用户选择的权限范围，与注册的 scope 做对比
+
+
+
+### 5. 处理授权请求，生成授权码
+
+- 检查传入的 `response_type == code`
+
+  > response_type 可能取值：code, token
+
+- 生成授权码，并关联到 app_id + user
+
+  > ```java
+  > String code = generateCode(appId,"USERTEST");//模拟登录用户为USERTEST
+  > 
+  > private String generateCode(String appId,String user) {
+  >   ...
+  >   String code = strb.toString();
+  >   codeMap.put(code,appId+"|"+user+"|"+System.currentTimeMillis());
+  >   return code;
+  > }
+  > ```
+
+- 并将授权码与已经授权的scope关联
+
+  > ```java
+  > Map<String,String[]> codeScopeMap =  new HashMap<String, String[]>();
+  > 
+  > codeScopeMap.put(code, rscope);//授权范围与授权码做绑定
+  > ```
+
+- 注意授权码要有有效期
+
+
+
+### 6. 重定向到客户应用
+
+- 调用 redirect_uri，将授权码告知客户应用
+
+
+
+## || 颁发访问令牌
+
+Request
+
+```
+ curl -X POST -H "Content-type: application/json" -H "Accept: application/x-www-form-urlencoded" $token_endpoint
+ ?grant_type= authorization_code
+ &code= <authorization code>
+ &client_id= <client application id in DN format>
+ &client_assertion= <client's TrustFabric token>
+ &client_assertion_type= urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+ &code_verifier=<code verifier generated for PKCE along with code challenge>
+ &response_type= token
+ &redirect_uri= <same redirect uri used in authorize call>
+```
+
+
+
+### 1. 验证客户应用是否存在
+
+- 验证 `grant_type == authorization_code` 
+- 验证 app_id
+- 验证 app_secret
+
+
+
+### 2. 验证授权码
+
+- 颁发授权码时保存了 授权码和 app_id + user 的关系；验证当前授权码存在、并清空存储
+
+  > ```java
+  > codeMap.put(code,appId+"|"+user+"|"+System.currentTimeMillis());
+  > ```
+
+  > ```java
+  > if(!isExistCode(code)){//验证code值
+  >   //code不存在
+  >   return;
+  > }
+  > codeMap.remove(code);//授权码一旦被使用，须立即作废
+  > ```
+
+
+
+### 3. 生成访问令牌
+
+- 原则：唯一性、不连续性、不可猜性。
+
+- 生成后存下来：access_token -- scope; access_token -- app_id + user，并设置过期时间。
+
+  > ```java
+  > Map<String,String[]> tokenScopeMap =  new HashMap<String, String[]>();
+  > 
+  > String accessToken = generateAccessToken(appId, "USERTEST");//生成访问令牌access_token的值
+  > tokenScopeMap.put(accessToken, codeScopeMap.get(code));//授权范围与访问令牌绑定
+  > 
+  > //生成访问令牌的方法
+  > private String generateAccessToken(String appId,String user){
+  >   
+  >   String accessToken = UUID.randomUUID().toString();
+  >   String expires_in = "1";//1天时间过期
+  >   tokenMap.put(accessToken,appId+"|"+user+"|"+System.currentTimeMillis()+"|"+expires_in);
+  > 
+  >   return accessToken;
+  > }
+  > ```
+
+
+
+## || 刷新令牌
+
+有了刷新令牌，用户在一定期限内无需重新点击授权按钮，就可以继续使用第三方软件。
+
+### 1. 接收刷新令牌请求，验证基本信息
+
+- 验证 `grant_type == refresh_token` 
+
+  > grant_type 可能取值：authorization_code, refresh_token
+
+- 验证客户应用是否存在
+
+- 验证刷新令牌是否存在
+
+  > ```java
+  > if(!refreshTokenMap.containsKey(refresh_token))
+  > ```
+
+- 验证刷新令牌是否属于该客户应用
+
+  > ```java
+  > String appStr = refreshTokenMap.get("refresh_token");
+  > if(!appStr.startsWith(appId+"|"+"USERTEST")){
+  >     //该refresh_token值不是颁发给该第三方软件的
+  > }
+  > ```
+
+一个刷新令牌被使用后，需要将其废弃，并重新颁发一个刷新令牌。
+
+
+
+### 3. 重新生成访问令牌
+
+流程同“颁发访问令牌”。
+
+
+
+
+
+
+
+
 
 
 
