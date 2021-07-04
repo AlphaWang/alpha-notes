@@ -673,13 +673,100 @@ public String generateCodeChallenge(String codeVerifier) throws UnsupportedEncod
 
 ## || OIDC
 
-> OpenID Connect
-
-OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol. It allows Clients to verify the identity of the End-User based on the authentication performed by an Authorization Server, as well as to obtain basic profile information about the End-User in an interoperable and REST-like manner.
+> OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol. It allows Clients to verify the identity of the End-User based on the authentication performed by an Authorization Server, as well as to obtain basic profile information about the End-User in an interoperable and REST-like manner.
 
 
 
-通过 `/.well-known/openid-configuration` API，获取metadata. 
+### OIDC 概念
+
+OpenID Connect，是一种直接基于 OAuth 2.0 构建的身份认证框架协议。
+
+> 在 OAuth2.0 的基础上，通过增加 ID 令牌来获取用户的唯一标识，从而就能够去实现一个身份认证协议。
+
+- 常用于单点登录、联合登录；
+- OAuth2: 授权协议；OIDC: 授权协议 + 身份认证，是 OAuth 2.0 的超集。
+
+
+
+
+
+### OIDC 角色
+
+**EU: End User**
+
+代表最终用户。对应资源拥有者。
+
+
+
+**RP: Relying Party**
+
+代表认证服务的依赖方。对应客户应用。
+
+
+
+**OP: OpenID Provider**
+
+代表提供身份认证的服务方，例如微信登录。对应授权服务 + 受保护资源。
+
+
+
+### OIDC 流程
+
+与 OAuth2 授权码流程几乎完全一致，除了多返回一个 `id_token  ` 
+
+
+
+![image-20210704192006034](../img/auth/oidc_flow.png)
+
+**流程**
+
+生成 ID 令牌 -> 创建 UserInfo 端点 -> 解析 ID 令牌 -> 记录登录状态 -> 获取 UserInfo。
+
+
+
+**ID TOKEN**
+
+JWT 格式，包含如下参数：
+
+- `iss`，令牌的颁发者，其值就是身份认证服务（OP）的 URL。
+- `sub`，令牌的主题，其值是一个能够代表最终用户（EU）的全局唯一标识符。
+- `aud`，令牌的目标受众，其值是三方软件（RP）的 app_id。
+- `exp`，令牌的到期时间戳，所有的 ID 令牌都会有一个过期时间。
+- `iat`，颁发令牌的时间戳。
+
+
+
+有了 id_token，客户应用就无需保存用户登录的会话关系。客户应用拿到 ID 令牌之后，就已经获得了处理身份认证标识动作的信息，也就是拿到了那个能够唯一标识最终用户（EU）的 ID 值
+
+
+
+**Q: 为什么同时需要 id_token 和 access_token？**
+
+- id_token 里没有用户名等信息
+
+
+
+**Q: id_token信息合并到 access_token 不行吗？** 
+
+- id_token是用户身份令牌、access_token是访问令牌，这两个一定要区别开，<u>access_token永远不能被任何第三方软件去解析</u>。--? 
+
+
+
+
+
+### OIDC 实现单点登录
+
+> Single Sign On
+
+只需要让第三方软件（RP）重复上述 OIDC 的通信流程就可以了
+
+![image-20210704194158743](../img/auth/oidc_sso_flow.png)
+
+
+
+**客户应用代码**
+
+1. 通过 `/.well-known/openid-configuration` API，获取metadata. 
 
 ```json
 {
@@ -715,7 +802,7 @@ OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol. 
 
 
 
-Java 工具：https://connect2id.com/products/nimbus-jose-jwt 
+2. Java 工具：https://connect2id.com/products/nimbus-jose-jwt 
 
 ```java
 private OIDCProviderMetadata loadOidcMetadata() {
