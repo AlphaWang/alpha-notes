@@ -582,6 +582,86 @@ Claims body = claimsJws.getBody();
 
 
 
+# | PKCE 协议
+
+**Proof Key for Code Exchange by OAuth Public Clients**
+
+## PKCE 目的
+
+目的：既不使用 app_secret，还要防止授权码 code 失窃
+
+- 来解决【公共客户端】授权码可能遭劫持的问题。公共客户端无法保存配置时的秘钥等信息。
+- 不使用 app_secret：如果保存在 app 端，一旦被破解就会造成灾难性后果；
+
+![image-20210704132523001](../img/auth/pkce_flow.png)
+
+
+
+## PKCE 流程
+
+1. 客户应用生成 `code_verifier`， `code_challenge`；
+
+```java
+import java.security.SecureRandom;
+import java.security.MessageDigest;
+import java.util.Base64;
+
+// code_verifier: 随机、长度 43~128
+public String generateCodeVerifier() throws UnsupportedEncodingException {
+    SecureRandom secureRandom = new SecureRandom();
+    byte[] codeVerifier = new byte[48];
+    secureRandom.nextBytes(codeVerifier);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(codeVerifier);
+}
+
+// code_challenge:
+// 1. code_challenge_method = plain, 则值和 code_verifier相同；
+// 2. code_challenge_method = S256, 则将 code_verifier 进行ASCII 编码之后再进行哈希，然后再将哈希之后的值进行 BASE64-URL 编码 
+public String generateCodeChallenge(String codeVerifier) throws UnsupportedEncodingException, NoSuchAlgorithmException {
+    byte[] bytes = codeVerifier.getBytes("US-ASCII");
+    MessageDigest messageDigest = MessageDigest.getInstance("SHA-256");
+    messageDigest.update(bytes, 0, bytes.length);
+    byte[] digest = messageDigest.digest();
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+}
+```
+
+
+
+2. **获取授权码**：通过 `code_challenge` 
+
+   > 不再需要 app_id, app_secret
+   >
+   > ```
+   > https://authorization-server.com/auth
+   > ?response_type=code
+   > &app_id=APP_ID
+   > &redirect_uri=REDIRECT_URI
+   > &code_challenge=CODE_CHALLENGE
+   > &code_challenge_method=S256
+   > ```
+
+3. **获取 access_token**：通过 `code_verifier`
+
+   > 授权服务器收到 code_verifier，运算后与上一步的 code_challenge 作对比。
+   >
+   > ```
+   > POST https://api.authorization-server.com/token
+   >   ?grant_type=authorization_code
+   >   &code=AUTH_CODE_HERE
+   >   &redirect_uri=REDIRECT_URI
+   >   &app_id=APP_ID
+   >   &code_verifier=CODE_VERIFIER
+   > ```
+
+
+
+好处：
+
+- 即便授权码泄漏、code_challenge泄漏，也没办法逆推出 code_verifier。
+
+
+
 # | Spring Security OAuth2
 
 
