@@ -324,6 +324,13 @@ Location: <registered redirect_uri>?code=<code>&state=<same guid from the reques
 
 
 
+**Q: state 参数什么作用？**
+
+- 随机值，会再传回callback，由callback做对比校验。
+- 防止 CSRF 攻击
+
+
+
 ### 1. 验证基本信息
 
 - 验证客户应用合法性
@@ -508,11 +515,13 @@ Request
 
 
 
-# | JWT 
+# | 协议 & 规范
+
+## || JWT 
 
 > JSON Web Token
 
-## JWT 结构
+### JWT 结构
 
 结构体
 
@@ -533,7 +542,7 @@ Request
 
 
 
-## JWT 代码使用
+### JWT 代码使用
 
 JJWT 封装了 Base64URL 编码和对称 HMAC、非对称 RSA 的一系列签名算法。使用 JJWT，我们只关注上层的业务逻辑实现，而无需关注编解码和签名算法的具体实现。
 
@@ -562,7 +571,7 @@ Claims body = claimsJws.getBody();
 
 
 
-## JWT 优缺点
+### JWT 优缺点
 
 优点
 
@@ -582,11 +591,11 @@ Claims body = claimsJws.getBody();
 
 
 
-# | PKCE 协议
+## || PKCE 协议
 
 **Proof Key for Code Exchange by OAuth Public Clients**
 
-## PKCE 目的
+### PKCE 目的
 
 目的：既不使用 app_secret，还要防止授权码 code 失窃
 
@@ -597,7 +606,7 @@ Claims body = claimsJws.getBody();
 
 
 
-## PKCE 流程
+### PKCE 流程
 
 1. 客户应用生成 `code_verifier`， `code_challenge`；
 
@@ -659,6 +668,169 @@ public String generateCodeChallenge(String codeVerifier) throws UnsupportedEncod
 好处：
 
 - 即便授权码泄漏、code_challenge泄漏，也没办法逆推出 code_verifier。
+
+
+
+## || OIDC
+
+> OpenID Connect
+
+OpenID Connect 1.0 is a simple identity layer on top of the OAuth 2.0 protocol. It allows Clients to verify the identity of the End-User based on the authentication performed by an Authorization Server, as well as to obtain basic profile information about the End-User in an interoperable and REST-like manner.
+
+
+
+通过 `/.well-known/openid-configuration` API，获取metadata. 
+
+```json
+{
+   "issuer":"https://sso.alphawang.com",
+   "authorization_endpoint":"https://sso.alphawang.com/v1/api/oauth2/authorize",
+   "token_endpoint":"https://sso.alphawang.com/v1/api/oauth2/token",
+   "userinfo_endpoint":"https://sso.alphawang.com/v1/api/oauth2/userinfo",
+   "jwks_uri":"https://sso.alphawang.com/v1/api/jwks.json",
+   "end_session_endpoint":"https://sso.alphawang.com/v1/api/oauth2/logout",
+   "token_endpoint_auth_methods_supported":[
+      "private_key_jwt"
+   ],
+   "token_endpoint_auth_signing_alg_values_supported":[
+      "RS256"
+   ],
+   "scopes_supported":[
+      "openid",
+      "test_scope"
+   ],
+   "response_types_supported":[
+      "token",
+      "id_token",
+      "token id_token"
+   ],
+   "code_challenge_methods_supported":[
+      "S256"
+   ],
+   "subject_types_supported":[
+      "public"
+   ]
+}
+```
+
+
+
+Java 工具：https://connect2id.com/products/nimbus-jose-jwt 
+
+```java
+private OIDCProviderMetadata loadOidcMetadata() {
+  // The OpenID provider issuer URL
+  Issuer issuer = new Issuer(siteSsoIssuer);
+
+  // Will resolve the OpenID provider metadata automatically
+  OIDCProviderConfigurationRequest request = new OIDCProviderConfigurationRequest(issuer);
+
+  try {
+    // Make HTTP request
+    HTTPRequest httpRequest = request.toHTTPRequest();
+    HTTPResponse httpResponse = httpRequest.send();
+
+    // Parse OpenID provider metadata
+    OIDCProviderMetadata opMetadata = OIDCProviderMetadata.parse(httpResponse.getContentAsJSONObject());
+
+    if (!issuer.equals(opMetadata.getIssuer())) {
+      throw new Exception("OIDC issuer mismatch from .well-known endpoint");
+    }
+
+    return opMetadata;
+  } catch (IOException | ParseException exception) {
+    throw new Exception("Error loading OIDC .well-known configuration", exception);
+  }
+
+}
+```
+
+
+
+# | 安全性考虑
+
+## || CSRF 攻击
+
+> Cross-Site Request Forgery 跨站请求伪造攻击：恶意软件让浏览器向已完成用户身份认证的网站发起请求，并执行有害的操作。
+
+**问题**
+
+- 攻击者获取到授权码后，构造一个被攻击者的 redirect_uri 链接诱导用户点击；相当于被攻击者继续走 OAuth2 流程，但使用的是攻击者的授权码。 
+- 软件 A（攻击者）用自己的授权码 codeA 的值，通过 CSRF 攻击，“替换”了软件 B 的授权码的值。
+
+**解决办法**
+
+- 请求 access_token 时，带上取值为随机值的 **state 参数**。资源服务器 callback 里对比检验该值
+
+
+
+
+
+## || XSS 攻击
+
+> Cross Site Scripting，XSS 攻击的主要手段是将恶意脚本注入到请求的输入中，攻击者可以通过注入的恶意脚本来进行攻击行为，比如搜集数据等。
+
+**问题**
+
+- 当请求抵达受保护资源服务时，系统需要做校验，比如第三方软件身份合法性校验、访问令牌 access_token 的校验，如果这些信息都不能被校验通过，受保护资源服务就会返回错误的信息。大多数情况下，受保护资源都是把输入的内容，比如 app_id invalid、access_token invalid ，再回显一遍，这时就会被 XSS 攻击者捕获到机会。
+- 例如攻击者传入了一些恶意的、搜集用户数据的 JavaScript 代码，受保护资源服务直接原路返回到用户的页面上，那么当用户触发到这些代码的时候就会遭受到攻击。
+
+**解决办法**
+
+- 对此类非法信息做转义过滤，比如对包含<script>、<img>、<a>等标签的信息进行转义过滤。
+
+
+
+## || 水平越权
+
+> 水平越权是指，在请求受保护资源服务数据的时候，服务端应用程序未校验这条数据是否归属于当前授权的请求用户。
+
+**问题**
+
+- 不法者用自己获得的授权来访问受保护资源服务的时候，就有可能获取其他用户的数据，导致水平越权漏洞问题的发生。
+
+  
+
+**解决办法**
+
+![image-20210704183344631](../img/auth/steal-data.png)
+
+
+
+## || 授权码失窃
+
+**问题**
+
+- 正常请求授权码后，被攻击者获取。攻击者使用该授权码获得 access_token。
+
+**解决办法**
+
+- 授权服务：在进行授权码校验时，需要检查 app_id。
+- 授权服务：在授权码在被使用过一次后，需要删除这个授权码。
+
+
+
+## || redirect_uri 被篡改
+
+**问题**
+
+- 授权码被返回给一个 hacker.html 
+
+  ```html
+  <html>
+  <img src ="https://clientA.com/catch">
+  </html>
+  ```
+
+- 在 clientA 页面，解析 Referer 头部即可得到用户的授权码。
+
+**解决办法**
+
+- 授权服务：redirect_uri 必须做精确地完整性校验，而非模糊校验。
+
+
+
+
 
 
 
