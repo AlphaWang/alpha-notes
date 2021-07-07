@@ -521,6 +521,8 @@ Request
 
 > JSON Web Token
 
+JWT 跟 OAuth 2.0 并没有直接关系，它只是一种结构化的信息存储，可以被用在除了 OAuth 2.0 以外的任何地方。比如，重置密码的时候，会给你的邮箱发送一个链接，这个链接就需要能够标识出用户是谁、不能篡改、有效期 5 分钟，这些特征都跟 JWT 相符合。
+
 ### JWT 结构
 
 结构体
@@ -600,11 +602,13 @@ Claims body = claimsJws.getBody();
 目的：既不使用 app_secret，还要防止授权码 code 失窃
 
 - 来解决【公共客户端】授权码可能遭劫持的问题。公共客户端无法保存配置时的秘钥等信息。
-- 不使用 app_secret：如果保存在 app 端，一旦被破解就会造成灾难性后果；
+- 不使用 app_secret：如果保存在 **app** 端，一旦被破解就会造成灾难性后果；
 
 ![image-20210704132523001](../img/auth/pkce_flow.png)
 
 
+
+NOTE: PCKE 是随着移动应用发展而提出的。
 
 ### PKCE 流程
 
@@ -687,6 +691,11 @@ OpenID Connect，是一种直接基于 OAuth 2.0 构建的身份认证框架协�
 - OAuth2: 授权协议；OIDC: 授权协议 + 身份认证，是 OAuth 2.0 的超集。
 
 
+
+**Q: 常见误解 OAuth2 包含身份认证？**
+
+- 授权之前的登录，只是一个额外需求，登录跟授权体系是独立的。
+- 像这种“内嵌”的身份认证行为，并不是说 OAuth 2.0 自身承担起了身份认证协议的责任。
 
 
 
@@ -923,6 +932,13 @@ private OIDCProviderMetadata loadOidcMetadata() {
 
 # | Spring Security OAuth2
 
+TODO https://time.geekbang.org/column/article/264179
+
+
+
+MSA: 
+
+
 
 
 
@@ -940,3 +956,10 @@ http://www.ruanyifeng.com/blog/2014/05/oauth_2_0.html
 OIDC
 
 https://connect2id.com/assets/oidc-explained.pdf
+
+MSA
+
+- [ ] https://www.kaper.com/cloud/micro-services-architecture-with-oauth2-and-jwt-part-1-overview/ 
+
+- [ ] https://time.geekbang.org/column/article/257837
+
