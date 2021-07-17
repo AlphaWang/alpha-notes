@@ -4,6 +4,10 @@
 
 ## || 运行时数据区
 
+![image-20210707231736438](../img/java/jvm_runtime.png)
+
+
+
 ### 程序计数器
 
 - **线程私有**
@@ -70,7 +74,7 @@
 
 ### 堆
 
-- **线程共享**
+- ***线程共享***
 
   > 注意区别线程私有的分配缓冲区 TLAB，Thread Local Allocation Buffer
 
@@ -88,7 +92,7 @@
 
 ### 方法区
 
-- **线程共享**
+- ***线程共享***
 
 - 作用：存储类信息、常量、静态变量、运行时常量
 
@@ -209,29 +213,32 @@ GC算法用off-heap数据结构来完成GC
 
 ## || 类文件结构
 
-**对象头 Header**
+**1. 对象头 Header**
 
-- Mark Word
+- **Mark Word**
+  
   - HashCode
   - GC分代年龄
   - 锁状态标志
   - 线程持有的锁
   - 偏向线程ID
   - 偏向时间戳
-
-- 类型指针
+  
+- **类型指针**
+  
   - JVM通过这个指针来确定对象是哪个类的实例
-  - 数组对象还会存储长度
+
+- **数组长度**
 
   
 
-**实例数据 Instance Data**
+**2. 实例数据 Instance Data**
 
 - 各种类型的字段内容（包含父类定义的）
 
 
 
-**对齐填充 Padding**
+**3. 对齐填充 Padding**
 
 
 
@@ -288,6 +295,13 @@ GC算法用off-heap数据结构来完成GC
 描述符索引，
 JVM执行指令，
 属性集合，
+
+
+
+工具：JOL，Java Object Layout
+
+- https://zhuanlan.zhihu.com/p/368323278 
+- https://zhuanlan.zhihu.com/p/368505776 
 
 
 
@@ -1500,7 +1514,7 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 ## || 内存溢出、泄漏
 
-### **分析步骤**
+### 分析步骤
 
 （同样适用于 CPU 过高的场景）
 
@@ -1525,7 +1539,7 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 
 
-### **提示信息**
+### 提示信息
 
 - **OOM: Java heap space**
   - 内存泄露
@@ -2084,7 +2098,23 @@ https://www.gceasy.io
 
 
 
+# | 面试题
 
+###  JVM 整体架构的理解
+
+- 栈
+- 程序计数器
+- 堆
+- 方法区
+
+plus
+
+- 类加载子系统
+- 执行引擎：JIT, GC
+
+
+
+### Java 对象存储结构
 
 
 
