@@ -1548,16 +1548,17 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 - **OOM: GC overhead limit exceeded**
   - 原因：当GC花费 98%的CPU，但只回收了 2% 堆空间，并连续5次。
-  - 内存泄露
-  - 堆过小
-
+  - 内存泄露、堆过小
+  
 - **OOM: Requested array size exceeds VM limit**
   - 创建了过大的数组
   - 堆过小
 
-- **OOM: MetaSpace**
-  - MaxMetaSpaceSize过小
+- **OOM: PermGen space**
+  **OOM: MetaSpace**
 
+  - MaxMetaSpaceSize过小
+  
 - **OOM: Unable to create native threads**
 
   - 创建线程池失败
@@ -1571,6 +1572,18 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
     > sys.kernel.threads-max 限制
     >
     > sys.kernel.pid_max 限制
+  
+- **OOM: Out of swap space**
+
+- **OOM: Requested array size exceeds VM limit**
+
+- **OOM: Kill process of sacrifice child**
+
+- **OOM: reason stack_trace_with_native_method**
+
+- **OOM: Direct Buffer Memory**
+
+- **OOM: Map failed**
 
 
 
