@@ -1512,7 +1512,7 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 
 
-## || 内存溢出、泄漏
+## || 内存溢出
 
 ### 分析步骤
 
@@ -1587,7 +1587,7 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 
 
-### 编程问题
+## || 内存泄漏
 
 https://www.baeldung.com/java-memory-leaks
 
@@ -1981,11 +1981,35 @@ https://www.gceasy.io
 
 
 
+# | 运维
+
+## || 性能指标
+
+**容量 - Capacity**
+
+- 总内存 vs. 空闲内存
+- 堆内存使用量 vs. 堆内存最大值 `-Xmx`
 
 
-# | 参数
 
-## || 运维
+**吞吐量 - Throughput**
+
+- 内存分配速率
+- 内存提升速率
+
+
+
+**延迟 - Latency**
+
+- GC 暂停时间
+- 内存分配延迟
+- 
+
+
+
+## || 参数设置
+
+### 运维
 
 - **-XX:+HeapDumpOnOutOfMemoryError**
 
@@ -1995,7 +2019,7 @@ https://www.gceasy.io
 
 
 
-## || 基本
+### 基本
 
 - **-Xms ，-Xmx**
 
@@ -2013,7 +2037,7 @@ https://www.gceasy.io
 
 
 
-## || 内存
+### 内存
 
 - **-XX:PermSize  -XX:MaxPermSize**
 - **-XX:MetaspaceSize -XX:MaxMetaspaceSize**
@@ -2050,7 +2074,9 @@ https://www.gceasy.io
 
 堆外
 
-## || GC
+
+
+### GC
 
 - **-XX:+DisableExplicitGC**
 
@@ -2098,13 +2124,13 @@ https://www.gceasy.io
 
 - -XX: +G1HeapRegionSize - G1区域大小
 
-## || 并发
+### 并发
 
 - **-XX:-UseBiasedLocking** 关闭偏向锁
 
 
 
-## || 参数确定
+### 参数确定
 
 - 老年代大小
   - FullGC之后，存活对象大小的 1.5~2 倍
@@ -2131,5 +2157,55 @@ plus
 
 
 
+**什么是内存泄漏？**
 
 
+
+**多线程环境中的引用泄漏？**
+
+
+
+**ThreadLocal 使用场景？**
+
+
+
+**JVM 栈内存结构？**
+
+**什么是非堆？**
+
+- Metaspace（方法区，常量池），JIT Code Cache
+
+**G1 启动参数？**
+
+- -Xmx4g -Xms4g -XX:+UseG1GC -XX:MaxGCPauseMillis=50 -XX:ParallelGCThreads=4
+
+
+
+**G1 的混合模式GC是什么？**
+
+- 纯年轻代模式、混合模式、FullGC
+- 可以做到一个FullGC都不出现
+
+
+
+**如何快速确定某个JVM配置参数是否正确？**
+
+- java -Xm2 -version
+
+
+
+**生成内存转储文件有几种方式，用什么工具进行分析？**
+
+- jmap / jcmd
+- JVisualVM / jmc / jconsole
+- 自动转储：-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=xx
+- 编程方式调用 HotSpotDiagnosticMXBean 
+- 分析工具：MAT, jhat
+
+
+
+**怎样解决GC停顿问题？**
+
+- STW
+- GC log
+- 
