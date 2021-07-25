@@ -1041,6 +1041,7 @@ STW 的场景
 场景
 
 - 吞吐量优先
+- 为了吞吐量，即最大的系统处理能力，会牺牲单次的暂停时间。
 
 
 
@@ -1311,6 +1312,10 @@ https://shipilev.net/talks/devoxx-Nov2017-shenandoah.pdf
 
 
 # | 问题排查
+
+官方问题排查文档：https://docs.oracle.com/javase/8/docs/technotes/guides/troubleshoot/ 
+
+
 
 ## || GC
 
@@ -1649,7 +1654,7 @@ tomcat maxHttpHeaderSize 过大，导致每个tomcat工作线程过大
 
 
 
-# | 工具
+# | 诊断工具
 
 ## 系统工具
 
@@ -1727,45 +1732,47 @@ nvcswch/s：每秒被动任务上下文切换数量
 
 ### jps -v
 
-- 查看 java 进程列表
+- 查看 java 进程列表 `jps -v`
 
--m: 输出main() 参数；
--l: 输出主类全名；
--v: 输出JVM参数；
+> `-m`: 输出main() 参数；
+> `-l`: 输出主类全名；
+> `-v`: 输出JVM参数；
 
 
 
 ### jinfo
 
-- 查看修改VM参数
+- 查看、修改VM参数
 
-
-
-修改参数：
-- jinfo -flag name=value
-- jinfo -flag[+|-] name
+```
+jinfo -flag name=value
+jinfo -flag[+|-] name
+```
 
 
 
 ### jstat
 
-- 用于查看分区内存：命令行版 JConsole
-- -class
-- -gccause：查看最近一次gc的原因
-- -gc / -gcutil
-  - jstat -gcutil PID <interval> <count>：定时输出各空间大小
+- 用于查看**分区内存**：命令行版 JConsole
+
+  > `-options` 查看可用选项
+  >
+  > `-class`
+  >
+  > `-t`: 打印时间
+  >
+  > `-gccause`：查看最近一次gc的原因
+  >
+  > `-gc` 
+  >
+  > `-gcutil`: jstat -gcutil PID <interval> <count>：定时输出各空间大小，gcutil 关注百分比。
 
 
 
 ```
 jstat -gc vmid [interval] [count]
-
-jstat -options
-
-- class
-- gc
-- gcutil: 关注百分比
-- gccause
+jstat -gcutil -t 8786 2s 3
+```
 
 gc字段含义：
 
@@ -1784,29 +1791,105 @@ gc字段含义：
 `FGC`：从应用程序启动到采样时 old 代（全 gc）gc 次数；
 `FGCT`：从应用程序启动到采样时 old 代（全 gc）gc 所用时间 (s)；
 `GCT`：从应用程序启动到采样时 gc 用的总时间 (s)。
+
+
+
+
+
+### jcmd
+
+
+
+- **heap dump**
+
 ```
+jcmd <process id/main class> GC.heap_dump filename=Myheapdump
+```
+
+
+
+- **thread dump**
+
+```
+jcmd 17264 Thread.print
+```
+
+
+
+- **VM.native_memory**
+
+```
+jcmd 11 VM.native_memory baseline
+jcmd 11 VM.native_memory summary.diff
+```
+
+
+
+- **Heap Dump**
+
+```
+jcmd 1 GC.heap_dump ${dump_file_name}
+```
+
+
+
+其他参数
+
+jcmd 1 help
+
+`JFR.stop`
+`JFR.start`
+`JFR.dump`
+`JFR.check`
+
+`ManagementAgent.stop`
+`ManagementAgent.start_local`
+`ManagementAgent.start`
+
+`GC.rotate_log`
+`Thread.print`
+`GC.class_stats`
+`GC.class_histogram`
+`GC.heap_dump`
+`GC.run_finalization`
+`GC.run`
+
+`VM.uptime` - 打印启动时间
+`VM.flags` - 打印JVM参数
+`VM.system_properties`
+`VM.command_line` - 打印VM ARGS
+`VM.version` - 打印版本号
+`VM.check_commercial_features`
+`VM.unlock_commercial_features`
+`VM.native_memory detail` 
+`VM.native_memory baseline`
+`VM.native_memory detail.diff`
+
+https://www.javacodegeeks.com/2016/03/jcmd-one-jdk-command-line-tool-rule.html
+
+
 
 
 
 ### jmap
 
-- jmap -dump:live
-  - 生成heap dump
-  - :live 会触发FullGC，只转储活着的对象
+- 生成heap dump
+- `:live` 会触发FullGC，只转储活着的对象
+- `jmap -heap <PID>` ：查看堆内存使用情况
 
-`jmap -dump:live,format=b,file=/pang/logs/tomcat/heapdump.bin 1`
+> `-dump`: 生成堆转储快照；
+> `-F`: 强制生成dump快照；
+> `-heap`: 显示堆信息，配置、；
+> `-histo`: 显示堆对象统计信息；
 
 
-
-- jmap -heap <PID> 
-
-查看堆内存使用情况
 
 ```
--dump: 生成堆转储快照；
--F: 强制生成dump快照；
--heap: 显示堆详细信息；
--histo: 显示堆对象统计信息；
+# 导出dump
+jmap -dump:live,format=b,file=/pang/logs/tomcat/heapdump.bin 1
+
+# 前n个占用最多的类
+jmap -histo PID | head -n 30
 ```
 
 
@@ -1842,78 +1925,20 @@ http://localhost:7000/
 
 - 可通过编程方式：Thread.getAllStackTraces()
 
-```
--l: 包含锁信息；
--m: 包含本地方法堆栈；
-```
-
-
-
-### jcmd
-
-- **heap dump**
-
-jcmd <process id/main class> GC.heap_dump filename=Myheapdump
-
-- **thread dump**
-
-jcmd 17264 Thread.print
-
-- **VM.native_memory**
-
-jcmd 11 VM.native_memory baseline
-
-jcmd 11 VM.native_memory summary.diff
-
-
-
-```
-`jcmd 1 GC.heap_dump ${dump_file_name}`
-
-`jcmd 1 help`
-
-JFR.stop
-JFR.start
-JFR.dump
-JFR.check
-
-ManagementAgent.stop
-ManagementAgent.start_local
-ManagementAgent.start
-
-GC.rotate_log
-Thread.print
-GC.class_stats
-GC.class_histogram
-GC.heap_dump
-GC.run_finalization
-GC.run
-
-VM.uptime
-VM.flags
-VM.system_properties
-VM.command_line
-VM.version
-VM.check_commercial_features
-VM.unlock_commercial_features
-VM.native_memory detail 
-VM.native_memory baseline
-VM.native_memory detail.diff
-```
-
-https://www.javacodegeeks.com/2016/03/jcmd-one-jdk-command-line-tool-rule.html
+> `-l`: long listing，包含锁信息；
+> `-m`: 包含本地方法堆栈；
 
 
 
 ### javap
 
-- 分析class文件字节码
+- 反编译，分析class文件字节码
 
 `javap -verbose TestClass`
 
 
 
-## GUI工具
+## 图形工具
 
 ### JConsole
 
@@ -1929,7 +1954,7 @@ https://www.javacodegeeks.com/2016/03/jcmd-one-jdk-command-line-tool-rule.html
 
 ### VisualVM
 
-- 插件
+- 支持插件
 
 - 监视：dump
 
@@ -1944,9 +1969,13 @@ https://www.javacodegeeks.com/2016/03/jcmd-one-jdk-command-line-tool-rule.html
 
   
 
-### JMC：Java Mission Control
+### JMC
+
+**Java Mission Control**
 
 https://www.oracle.com/technetwork/java/javaseproducts/mission-control/java-mission-control-1998576.html
+
+
 
 - server 需要添加启动参数
 
@@ -1973,11 +2002,19 @@ https://www.gceasy.io
 
 
 
-## instrument
+## Instrument
 
 - ClassFileTransformer
 
 - Instrumentation
+
+
+
+## Arthas
+
+//TODO
+
+
 
 
 
@@ -2012,28 +2049,23 @@ https://www.gceasy.io
 ### 运维
 
 - **-XX:+HeapDumpOnOutOfMemoryError**
-
+- -XX:HeapDumpPath=java_pid%p.hprof
 - **-Xverify:none** -忽略字节码校验
-
 - **-Xint** -禁止JIT编译器
 
 
 
-### 基本
+### 初始大小
 
-- **-Xms ，-Xmx**
+- **-Xms，-Xmx**
 
 最小堆，最大堆
 
 建议设置成一样大，避免GC后调整堆大小带来压力
 
-- **-Xmn**
+- **-Xmn** 新生代大小
 
-新生代
-
-- **-Xss**
-
-栈内存大小
+- **-Xss** 栈内存大小
 
 
 
@@ -2078,13 +2110,9 @@ https://www.gceasy.io
 
 ### GC
 
-- **-XX:+DisableExplicitGC**
+- **-XX:+DisableExplicitGC** 忽略System.gc()
 
--忽略System.gc()
-
-- **-XX:+PrintReferenceGC** 
-
-打印各种引用数量
+- **-XX:+PrintReferenceGC** 打印各种引用数量
 
 - **-Xloggc:xx.log**
 
@@ -2093,13 +2121,13 @@ https://www.gceasy.io
 **GC 日志**
 
 - 查看GC基本信息
-  - **-XX:+PrintGC**
-  - **-Xlog:g**c - Java9
 
-- 查看GC详细信息
+  - **-verbose:gc**
+  - **-XX:+PrintGC**
+
   - **-XX:+PrintGCDetails**
-  - **-XX:+PrintGCDateStamps**
-  - **-Xlog:gc*** - Java9
+  - **-XX:+PrintGCTimeStamps**
+  - **-Xlog:gc** - Java9 使用统一日志规范 `-Xlog:gc*=info:file=gc.log:time:filecount=0`
 
 - 查看GC前后容量变化
   - **-XX:+PrintHeapAtGC**
@@ -2116,13 +2144,20 @@ https://www.gceasy.io
 - 查看收集后剩余对象的年龄分布
   - **-XX:+PrintTenuringDistribution**
   - **-Xlog:gc+age=trace** - Java9
+  
+- GC 线程
+
+  - **-XX:ConcGCThreads** 并发GC的线程数
+  - **-XX:ParallelGCThreads** 并行GC的线程数
 
 **G1**
 
 - -XX:G1NewSizePercent
   -XX:G1MaxNewSizePercent
-
 - -XX: +G1HeapRegionSize - G1区域大小
+- -XX:MaxGCPauseMillis 期望的最大暂停时间
+
+
 
 ### 并发
 
