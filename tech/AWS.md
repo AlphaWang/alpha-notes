@@ -48,6 +48,44 @@ EBS 类型
 
 
 
+### EFS
+
+Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
+
+特点：
+
+- 支持Network File System version 4 (NFSv4)协议
+- EFS是**Block Base Storage**，而不是Object Base Storage（例如S3）
+- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用
+- 可以有高达PB级别的存储
+- 同一时间能支持上千个NFS连接
+- 高可用：EFS的数据会存储在一个AWS区域的多个可用区内
+- Read After Write Consistency
+
+
+
+> 实践：创建EFS
+>
+> 1. Config file system access: 选择 VPC --> 选择相应子网、安全组
+> 2. Config optional settings：设置 Tags，选择性能模式
+>
+> 实践：挂载 EC2
+>
+> - EFS --> 找到 EC2 Mount Instructions，拷贝挂载命令
+>
+> - CLI 登录 EC2，执行命令
+>
+>   ```
+>   mkdir efs
+>   mount mount -t nfs4 -o ... efs
+>   
+>   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
+>   ```
+>
+>   
+
+
+
 ### AMI 
 
 AMI - Amazon Machine Image，包含启动实例所需的信息：
@@ -76,7 +114,7 @@ AMI - Amazon Machine Image，包含启动实例所需的信息：
 
 
 
-### CloudWatch 监控
+### CloudWatch
 
 - 面板（Dashboards）-可创建自定义面板来方便观察你AWS环境中的不同监控对象；
 - 告警（Alarms）- 当某个监控对象超过阈值时，会给你发出告警信息；
@@ -142,7 +180,7 @@ Auto Scaling 配置
 
 
 
-### Placement Groups 置放群组
+### Placement Groups
 
 作用：逻辑性地把一些实例放置在一个组里面，以便组内实例能享受低延迟、高网络吞吐的网络；决定实例启动在哪个底层硬件上、哪个机柜上。例如：
 
@@ -159,7 +197,7 @@ Auto Scaling 配置
 
 - 将实例尽量放置在一起
 - 在**同一个 AZ 可用区**；
-- 适用于低延迟、高吞吐场景；
+- <u>适用于低延迟、高吞吐场景；</u>
 
 > 建议：
 >
@@ -179,7 +217,7 @@ Auto Scaling 配置
 
 - 将实例分布在不同的”逻辑分区“；每个分区分配一个机柜，不同分区属于不同机柜；
 - 可在**同一区域**下的多个可用区，每个可用区可有最多7个分区。
-- 适用于大型分布式，和重复的工作负载，例如Hadoop Cassandra Kafka；
+- <u>适用于大型分布式，和重复的工作负载，例如Hadoop Cassandra Kafka；</u>
 
 
 
@@ -188,6 +226,8 @@ Auto Scaling 配置
 - 将实例放置在不同机柜；可以跨越**同一区域**中的多个可用区。
 
 > Q: 和分区置放群组的区别？
+>
+> A: Partition只能在同一个AZ，Spread可跨多个AZ。
 
 
 
@@ -195,6 +235,12 @@ Auto Scaling 配置
 
 - 在**同一时间**启动组内所有EC2实例，这样可以减少出现“capacity error”错误的概率。
 - 如出现，可以停止再启动组中的所有实例，再重新创建刚才的实例。
+
+
+
+
+
+
 
 
 
@@ -511,6 +557,86 @@ https://www.iloveaws.cn/2170.html
 
 
 # 8. 部署 - Deployment
+
+## || ECS
+
+> Elastic Container Service，它可以轻松运行、停止和管理集群上的Docker容器，你可以将容器安装在EC2实例上，或者使用Fargate来启动你的服务和任务。
+
+
+
+**ECS Task Definition**
+
+任务定义是一个JSON格式的文本文件，这个文件定义了构建应用程序的各种参数。这些参数包括了：要使用哪些容器镜像，使用哪种启动类型，打开什么端口，使用什么数据卷等等。
+
+ECS任务定义有点类似 *CloudFormation*，只是ECS任务定义是用来创建Docker容器的。
+
+```json
+{
+    "family": "webserver",
+    "containerDefinitions": [
+        {
+            "name": "web",
+            "image": "nginx",
+            "memory": "100",
+            "cpu": "99"
+        },
+    ],
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "networkMode": "awsvpc",
+    "memory": "512",
+    "cpu": "256",
+}
+
+```
+
+
+
+**ECS Scheduling**
+
+ECS任务调度负责将任务放置到集群中，你可以定义一个**服务（Service）**来运行和管理一定数量的任务。
+
+
+
+服务调度（Service Scheduler）
+
+- 保证了一定数量的任务持续地运行，如果任务失败了会自动进行重新调度
+- 保证了任务内会注册一个ELB给所有容器
+
+自定义调度（Custom Scheduler）
+
+- 你可以根据自己的业务需求来创建自己的调度
+- 利用第三方的调度
+
+
+
+**ECS Cluster**
+
+当使用 ECS运行任务时，任务会放在到一个逻辑的资源池上，这个池叫做**集群（Cluster）**。
+
+- 如果你使用Fargate启动类型，那么ECS将会管理你的集群资源，你不需要管理容器的底层基础架构。
+
+- 如果你使用EC2的启动类型，那么你的集群会是一组容器实例。
+
+在Amazon ECS上运行的容器实例实际上是运行了ECS**容器代理（Container Agent）**的EC2实例。
+
+特点：
+
+- 集群包含了多种不同类型的容器实例
+- 集群只能在同一个区域内
+- 一个容器实例只能存在于一个集群中
+- 可以创建IAM策略来限制用户访问某个集群
+
+
+
+**ECS Container Agent**
+
+容器代理会在Amazon ECS集群内的每个基础设施资源上运行。使用容器代理可以让容器实例和集群进行通信，它可以向ECS发送有关资源当前运行的任务和资源使用率的信息。
+
+容器代理可以接受ECS的请求进行启动和停止任务。
+
+ 
 
 
 
