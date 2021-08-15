@@ -2000,7 +2000,9 @@ https://sourceforge.net/projects/gcviewer/
 
 https://www.gceasy.io
 
+https://fastthread.io/
 
+https://heaphero.io/
 
 ## Instrument
 
@@ -2066,6 +2068,10 @@ https://www.gceasy.io
 - **-Xmn** 新生代大小
 
 - **-Xss** 栈内存大小
+
+```
+-Xmx512M -Xms512M
+```
 
 
 
