@@ -286,9 +286,25 @@ Auto Scaling 配置
 
 ## || Serverless
 
+使用**AWS Lambda**，无需配置和管理任何服务器和应用程序就能运行你的代码。只需要上传代码，Lambda就会处理运行并且根据需要自动进行横向扩展。
+
+Lambda 触发器
+
+- **API Gateway**
+- **AWS IoT**
+- **CloudWatch Events**
+- CloudWatch Logs
+- CodeCommit
+- DynamoDB
+- S3
+- SNS
+- Cognito Sync Trigger
 
 
 
+> 实战：使用 Lambda 定时关闭和启动EC2实例
+>
+> 
 
 # 2. 存储 - Storage
 
