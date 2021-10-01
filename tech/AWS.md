@@ -304,7 +304,57 @@ Lambda 触发器
 
 > 实战：使用 Lambda 定时关闭和启动EC2实例
 >
-> 
+> - Lambda --> 创建函数 
+>
+>   - 函数名称
+>
+>   - 运行时：Python 3.7
+>
+>   - 权限：执行角色
+>
+>     ```json
+>     {
+>       "Version": "2012-10-17",
+>       "Statement": [
+>         {
+>           "Effect": "Allow",
+>           "Action": [
+>             "logs:CreateLogGroup",
+>             "logs:CreateLogStream",
+>             "logs:PutLogEvents"
+>           ],
+>           "Resource": "arn:aws:logs:*:*:*"
+>         },
+>         {
+>           "Effect": "Allow",
+>           "Action": [
+>             "ec2:Start*",
+>             "ec2:Stop*"
+>           ],
+>           "Resource": "*"
+>         }
+>       ]
+>     }
+>     ```
+>
+> - --> 进入 IDE 页面，
+>
+>   - 编写py脚本
+>   - 环境变量设置
+>   - 基本设置：超时时间、内存
+>
+> - 配置测试事件 --> 测试 （相当于手工触发 lambda）
+>
+> - 基于CloudWatch配置定时任务：事件 --> 规则 --> 创建规则
+>
+>   - 事件源：事件模式 | 计划
+>   - 目标：选择 lambda
+
+
+
+
+
+
 
 # 2. 存储 - Storage
 
