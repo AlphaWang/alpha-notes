@@ -1,6 +1,6 @@
 [toc]
 
-# 消息系统概念
+# | 消息系统概念
 
 ## 作用
 
@@ -92,9 +92,9 @@
 
 
 
-# 组件
+# | 组件
 
-## 1. 主题 / 分区
+## || 主题 / 分区
 
 ### 主题 Topic
 
@@ -399,7 +399,7 @@ HWM = ISR集合中最小的 Log End Offset (LEO)
 
 
 
-## 2. Broker
+## || Broker
 
 ### 控制器 Controller
 
@@ -500,7 +500,7 @@ HWM = ISR集合中最小的 Log End Offset (LEO)
 
 
 
-## 3. 生产者
+## || 生产者
 
 ### 发送流程！
 
@@ -629,7 +629,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-## 4. 消费者
+## || 消费者
 
 ### 消费者组
 
@@ -828,7 +828,7 @@ while (true)  {
     - 因为消息消费链路被拉长
     - 可能导致消息重复消费
 
-## 5. zookeeper
+## || zookeeper
 
 ### 节点列表
 
@@ -953,7 +953,7 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-## 6. 位移
+## || 位移
 
 **目的**
 
@@ -1421,130 +1421,116 @@ Q: 消费者重启后，如何获取 offset？
 
 
 
-## 7. Rebalance
+## || Rebalance
 
 ### 触发条件
 
-#### 消费者组成员数目变更
+- **消费者组成员数目变更**
+  - 增加、离开、崩溃
+  - 避免不必要的重平衡：被协调者错误地认为消费者已离开
 
-##### 增加、离开、崩溃
+- **主题数变更**
+  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
 
-##### 避免不必要的重平衡：被协调者错误地认为消费者已离开
+- **分区数变更**
+  - 增加
 
-#### 主题数变更
+### 避免重平衡
 
-##### 例如订阅模式 consumer.subsribe(Pattern.compile("t.*c"))
+Rebalance的问题
 
-##### 当创建的新主题满足此模式，则发生rebalance
+- **Rebalance过程中，所有consumer停止消费**
+  - STW
+  - Q：消费者部署过程中如何处理？
+    发布系统：只有在 switch 的时候才启动消费者？
 
-#### 分区数变更
+- **Rebalance是所有消费者实例共同参与，全部重新分配；而不是最小变动**
+  - 未考虑局部性原理
 
-##### 增加
+- **Rebalance过程很慢**
 
-### 避免不必要的rebalance
 
-#### rebalance的问题
 
-##### rebalance过程中，所有consumer停止消费
+**什么是不必要的重平衡？**
 
-###### STW
+- 被 coordinator “错误地”认为已停止
 
-###### 消费者部署过程中如何处理？
+- 组员减少导致的 rebalance
 
-####### 发布系统：只有在 switch 的时候才启动消费者？
 
-##### rebalance是所有消费者实例共同参与，全部重新分配；而不是最小变动
 
-###### 未考虑局部性原理
+**手段**
 
-##### rebalance过程很慢
+- 避免“未及时发心跳”而导致消费者被踢出
 
-#### 什么是不必要的重平衡？
+  > - **session.timeout.ms** 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  >
+  > - **heartbeat.interval.ms** 心跳间隔，用于控制重平衡通知的频率；保证在timeout判定前，至少发送3轮心跳 `heartbeat.interval.ms = 2s`
 
-##### 被 coordinator “错误地”认为已停止
+- 避免“消费时间过长”而导致被踢出
 
-##### 组员减少导致的rebalance
+  > - **max.poll.interval.ms** 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；
+  >   如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
+  > - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
 
-#### 手段
+- **GC调优**
 
-##### 避免“未及时发心跳”而导致消费者被踢出
+  > full GC导致长时间停顿，会引发rebalance
 
-###### session.timeout.ms = 6s
-
-####### 存活性时间间隔
-
-####### 越小则越容易触发重平衡
-
-###### heartbeat.interval.ms = 2s
-
-####### 心跳间隔，用于控制重平衡通知的频率
-
-####### 保证在timeout判定前，至少发送3轮心跳
-
-##### 避免“消费时间过长”而导致被踢出
-
-###### max.poll.interval.ms
-
-####### 两次poll() 的最大间隔
-
-######## 如果超过，则consumer会发起“离开组”请求
-
-####### 如果消费比较耗时，应该设大
-
-######## 否则会被Coordinator剔除出组
-
-###### Worker Thread Pool 异步并行处理
-
-####### 注意不能阻塞poll，否则心跳无法上报
-
-####### 异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume()
-
-##### GC调优
-
-###### full GC导致长时间停顿，会引发rebalance
+  
 
 ### 重平衡监听器
 
-#### ConsumerRebalanceListener
+ConsumerRebalanceListener
 
-##### 作用
+作用
 
-###### 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
+- 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
 
-###### 当被分配到一个新分区时，seek到指定的offset处
+- 当被分配到一个新分区时，seek到指定的offset处
 
-##### 代码
+
+
+接口
+
+- `onPartitionsAssigned(partitions)`
+  - 触发时间：消费者停止消费之后、rebalance开始之前
+  - 常见操作：清理状态、seek()
+
+- `onPartitionsRevoked(partitions)`
+  - 触发时间：rebalance 之后、消费者开始消费之前
+  - 常见操作：提交offset；注意要用 commitSync()，确保在rebalance开始之前提交完成
+
+- `subscribe(topics, listener)`
+
+
 
 ```java
 Map<TopicPartition, OffsetAndMetadata> currOffsets = new HashMap();
 
 class HandleRebalance implements ConsumerRebalanceListener {
   public void onPartitionsAssigned(Collection<TopicPartition> partitions) {}
-  
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-  // Revoked: 提交偏移量
+    //Rebalance Revoked: 提交偏移量
     consumer.commitSync(currOffsets);
   }
-
 }
 
 try {
-  // subscribe 时传入监听器
+  //subscribe 时传入监听器
   consumer.subscribe(topics, new HandleRebalance());
   
   while (true) {
-    // 轮询
+    //轮询
     ConsumerRecords<String, String> records =  consumer.poll(100);
-  for (ConsumerRecord record : records) {
-     process(record); 
-     // 记录当前处理过的偏移量
-     currOffsets.put();
-  }
+    for (ConsumerRecord record : records) {
+       process(record); 
+       //记录当前处理过的偏移量
+       currOffsets.put();
+    }
  
-  
-
-  // 使用异步提交规避阻塞
-  commitAysnc(currOffsets, null);
+    //使用异步提交规避阻塞
+    commitAysnc(currOffsets, null);
   }
 } catch (WakeupException e) {
   // ignore.
@@ -1552,194 +1538,138 @@ try {
    handle(e); 
 } finally {
    try {
-     // 最后一次提交使用同步阻塞式提交
+     //最后一次提交使用同步阻塞式提交
      consumer.commitSync(currOffsets);     
-	} finally {
-	 consumer.close();
-    }
+	 } finally {
+	   consumer.close();
+   }
 }
 
 ```
 
-###### onPartitionsAssigned(partitions)
 
-####### 触发时间：消费者停止消费之后、rebalance开始之前
 
-####### 常见操作：清理状态、seek()
-
-###### onPartitionsRevoked(partitions)
-
-####### 触发时间：rebalance 之后、消费者开始消费之前
-
-####### 常见操作：提交offset
-
-######## 要用 commitSync()，确保在rebalance开始之前提交完成
-
-###### subscribe(topics, listener)
-
-### rebalance流程
+### 重平衡流程
 
 如何通知消费者进行重平衡？
 
-#### 原理
+**原理**
 
-##### 心跳线程
+- 心跳线程
 
-###### Consumer 定期发送心跳请求到Broker
+  > Consumer 定期发送心跳请求到Broker；
+  >
+  > Broker通过心跳线程通知其他消费者进行重平衡；
+  >
+  > `heartbeat.interval.ms`：控制重平衡通知的频率
 
-####### Broker通过心跳线程通知其他消费者进行重平衡
+- Group Coordinator
 
-###### heartbeat.interval.ms
+  > 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
 
-####### 控制重平衡通知的频率
 
-##### Group Coordinator
 
-###### 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 REBALANCE_IN_PROGRESS
+**消费者组状态流转**
 
-#### 消费者组状态流转
+- 状态
+  - Empty：组内没有任何成员，但可能存在已提交的位移
+  - Dead：组内没有任何成员，且组的元数据信息已在协调者端移除
+  - PreparingRebalance：消费者组准备开启重平衡
+  - CompletingRebalance：消费者组所有成员已加入，正在等待分配方案。= AwaitingSync ?
+  - Stable：分配完成
 
-##### 状态
+- 流转
 
-###### Empty
+  - 初始化
 
-####### 组内没有任何成员，但可能存在已提交的位移
+    > Empty --> PreparingRebalance --> CompletingRebalance --> Stable
 
-###### Dead
+  - 成员加入/退出
 
-####### 组内没有任何成员，且组的元数据信息已在协调者端移除
+    > Stable --> PreparingRebalance
+    >
+    > 所有成员重新申请加入组
 
-###### PreparingRebalance
+  - 所有成员退出
 
-####### 消费者组准备开启重平衡
+    > Stable --> PreparingRebalance --> Empty
+    >
+    > kafka定期自动删除empty状态的过期位移
 
-###### CompletingRebalance
 
-####### 消费者组所有成员已加入，正在等待分配方案
 
-######## = AwaitingSync ?
+**流程**
 
-###### Stable
+- Consumer 端重平衡流程
 
-####### 分配完成
+  - **JoinGroup请求**
 
-##### 流转
+    > 1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
+    >
+    > 2. 选出Leader Consumer
+    >    - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
+    >    - 协调者将订阅信息放入 JoinGroup 响应中，发给 **Leader Consumer**；
+    >    - Leader Consumer负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
+    >    - 最后 Leader Consumer 发送 SyncGroup 请求
+    >
+    > Q：为什么引入 Leader Consumer？可否协调者来分配？
+    > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
 
-###### 初始化
+  - **SyncGroup请求**
 
-####### Empty --> PreparingRebalance --> CompletingRebalance --> Stable
+    > 1. Leader Consumer 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的SyncGroup请求；
+    > 2. 协调者将分配方案放入SyncGroup响应中，下发给所有成员；即通过协调者中转；
+    > 3. 消费者进入Stable状态
 
-###### 成员加入/退出
 
-####### Stable --> PreparingRebalance
 
-####### 所有成员重新申请加入组
+- Broker 端重平衡场景
 
-###### 所有成员退出
+  - **新成员入组  JoinGroup**
 
-####### Stable --> PreparingRebalance --> Empty
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
 
-####### kafka定期自动删除empty状态的过期位移
+  - **组成员主动离组 close()： LeaveGroup** 
 
-#### 流程
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
 
-##### Consumer 端重平衡流程
+  - **组成员崩溃离组**
 
-###### JoinGroup请求
+    > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
+    >
+    > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
 
-####### 加入组时，向分组协调者发送JoinGroup请求
+# | 原理
 
-######## 上报自己订阅的主题
-
-####### 选出Leader Consumer
-
-######## 协调者收集到全部成员的JoinGroup请求后，"选择"一个作为领导者
-
-######### == 第一个加入组的消费者？
-
-######## 协调者将订阅信息放入JoinGroup响应中，发给Leader Consumer
-
-######## Leader Consumer负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案
-
-######### PartitionAssignor
-
-######## 最后 Leader Consumer 发送 SyncGroup 请求
-
-####### Q
-
-######## 为什么引入 Leader Consumer？可否协调者来分配？
-
-######### 客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
-
-###### SyncGroup请求
-
-####### Leader Consumer 将分配方案通过SyncGroup请求发给协调者
-
-######## 此时其他消费者也会发送空的SyncGroup请求
-
-####### 协调者将分配方案放入SyncGroup响应中，下发给所有成员
-
-######## 通过协调者中转
-
-####### 消费者进入Stable状态
-
-##### Broker 端重平衡场景
-
-###### 新成员入组
-
-####### JoinGroup
-
-####### 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
-
-###### 组成员主动离组: close()
-
-####### LeaveGroup
-
-####### 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
-
-###### 组成员崩溃离组
-
-####### session.timeout.ms 后，Broker感知有成员超时
-
-######## 在此期间，老组员对应的分区消息不会被消费
-
-####### 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
-
-## 原理
-
-### 请求处理
+## || 请求处理
 
 https://time.geekbang.org/column/article/110482
 
-#### 种类
+种类
 
-##### 数据类型请求
+- 数据类型请求
 
-###### PRODUCE
+  - **PRODUCE**
 
-####### 来自生产者
+    > 来自生产者;
+    >
+    > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”
+    >
+    > 如果ack=all，leader 会将其暂存在 `Purgatory`，等到 ISR 复制完该消息
 
-####### 必须发往 leader replica
+  - **FETCH**
 
-######## 否则会报错 “Not a Leader for Partition”
+    > 来自消费者、Follower Replica；
+    >
+    > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”；
+    >
+    > 返回response使用 zero-copy !
 
-######## 如果ack=all，leader 会将其暂存在 Purgatory，等到 ISR 复制完该消息
+  - **METADATA request**
 
-###### FETCH
-
-####### 来自消费者、Follower Replica
-
-####### 必须发往 leader replica
-
-######## 否则会报错 “Not a Leader for Partition”
-
-######## 返回response使用 zero-copy !
-
-###### METADATA request
-
-####### 可以发往任意 broker
-
-####### 客户端据此才能知道 那个是Leader Replica，才能正确发送PRODUCE / FETCH 请求
+    > 可以发往任意 broker；
+    >
+    > 客户端据此才能知道 那个是Leader Replica，才能正确发送PRODUCE / FETCH 请求
 
 ##### 控制类请求
 
