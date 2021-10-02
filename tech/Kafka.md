@@ -94,7 +94,7 @@
 
 # 组件
 
-## 主题 / 分区
+## 1. 主题 / 分区
 
 ### 主题 Topic
 
@@ -156,7 +156,7 @@ return Math.abs(key.hashCode()) % partitions.size();
 
 ### 分区副本 Replica
 
-#### **副本作用**
+#### 副本作用
 
 - **Availability**：数据冗余，提升可用性、容灾能力
 - **备份**：同一分区下所有副本保存“相同的”消息序列
@@ -211,7 +211,7 @@ return Math.abs(key.hashCode()) % partitions.size();
 
 
 
-#### **副本分类**
+#### 副本分类
 
 - AR: Assigned Replicas - 所有副本集合
 
@@ -399,254 +399,215 @@ HWM = ISR集合中最小的 Log End Offset (LEO)
 
 
 
-## Broker
+## 2. Broker
 
-#### 控制器 Controller
+### 控制器 Controller
 
-##### 定义
+**定义**
 
-###### 集群中的某一个Broker会作为控制器
+- 集群中的某一个Broker会作为控制器
+- 唯一。在zk的帮助下，管理和协调“整个”kafka集群
 
-####### 唯一。在zk的帮助下，管理和协调“整个”kafka集群
+重度依赖 ZK 
 
-###### 重度依赖 ZK 
+- 写入临时节点 `/controller`
+- 选出新 controller后，会分配更高的 “controller epoch”；如果broker收到了来自老epoch的消息，则会忽略
 
-####### 写入临时节点 /controller
 
-####### 选出新 controller后，会分配更高的 “controller epoch”
 
-######## 如果broker收到了来自老epoch的消息，则会忽略
+**作用**
 
-##### 作用
+- Partition 领导者选举
 
-###### Partition 领导者选举
+  > 当有 Broker离开
+  >
+  > 1. 失去 leader 的分区需要一个新 leader；控制器会遍历这些分区，确定谁将成为新 leader；
+  >    --> Q: 如何确定新 leader？
+  > 2. 控制器然后向包含新 leader、原有 follower 的 broker 发送请求，告知新的 leader/follower 信息；
+  > 3. 新 leader 处理生产者消费者请求、follower 则从新 leader 复制消息；
+  >
+  > 当有Broker加入
+  >
+  > 1. 控制器根据 Broker ID 检查新 broker 是否已有 repilcas
+  > 2. 如果已有，则通知 brokers，新 broker 则会从已有的 leader 处复制消息
 
-####### 当有 Broker离开
+- 主题管理
 
-######## 1. 失去leader的分区需要一个新leader
+  > 创建、删除、增加分区：kafka-topics 执行时，后台大部分工作是控制器完成
 
-######## 2. 控制器会遍历这些分区，确定谁将成为新leader
+- 分区重分配
 
-######## 3. 控制器然后向包含新leader、原有follower的broker发送请求，告知新的leader/follower信息
+  > kafka-reassign-partitions
 
-######## 4. 新 leader处理生产者消费者请求、follower则从新leader复制消息
+- Preferred 领导者选举
 
-####### 当有Broker加入
+  > 为了避免部分 Broker 负载过重而提供的一种换 Leader 方案
 
-######## 1. 控制器根据 Broker ID 检查新broker是否已有repilcas
+- 集群成员管理
 
-######## 2. 如果已有，则通知 brokers，新broker则会从已有的leader处复制消息
+  > 新增 Broker、Broker 主动关闭、Broker 宕机；
+  >
+  > 控制器watch "zk /brokers/ids 下的临时节点" 变化；--> Q: 然后做什么？-- 抢占？
 
-###### 主题管理
+- 数据服务
 
-####### 创建、删除、增加分区
+  > 向其他 Broker 提供元数据信息，包括：
+  >
+  > - 主题信息：分区、Leader Replica、ISR
+  > - Broker信息：运行中、关闭中
+  >
+  > Q: 是 zk 数据的缓存？
 
-######## kafka-topics 执行时，后台大部分工作是控制器完成
 
-###### 分区重分配
 
-####### kafka-reassign-partitions
+**选举 / 故障转移**
 
-###### Preferred 领导者选举
+- 抢占！zk `/controller`节点创建
+  - 每个Broker启动后，都尝试创建 /controller 临时节点。
+  - 没抢到的，会Watch这个节点
 
-####### 为了避免部分Broker负载过重而提供的一种换Leader方案
+- 技巧：当控制器出问题时，可手工删除节点 触发重选举
 
-###### 集群成员管理
 
-####### 新增Broker、Broker主动关闭、Broker宕机
 
-####### 控制器watch "zk /brokers/ids 下的临时节点" 变化
+### 协调者 GroupCoordinator
 
-###### 数据服务
+**作用**
 
-####### 向其他 Broker 提供元数据信息
+- 为consumer group 执行 Rebalance
 
-######## 元数据
+  > 协调者对应一个 Group！
 
-######### 主题信息：分区、Leader Replica、ISR
+- 位移管理
 
-######### Broker信息：运行中、关闭中
+  > 消费者提交位移时，是向Coordinator所在的Broker提交
 
-####### 是 zk 数据的缓存？
+- 组成员管理
 
-##### 选举 / 故障转移
+  > 消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
 
-###### 抢占！
 
-每个Broker启动后，都尝试创建 /controller 临时节点。
 
-没抢到的，会Watch这个节点
+**消费者如何找到Coordinator？**--> 分区Leader副本所在的Broker
 
-####### zk /controller节点创建
+- Step-1: 找到由位移主题的哪个分区来保存该 Group 数据
 
-###### 技巧
+  ```java
+  partitionId = Math.abs(groupId.hashCode % offsetsTopicPartitionCoun)
+  ```
 
-####### 当控制器出问题时，可手工删除节点 触发重选举
+- Step-2: 找到该分区的 Leader 副本所在的 Broker
 
-#### 协调者 GroupCoordinator
 
-##### 作用
 
-###### 为consumer group 执行 Rebalance
+## 3. 生产者
 
-####### 协调者对应一个 Group！
+### 发送流程！
 
-###### 位移管理
+**准备**
 
-####### 消费者提交位移时，是向Coordinator所在的Broker提交
+- 0. **创建 KafkaProducer** 
 
-###### 组成员管理
+- 1. **创建 ProducerRecord**
 
-####### 消费者启动时，向Coordinator所在Broker发送请求，由Coordinator进行消费者组的注册、成员管理
+  > 必选：Topic / Value
+  >
+  > 可选：Key / Partition
 
-##### 消费者如何找到Coordinator？
 
-###### 找到由位移主题的哪个分区来保存该Group数据
 
-partitionId = Math.abs(groupId.hashCode % offsetsTopicPartitionCoun)
+**send()**
 
-###### 找到该分区的Leader副本所在的Broker
+- 2. **Seriazlier** 
 
-### 生产者
+  > 将 key/value 序列化为字节数组；
+  >
+  > 实现方式
+  >
+  > - 自定义：继承 Serializer；不推荐：兼容性
+  > - 使用已有的：JSON、Avro、Thrift、Protobuf
+  >   - 引入 Schema Registry
+  >   - `schema.registry.url` --> Q: 如何关联到 Schema ID / version ??
+  >
+  > 注意：不是序列化整个 ProducerRecord对象？ NO，序列化的是 value“对象”
 
-#### 发送流程
+- 3. **Partitioner** 
 
-##### 准备
+  > 分区机制
+  >
+  > - 如果已指定 Partition：不做处理
+  >
+  > - 如果已指定 Key: 按Key分区
+  >
+  >   ```java
+  >   List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+  >   return Math.abs(key.hashCode()) % partitions.size();
+  >   ```
+  >
+  >   - 使用 Kafka 自己特定的散列算法
+  >   - 如果增加 Partition，相同 key 可能会分到另一个Partition --> 建议提前规划，不要增加分区
+  >
+  > - 自定义分区器：场景 - 某个 key 数据量超大，需要写入专门的分区；
+  >
+  >   ```java
+  >   // 实现Partitioner接口
+  >   int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster);
+  >   ```
+  >
+  > - key == null && 没有分区器，则 Round-robin 平衡
 
-###### 0. 创建 KafkaProducer
+- 4. **记录到 batch** 
 
-###### 1. 创建 ProducerRecord
+  > 同一个batch的记录，会发送到相同的Topic / Partition
 
-####### 必选：Topic / Value
+- 5. **单独 Sender 线程 发送batch 到相应的 Broker** 
 
-####### 可选：Key / Partition
+  > Sender线程：
+  > new KafkaProducer时会创建“并启动”Sender线程，该线程在开始运行时会创建与`bootstrap.servers`的连接。
+  >
+  > 三种发送方式
+  >
+  > - Fire-and-forget：`send(record)`
+  > - 同步发送： `send(record).get()` 获取 RecordMetadata
+  > - 异步发送：`send(record, Callback)`
 
-##### send()
 
-###### 2. Seriazlier
 
-####### 将 key/value 序列化为字节数组
+**response**
 
-####### 实现方式
+- 6. **Broker 回复 Response** 
 
-######## 自定义：继承 Serializer
+  > 成功：返回 RecordMetadata，包含topic / partition / offset
+  >
+  > 失败：返回 Error，生产者决定是否重试
 
-######### 不推荐：兼容性
+- 7. **close** 
 
-######## 使用已有的：JSON、Avro、Thrift、Protobuf
+  > 可用 try-with-resource
 
-######### 引入 Schema Registry
 
-######### schema.registry.url
 
-########## Q: 如何关联到 Schema ID / version ??
+### 消息
 
-####### 注意
+- Batch 批量发送：权衡吞吐量 vs. 延时
+- 元数据
+  - key：可选，消息分区的依据
+  - offset：分区内唯一
 
-######## 不是序列化整个 ProducerRecord对象？
+- Schemas
 
-######### NO，序列化的是 value“对象”
+  - JSON, XML, Avro
 
-###### 3. Partitioner
+  
 
-####### 分区机制
+### 拦截器
 
-######## 如果已指定 Partition：不做处理
+**代码实现**
 
-######## 如果已指定 Key: 按Key分区
+- 配置interceptor.classes
 
-```
-List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
-return Math.abs(key.hashCode()) % partitions.size();
-```
-
-######### 使用Kafka自己特定的散列算法
-
-######### 如果增加 Partition，相同key可能会分到另一个Partition
-
-########## 建议提前规划，不要增加分区。。。
-
-######## 自定义分区器
-
-######### 实现Partitioner接口
-
-int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster);
-
-
-######### 场景：某个key数据量超大，需要写入专门的分区
-
-######## key == null && 没有分区器，则 Round-robin 平衡
-
-###### 4. 记录到batch
-
-####### 同一个batch的记录，会发送到相同的Topic / Partition
-
-###### 5. 单独线程 发送batch 到相应的 Broker
-
-Sender线程：
-new KafkaProducer时会创建“并启动”Sender线程，该线程在开始运行时会创建与bootstrap.servers的连接
-
-####### 三种发送方式
-
-######## Fire-and-forget
-
-######### send(record)
-
-######## 同步发送
-
-######### send(record).get()
-
-########## 获取RecordMetadata
-
-######## 异步发送
-
-######### send(record, Callback)
-
-##### response
-
-###### 6. Broker 回复 Response
-
-####### 成功
-
-######## 返回 RecordMetadata，包含topic / partition / offset
-
-####### 失败
-
-######## 返回 Error，生产者决定是否重试
-
-###### 7. close
-
-####### 可用 try-with-resource
-
-#### 消息
-
-##### Batch 批量发送
-
-###### 权衡吞吐量 vs. 延时
-
-##### 元数据
-
-###### key
-
-####### 可选，消息分区的依据
-
-###### offset
-
-####### 分区内唯一
-
-##### Schemas
-
-###### JSON, XML
-
-###### Avro
-
-#### 拦截器
-
-##### interceptor.classes
-
-```
+```java
 Properties props = new Properties();
-
 List<String> interceptors = new ArrayList<>();
 interceptors.add("com.yourcompany.kafkaproject.interceptors.AddTimestampInterceptor"); // 拦截器1
 interceptors.add("com.yourcompany.kafkaproject.interceptors.UpdateCounterInterceptor"); // 拦截器2
@@ -654,193 +615,163 @@ interceptors.add("com.yourcompany.kafkaproject.interceptors.UpdateCounterInterce
 props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 ```
 
-##### 实现接口 ProducerInterceptor
+- 实现接口 `ProducerInterceptor`
 
-###### onSend()
+  > `onSend()`：发送之前被调用
+  >
+  > `onAcknowlegement()`：早于callback调用；与onSend()是不同线程，注意共享变量的同步！
 
-####### 发送之前被调用
+**应用场景**
 
-###### onAcknowlegement()
+- 监控、审计
 
-####### 早于callback调用
+- 一个消息从生产到消费的总延时
 
-####### 与onSend()是不同线程，注意共享变量的同步！
 
-##### 应用场景
 
-###### 监控、审计
+## 4. 消费者
 
-###### 一个消息从生产到消费的总延时
+### 消费者组
 
-### 消费者
+**定义**
 
-#### 消费者组
+- 组内所有消费者协调在一起来消费订阅主题的所有分区
 
-##### 定义
+- 每个分区只能由组内的一个 Consumer 实例消费
+  - 增加组内消费者：scale up
 
-###### 组内所有消费者协调在一起来消费订阅主题的所有分区
 
-###### 每个分区只能由组内的一个Consume实例消费
 
-####### 增加组内消费者：scale up
+**模型**
 
-##### 模型
+- 消息队列模型：所有实例都属于同一个group
 
-###### 消息队列模型
+- 发布订阅模型：所有实例分别属于不同group
 
-####### 所有实例都属于同一个group
 
-###### 发布订阅模型
 
-####### 所有实例分别属于不同group
+**组员个数**
 
-##### 组员个数
+- `= 分区数`：每个实例消费一个分区
+- `> 分区数`：有实例空闲
+- `< 分区数`：有实例消费多个分区
 
-###### = 分区数
 
-####### 每个实例消费一个分区
 
-###### > 分区数
+**要点**
 
-####### 有实例空闲
+- 每个 Consumer 属于一个 Consumer Group
+- 每个 Consumer 独占一个或多个 Partition
+- 每个 Consumer Group 都有一个 `Coordinator `
+  - 负责分配 消费者与分区的对应关系
+  - 当分区或者消费者发生变更，则触发 rebalance
 
-###### < 分区数
+- Consumer 维护与 `Coordinator` 之间的心跳，以便让 Coordinator 感受到 Consumer 的状态
 
-####### 有实例消费多个分区
 
-##### 要点
 
-###### 每个Consumer属于一个Consumer Group
+### 消费流程！
 
-###### 每个Consumer独占一个或多个Partition
+**准备**
 
-###### 每个Consumer Group 都有一个 Coordinator 
+- 0. **创建 kafkaConsumer** 
 
-####### 负责分配 消费者与分区的对应关系
+- 1. **subscribe(topics)** 
 
-####### 当分区或者消费者发生变更，则触发 rebalance
+  > 参数：Topic 列表
+  >
+  > - 参数可以是正则表达式
+  > - 同时注册多个主题，如果有新主题匹配，会触发 Rebalance
+  >
+  > 或者作为 standalone 消费者 `consumer.assign(partitions)`
 
-###### Consumer 维护与 Coordinator 之间的心跳，以便让Coordinator 感受到Consumer的状态
+**轮询**
 
-#### 消费流程
+- 2. **poll()** 
 
-##### 准备
+  > 第一次 poll 时
+  >
+  > - 找到 GroupCoordinator
+  > - 加入 Consumer Group
+  > - 收到 Partition 指派
+  >
+  > 
+  >
+  > 返回值 ConsumerRecords
+  >
+  > - 是 ConsuemrRecord的集合
+  > - 包含 topic / partition / offset / key / value
+  >
+  > 
+  >
+  > Deserializer
+  >
+  > - 不推荐自定义
+  > - Avro
+  >   - 引入 Schema Registry
+  >   - Q: 如何关联到 Schema ID / version ??
 
-###### 0. 创建 kafkaConsumer
 
-###### 1. subscribe(topics)
 
-####### 参数
+**关闭**
 
-######## 参数：Topic 列表
+- 3. **consumer.wakeup()** 
 
-######## 参数可以是正则表达式
+  > 从另一个线程调用，例如 addShutdownHook() 中调用；
+  >
+  > 然后 poll() 会抛出 WakeupException，该异常无需处理；--> Q：wakeup() 用户在其他线程中关闭一个 Consumer
 
-######### 同时注册多个主题，如果有新主题匹配，会触发 Rebalance
+- 4. **commit / close** 
 
-####### 或者作为 standalone 消费者
+  > 会马上触发 Rebalance，而无需等待 GroupCoordinator  被动发现；
+  >
+  > 在 finally 中执行
 
-######## consumer.assign(partitions)
 
-##### 轮询
 
-###### 2. poll()
+### 编码
 
-####### 第一次 poll 时
+- 消费者组 `KafkaConsumer.subscribe()`
 
-######## 找到 GroupCoordinator
+- 独立消费者 `KafkaConsumer.assign()`
 
-######## 加入 Consumer Group
+- 拦截器
 
-######## 收到 Partition 指派
+  - interceptor.classes
 
-####### 返回 ConsumerRecords
+  - 实现接口 ConsumerrInterceptor
 
-######## 是 ConsuemrRecord的集合
+    > onConsume()：消费之前被调用
+    >
+    > onCommit()：提交位移之后执行
 
-######## 包含 topic / partition / offset / key / value
+### 多线程消费
 
-####### Deserializer
-
-######## 不推荐自定义
-
-######## Avro
-
-######### 引入 Schema Registry
-
-######### Q: 如何关联到 Schema ID / version ??
-
-##### 关闭
-
-###### 3. consuemr.wakeup()
-
-####### 从另一个线程调用，例如 addShutdownHook() 中调用
-
-####### 然后 poll() 会抛出 WakeupException
-
-######## 该异常无需处理
-
-###### 4. commit / close
-
-####### 会马上触发 Rebalance，而无需等待 GroupCoordinator  被动发现
-
-####### 在 finally 中执行
-
-#### 注意
-
-##### 编码
-
-###### 消费者组
-
-####### KafkaConsumer.subscribe()
-
-###### 独立消费者
-
-####### KafkaConsumer.assign()
-
-###### 拦截器
-
-####### interceptor.classes
-
-####### 实现接口 ConsumerrInterceptor
-
-######## onConsume()
-
-######### 消费之前被调用
-
-######## onCommit()
-
-######### 提交位移之后执行
-
-##### 多线程消费
-
-###### 粗粒度：每个线程启一个KafkaConsumer
+**1. 粗粒度：每个线程启一个 KafkaConsumer**
 
 ```java
 public class KafkaConsumerRunner implements Runnable {
 
-private final AtomicBoolean closed = new AtomicBoolean(false);
+  private final AtomicBoolean closed = new AtomicBoolean(false);
+  private final KafkaConsumer consumer;
 
-private final KafkaConsumer consumer;
-
-
-public void run() {
-  try {
-  consumer.subscribe(Arrays.asList("topic"));
-  
-  while (!closed.get()) {
-	ConsumerRecords records = 
-consumer.poll(Duration.ofMillis(10000));
-     //  执行消息处理逻辑
-   }
+  public void run() {
+   try {
+     //配置订阅
+     consumer.subscribe(Arrays.asList("topic"));
+ 
+     while (!closed.get()) {
+	     ConsumerRecords records = consumer.poll(Duration.ofMillis(10000));
+       //执行消息处理逻辑
+     }
    } catch (WakeupException e) {
-     // Ignore exception if closing
-     if (!closed.get()) throw e;
+      // Ignore exception if closing
+      if (!closed.get()) throw e;
    } finally {
+      // 关闭消费者
       consumer.close();
    }
 }
-
 
 // Shutdown hook which can be called from a separate thread
 public void shutdown() {
@@ -850,23 +781,21 @@ public void shutdown() {
 
 ````
 
-####### 优点
 
-######## 实现简单
 
-######## 线程之间独立，没有交互
+- 优点
+  - 实现简单
+  - 线程之间独立，没有交互
+  - 可保证分区内消息的顺序性
 
-######## 可保证分区内消息的顺序性
+- 缺点
+  - 占用资源：内存、TCP连接
+  - 线程数受限：不能多于分区数
+  - 无法解决消息处理慢的情况
 
-####### 缺点
 
-######## 占用资源：内存、TCP连接
 
-######## 线程数受限：不能多于分区数
-
-######## 无法解决消息处理慢的情况
-
-###### 细粒度：多线程执行消息处理逻辑
+**2. 细粒度：多线程执行消息处理逻辑**
 
 https://www.cnblogs.com/huxi2b/p/7089854.html
 
@@ -874,347 +803,307 @@ https://www.cnblogs.com/huxi2b/p/7089854.html
 private final KafkaConsumer<String, String> consumer;
 private ExecutorService executors;
 
-executors = new ThreadPoolExecutor(
-	workerNum, workerNum, 0L, TimeUnit.MILLISECONDS,
-	new ArrayBlockingQueue<>(1000), 
-	new ThreadPoolExecutor.CallerRunsPolicy());
-
+executors = new ThreadPoolExecutor(workerNum, workerNum, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(1000), new ThreadPoolExecutor.CallerRunsPolicy());
 
 ...
 while (true)  {
-  ConsumerRecords<String, String> records = 
-  consumer.poll(Duration.ofSeconds(1));
+  ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
   
   for (ConsumerRecord record : records) {
-	executors.submit(new Worker(record));
+	   executors.submit(new Worker(record));
   }
 }
 
 
 ```
 
-####### 优点
+- 优点
+  - 消息获取、消息消费独立
+  - 伸缩性好
 
-######## 消息获取、消息消费独立
+- 缺点
+  - 实现难度大：有两组线程
+  - 无法保证分区内消息的顺序性
+  - 较难正确提交正确的位移
+    - 因为消息消费链路被拉长
+    - 可能导致消息重复消费
 
-######## 伸缩性好
+## 5. zookeeper
 
-####### 缺点
-
-######## 实现难度大：有两组线程
-
-######## 无法保证分区内消息的顺序性
-
-######## 较难正确提交正确的位移
-
-######### 因为消息消费链路被拉长
-
-######### 可能导致消息重复消费
-
-### zookeeper
-
-#### 存储信息
+### 节点列表
 
 https://www.jianshu.com/p/da62e853c1ea
 
-##### broker
-
-###### /brokers/ids/0
-
-Schema:
-{
-"jmx_port": jmx端口号,
-"timestamp": kafka broker初始启动时的时间戳,
-"host": 主机名或ip地址,
-"version": 版本编号默认为1,
-"port": kafka broker的服务端端口号,由server.properties中参数port确定
-}
-
-Example:
-{
-"jmx_port": 6061,
-"timestamp":"1403061899859"
-"version": 1,
-"host": "192.168.1.148",
-"port": 9092
-}
-
-####### 临时节点
-
-######## 如果 broker 宕机，节点删除
-
-######### 新启动的Broker如果有相同ID，则无缝继承原Broker的partition和topic
-
-######## 对应每个在线的Broker
-
-######### 包含：地址、版本号、启动时间
-
-###### /brokers/topics/x/partitions/0/state
-
-Schema:
-{
-  "controller_epoch": 表示kafka集群中的中央控制器选举次数,
-  "leader": 表示该partition选举leader的brokerId,
-  "version": 版本编号默认为1,
-  "leader_epoch": 该partition leader选举次数,
-  "isr": [同步副本组brokerId列表]
-}
-
-Example:
-{
-  "controller_epoch": 1,
-  "leader": 2,
-  "version": 1,
-  "leader_epoch": 0,
-  "isr": [2, 1]
-}
-
-####### 保存分区信息
-
-######## 分区的Leader
-
-######## 所有ISR的BrokerID
-
-####### 如果该分区的 leader broker 宕机，节点删除
-
-##### consumer
-
-###### /consumers/consumer-group/ids/consumer_id
-
-Schema:
-{
-"version": 版本编号默认为1,
-"subscription": { //订阅topic列表
-"topic名称": consumer中topic消费者线程数
-},
-"pattern": "static",
-"timestamp": "consumer启动时的时间戳"
-}
-
-Example:
-{
-"version": 1,
-"subscription": {
-"open_platform_opt_push_plus1": 5
-},
-"pattern": "static",
-"timestamp": "1411294187842"
-}
-
-###### /consumers/consumer-group/offsets/topic-x/p-x
-
-####### 问题
-
-######## offset 写入频繁，并不适合 zk
-
-######## 所以新版本 offset 保存在 内部 Topic 中
-
-######### __consumer_offsets
-
-###### /consumer/consumer-group/owners/topic-x/p-x
-
-标识被哪个consumer消费
-
-
-##### controller
-
-##### config
-
-#### 用例
-
-##### 客户端如何找到对应Broker地址
-
-###### 先从 /state 中找到分区对应的brokerID
-
-###### 再从 /brokers/ids 中找到对应地址
-
-###### 注意
-
-####### 客户端并不直接和 zk 交互，而是和broker交互
-
-####### 每个broker 都维护了和 zk 数据一样的元数据缓存，通过Watcher 机制更新
-
-## 位移
-
-### 概念
-
-#### 目的
-
-##### 重平衡后，消费者得以从最新的已提交offset处开始读取
-
-##### 当已提交offset < 当前消费者已处理消息：重复消费
-
-##### 当已提交offset > 当前消费者已处理消息：lost
-
-###### 但实际lost部分的消息肯定已被其他消费者处理过，所以没问题
-
-#### 位移存储
-
-##### 老版本：zk
-
-###### 用zookeeper存储位移
-
-###### 好处：broker无状态，方便扩展
-
-###### 坏处：zk不适合频繁写入
-
-##### 新版本：位移主题
-
-######  __consumer_offsets
-
-###### 消息结构
-
-####### K
-
-######## groupId + topic + partition
-
-######### 分区粒度
-
-######### groupId ==> 消费者信息
-
-####### V
-
-######## 位移
-
-######## 时间戳
-
-######### 为了删除过期位移消息
-
-######## 用户自定义数据
-
-###### tombstone消息
-
-####### 墓碑消息，delete mark
-
-######## 表示要彻底删除这个group信息
-
-####### 当consumer group下所有实例都停止，并且位移数据都被删除时，会写入该消息
-
-###### 创建
-
-####### 第一个consumer启动时，自动创建位移主题
-
-####### offset.topic.num.partitions=50
-
-######## 默认分区50
-
-####### offset.topic.replication.factor=3
-
-######## 默认副本3
-
-### 编码
-
-#### 位移提交
-
-##### 自动提交
-
-###### 原理
-
-####### 每隔 N 秒自动提交一次位移
-
-######## Q: how? 单独线程计时？
-
-####### 开始调用poll()时，提交上次poll 返回的所有消息
-
-######## Q: 和 auto.commit.interval.ms有关系吗？
-
-自动提交逻辑是在poll方法中，如果间隔大于最小提交间隔，就会运行逻辑进行offset提交，如果小于最小间隔，则忽略offset提交逻辑？也就是说上次poll 的数据即便处理结束，没有调用下一次poll，那么offset也不会提交？
-
-###### 配置
-
-####### enable.auto.commit=true
-
-####### auto.commit.interval.ms
-
-######## 提交间隔
-
-######### 默认 5s
-
-######## vs. poll 间隔？
-
-######### interval.ms 表示最小间隔，实际提交间隔可能大于该值
-
-###### 缺点
-
-####### consumer不关闭 就会一直写入位移消息
-
-######## 导致位移主题越来越大
-
-######## 需要自动整理消息
-
-######### Log Cleaner 后台线程
-
-########## Compact 整理策略
-
-########## 扫描所有消息，删除过期消息
-
-####### 可能导致重复消费
-
-######## 在提交之前发生 Rebalance
-
-##### 手动提交
-
-###### consumer.commitSync()
-
-```
-while (true) {
-  ConsumerRecords<String, String> records =
-  consumer.poll(Duration.ofSeconds(1));
+**broker**
+
+- **Broker 列表** `/brokers/ids/0` 
+
+  - 临时节点：如果 broker 宕机，节点删除
+  - 新启动的Broker如果有相同ID，则无缝继承原Broker的partition和topic
+  - 内容：对应每个在线的Broker，包含：地址、版本号、启动时间
+
+  ```json
+  ## Schema:
+  {
+    "jmx_port": jmx端口号,
+    "timestamp": kafka broker初始启动时的时间戳,
+    "host": 主机名或ip地址,
+    "version": 版本编号默认为1,
+    "port": kafka broker的服务端端口号,由server.properties中参数port确定
+  }
   
+  ## Example:
+  {
+    "jmx_port": 6061,
+    "timestamp":"1403061899859"
+    "version": 1,
+    "host": "192.168.1.148",
+    "port": 9092
+  }
+  ```
+
+  
+
+- **分区信息** `/brokers/topics/x/partitions/0/state`
+
+  - 内容：保存分区信息，包括分区的Leader、 所有ISR的BrokerID
+  - 如果该分区的 leader broker 宕机，节点删除
+
+  ```json
+  ## Schema:
+  {
+    "controller_epoch": 表示kafka集群中的中央控制器选举次数,
+    "leader": 表示该partition选举leader的brokerId,
+    "version": 版本编号默认为1,
+    "leader_epoch": 该partition leader选举次数,
+    "isr": [同步副本组brokerId列表]
+  }
+  
+  ## Example:
+  {
+    "controller_epoch": 1,
+    "leader": 2,
+    "version": 1,
+    "leader_epoch": 0,
+    "isr": [2, 1]
+  }
+  ```
+
+  
+
+**consumer**
+
+- **消费者信息** `/consumers/consumer-group/ids/{consumer_id}`
+
+  ```json
+  ## Schema:
+  {
+    "version": 版本编号默认为1,
+    "subscription": { //订阅topic列表
+        "topic名称": consumer中topic消费者线程数
+     },
+    "pattern": "static",
+    "timestamp": "consumer启动时的时间戳"
+  }
+  
+  Example:
+  {
+    "version": 1,
+    "subscription": {
+       "open_platform_opt_push_plus1": 5
+    },
+    "pattern": "static",
+    "timestamp": "1411294187842"
+  }
+  ```
+
+
+
+- **消费位移信息** `/consumers/consumer-group/offsets/topic-x/p-x`
+  - 问题：offset 写入频繁，并不适合 zk
+  - 所以新版本 offset 保存在 内部 Topic 中：` __consumer_offsets`
+
+
+
+- **分区消费关系** `/consumer/consumer-group/owners/topic-x/p-x`
+
+  - 标识 partition 被哪个 consumer 消费
+
+  
+
+**controller**
+
+- 
+
+**config**
+
+- 
+
+### 用例
+
+**客户端如何找到对应 Broker 地址**
+
+- 先从分区信息 `/state` 中找到分区对应的 brokerID
+- 再从Broker列表 `/brokers/ids` 中找到对应地址
+
+注意
+
+- 客户端并不直接和 zk 交互，而是和broker交互；
+- 每个broker 都维护了和 zk 数据一样的元数据缓存，通过Watcher 机制更新
+
+
+
+## 6. 位移
+
+**目的**
+
+- 重平衡后，消费者得以从最新的已提交offset处开始读取
+
+- 当已提交offset < 当前消费者已处理消息：重复消费
+
+- 当已提交offset > 当前消费者已处理消息：lost
+
+  - 但实际lost部分的消息肯定已被其他消费者处理过，所以没问题
+
+  
+
+### 位移存储
+
+- 老版本：zk
+  - 好处：broker无状态，方便扩展
+  - 坏处：zk不适合频繁写入
+
+- 新版本：位移主题 `__consumer_offsets`
+  - 消息结构
+
+    > Key: groupId + topic + partition
+    >
+    > - 分区粒度
+    >
+    > - groupId ==> 消费者信息
+    >
+    > Value: 
+    >
+    > -  位移
+    > - 时间戳：为了删除过期位移消息
+    > - 用户自定义数据
+
+  - 位移主题配置
+
+    > 分区数50：offset.topic.num.partitions=50 
+    >
+    > 副本数3： offset.topic.replication.factor=3
+
+  - 位移主题创建
+
+    > 第一个consumer启动时，自动创建位移主题
+
+- tombstone消息
+
+  - 墓碑消息，delete mark；表示要彻底删除这个group信息
+  - 当consumer group下所有实例都停止，并且位移数据都被删除时，会写入该消息
+
+
+
+### 位移提交
+
+**自动提交**
+
+- 原理
+
+  - 每隔 N 秒自动提交一次位移
+
+    > Q: how? 单独线程计时？
+
+  - 开始调用poll()时，提交上次poll 返回的所有消息
+
+    > Q: 和 auto.commit.interval.ms有关系吗？
+    >
+    > 自动提交逻辑是在 poll 方法中，如果间隔大于最小提交间隔，就会运行逻辑进行 offset 提交，如果小于最小间隔，则忽略offset提交逻辑？也就是说上次poll 的数据即便处理结束，没有调用下一次 poll，那么 offse t也不会提交？
+
+- 配置
+
+  > enable.auto.commit=true
+  >
+  > auto.commit.interval.ms=5000
+  >
+  > - vs. poll 间隔？
+  > - interval.ms 表示最小间隔，实际提交间隔可能大于该值
+
+- 缺点
+  - **consumer不关闭 就会一直写入位移消息；导致位移主题越来越大。**
+    - 需要自动整理消息：Log Cleaner 后台线程
+      - Compact 整理策略
+      - 扫描所有消息，删除过期消息
+  - **可能导致重复消费**
+    - 在提交之前发生 Rebalance
+
+
+
+**手动提交**
+
+注意，手动提交之前确保该批消息已被处理结束，否则会丢失消息
+
+- **同步提交：consumer.commitSync()** 
+
+  > commitSync()时会阻塞
+  >
+  > 自动重试
+
+```java
+while (true) {
+  ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
   process(records); // 处理消息
   
   try {
      consumer.commitSync();
-   } catch (CommitFailedException e) {
-   handle(e); // 处理提交失败异常
-   }
+  } catch (CommitFailedException e) {
+     handle(e); // 处理提交失败异常
+  }
 }
 
 ```
 
-####### commitSync()时会阻塞
 
-####### 自动重试
 
-###### consumer.commitAsync()
+- **异步提交 consumer.commitAsync()**
+
+  > 基于回调；
+  >
+  > 不会重试，也不要在回调中尝试重试；
+  >
+  > - 如果重试，则提交的位移值可能早已过期
+  > - 除非：设置单调递增的ID，回调中检查ID判断是否可重试
 
 ```java
 while (true) {
-  ConsumerRecords<String, String> records = 
-  consumer.poll(Duration.ofSeconds(1));
-  
+  ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
   process(records); // 处理消息
   
   consumer.commitAsync((offsets, exception) -> {
 	if (exception != null)
-	  handle(exception);
+	   handle(exception);
 	});
 }
 
 ```
 
-####### 回调
 
-####### 不会重试
 
-######## 也不要在回调中尝试重试
+- **组合 同步 + 非同步**
 
-######### 如果重试，则提交的位移值可能早已过期
-
-######### 除非：设置单调递增的ID，回调中检查ID判断是否可重试
-
-###### 组合 同步+非同步
+  > 轮询中：commitAsync()，避免阻塞
+  >
+  > 消费者关闭前：commitSync()，确保关闭前保存正确的位移， 因为这是rebalance前的最后一次提交机会
 
 ```java
 try {
   while (true) {
-    ConsumerRecords<String, String> records = 
-consumer.poll(Duration.ofSeconds(1));
-  // 处理消息
-  process(records); 
+    ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
+    process(records); // 处理消息
 
-  // 使用异步提交规避阻塞
-  commitAysnc(); 
+    // 使用异步提交规避阻塞
+    commitAysnc(); 
   }
 } catch (Exception e) {
    handle(e); 
@@ -1229,33 +1118,20 @@ consumer.poll(Duration.ofSeconds(1));
 
 ```
 
-####### 轮询中：commitAsync()
 
-######## 避免阻塞
 
-####### 消费者关闭前：commitSync()
+- **精细化提交** commitAsync(Map<TopicPartition, OffsetAndMetadata>)
 
-######## 确保关闭前保存正确的位移
+  > 问题：如果一次 poll 过来5000条消息，默认要全部消费完后一次提交
+  >
+  > 优化：每消费xx条数据即提交一次位移，增加提交频率
 
-######## 因为这是rebalance前的最后一次提交机会
-
-###### 精细化提交
-
-问题：
-如果一次poll过来5000条消息，默认要全部消费完后一次提交
-
-####### 目的：每消费xx条数据即提交一次位移，增加提交频率
-
-####### commitAsync(Map<TopicPartition, OffsetAndMetadata>)
-
-```
+```java
 Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
 int count = 0;
-……
-while (true) {
 
-  ConsumerRecords<String, String> records = 
-  consumer.poll(Duration.ofSeconds(1));
+while (true) {
+  ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
 
   for (ConsumerRecord<String, String> record: records) {
    // 处理消息
@@ -1263,221 +1139,194 @@ while (true) {
 
    // 记录已处理的 offsets + 
    offsets.put(
-   new TopicPartition(record.topic(), record.partition()),
-   new OffsetAndMetadata(record.offset() + 1);
+     new TopicPartition(record.topic(), record.partition()),
+     new OffsetAndMetadata(record.offset() + 1); // 为什么+1：位移表示要处理的“下一条消息”
   
-  if（count % 100 == 0）
-    // 提交已记录的offset
-    consumer.commitAsync(offsets, null); // 回调处理逻辑是 null
-    count++;
-    }
+   if（count % 100 == 0）{
+      // 提交已记录的offset
+      consumer.commitAsync(offsets, null); // 回调处理逻辑是 null
+      count++;
+   }
 }
 
 ```
 
-######## 为什么+1：位移表示要处理的“下一条消息”
 
-###### 注意
 
-####### 提交之前确保该批消息已被处理结束，否则会丢失消息
 
-##### 问题
 
-###### 消费者重启后，如何获取offset？
+### 位移查看
 
-####### 去 位移主题 里查询？
+**查看消费者组位移**
 
-####### Coordinator 会缓存
-
-#### CommitFailedException
-
-##### 含义
-
-###### 提交位移时发生不可恢复的错误
-
-###### 对于可恢复异常
-
-####### 很多api都是支持自动错误重试
-
-####### 例如commitSync()
-
-##### 原因
-
-###### 消费者组开启rebalance，并将要提交位移的分区分配给了另一个消费者
-
-当超过max.poll.interval.ms配置的时间Kafka server认为kafka consumer掉线了，于是就执行分区再均衡将这个consumer踢出消费者组。但是consumer又不知道服务端把自己给踢出了，下次在执行poll()拉取消息的时候（在poll()拉取消息之前有个自动提交offset的操作），就会触发该问题。 
-
-###### 深层原因：连续两次调用poll的间隔 超过了max.poll.interval.ms
-
-####### 因为触发了重平衡？
-
-###### 冷门原因：Standalone 消费者的groupId与其他消费者组重复
-
-##### 规避
-
-###### 缩短单条消息处理的时间
-
-###### 增大消费一批消息的最大时长
-
-####### 增大 max.poll.interval.ms
-
-###### 减少poll方法一次性返回的消息数量
-
-####### 减小 max.poll.records
-
-###### 多线程消费
-
-#### 消费者组位移管理
-
-##### 查看消费者组位移
-
-查看消费者组提交的位移
-
+```shell
 kafka-console-consumer.sh 
   --bootstrap-server host:port 
   --topic __consumer_offsets 
   --formatter "kafka.coordinator.group.GroupMetadataManager\$OffsetsMessageFormatter" 
   --from-beginning
+```
 
 
-读取位移主题消息
 
+**读取位移主题消息**
+
+```shell
 kafka-console-consumer.sh 
   --bootstrap-server host:port 
   --topic __consumer_offsets 
   --formatter "kafka.coordinator.group.GroupMetadataManager\$GroupMetadataMessageFormatter" 
   --from-beginning
+```
 
 
-###### kafka-console-consumer.sh 
 
-##### 重设消费者组位移
+### 位移重设
 
-###### 重设策略
+**重设策略**
 
-####### 位移维度
+- 位移维度 `consumer.seek()`
 
-######## Earliest
+  - `Earliest` 重新消费所有消息
 
-重新消费所有消息
+  - `Latest` 从最新消息处开始消费
+
+  - `Current` 重设到当前最新提交位移处。
+
+    > 场景：修改了消费者代码，并重启消费者后。
+    >
+    > ```java
+    > consumer.partitionsFor(topic).stream().map(info -> 
+    > 	new TopicPartition(topic, info.partition()))
+    > 	.forEach(tp -> {
+    > 	  long committedOffset = consumer.committed(tp).offset();
+    >     consumer.seek(tp, committedOffset);
+    > });
+    > ```
+
+  - `Specified-Offset` 手动跳过错误消息的处理。
+
+    > ```java
+    > long targetOffset = 1234L; // 指定 offset
+    > 
+    > for (PartitionInfo info : consumer.partitionsFor(topic)) {
+    > 	TopicPartition tp = new TopicPartition(topic, info.partition());
+    > 	consumer.seek(tp, targetOffset);
+    > }
+    > ```
+
+  - `Shift-By-N` 
+
+    > ```java
+    > for (PartitionInfo info : consumer.partitionsFor(topic)) {
+    >   TopicPartition tp = new TopicPartition(topic, info.partition());
+    >   long targetOffset = consumer.committed(tp).offset() + 123L; //SHIFT
+    >   consumer.seek(tp, targetOffset);
+    > }
+    > ```
 
 
-######## Latest
 
-从最新消息处开始消费
+- 时间维度，**根据时间查询 offset** `consumer.offsetsForTimes()`
+  - 按DateTime绝对时间查询位移
 
-
-######## Current
-
-重设到当前最新提交位移处。
-
-场景：修改了消费者代码，并重启消费者后。
-
-consumer.partitionsFor(topic).stream().map(info -> 
-	new TopicPartition(topic, info.partition()))
-	.forEach(tp -> {
-	long committedOffset = consumer.committed(tp).offset();
+    ```java
+    long ts = LocalDateTime.of(2019, 6, 20, 20, 0).toInstant(ZoneOffset.ofHours(8)).toEpochMilli();
+        
+    Map<TopicPartition, Long> timeToSearch = 
+     consumer.partitionsFor(topic).stream().map(info -> 
+    	new TopicPartition(topic, info.partition()))
+    .collect(Collectors.toMap(Function.identity(), tp -> ts));
     
-	consumer.seek(tp, committedOffset);
-});
+    for (Map.Entry<TopicPartition, OffsetAndTimestamp> entry : 
+      consumer.offsetsForTimes(timeToSearch).entrySet()) {
+        consumer.seek(entry.getKey(), entry.getValue().offset());
+    }
+    ```
 
+  - 按Duration 相对时间查询位移
 
-######## Specified-Offset
-
-手动跳过错误消息的处理。
-
-long targetOffset = 1234L;
-
-for (PartitionInfo info : consumer.partitionsFor(topic)) {
-	TopicPartition tp = new TopicPartition(topic, info.partition());
-	consumer.seek(tp, targetOffset);
-}
-
-
-######## Shift-By-N
-
-
-
-for (PartitionInfo info : consumer.partitionsFor(topic)) {
-  TopicPartition tp = new TopicPartition(topic, info.partition());
-
-  long targetOffset = consumer.committed(tp).offset() + 123L; 
-
-  consumer.seek(tp, targetOffset);
-}
-
-
-####### 时间维度
-
-######## DateTime
-
-绝对时间: consumer.offsetsForTimes
-
-long ts = LocalDateTime.of(
-	2019, 6, 20, 20, 0).toInstant(ZoneOffset.ofHours(8)).toEpochMilli();
+    ```java
+    Map<TopicPartition, Long> timeToSearch = consumer.partitionsFor(topic).stream()
+     .map(info -> new TopicPartition(topic, info.partition()))
+     .collect(Collectors.toMap(Function.identity(), tp -> System.currentTimeMillis() - 30 * 1000  * 60));
     
-Map<TopicPartition, Long> timeToSearch = 
- consumer.partitionsFor(topic).stream().map(info -> 
-	new TopicPartition(topic, info.partition()))
-.collect(Collectors.toMap(Function.identity(), tp -> ts));
+    for (Map.Entry<TopicPartition, OffsetAndTimestamp> entry : 
+        consumer.offsetsForTimes(timeToSearch).entrySet()) {
+           consumer.seek(entry.getKey(), entry.getValue().offset());
+    }
+    ```
 
-for (Map.Entry<TopicPartition, OffsetAndTimestamp> entry : 
-  consumer.offsetsForTimes(timeToSearch).entrySet()) {
+    
 
-consumer.seek(entry.getKey(), entry.getValue().offset());
-}
+**重设方式**
 
+- kafka-consumer-groups.sh
 
-######## Duration
+  ```shell
+  bin/kafka-consumer-groups.sh 
+    --bootstrap-server host:port 
+    --group test-group 
+    --reset-offsets 
+    --all-topics 
+  
+    --to-earliest 
+    --to-latest
+    --to-current
+    --to-offset xx
+    --shift-by XX
+    --to-datetime 2019-08-11T20:00:00.000
+    --by-duration PT0H30M0S
+  
+    –execute
+  ```
 
-相对时间 
+  
 
-Map<TopicPartition, Long> timeToSearch = consumer.partitionsFor(topic).stream()
- .map(info -> new TopicPartition(topic, info.partition()))
- .collect(Collectors.toMap(Function.identity(), tp -> System.currentTimeMillis() - 30 * 1000  * 60));
+- API
 
-for (Map.Entry<TopicPartition, OffsetAndTimestamp> entry : 
-         consumer.offsetsForTimes(timeToSearch).entrySet()) {
-         consumer.seek(entry.getKey(), entry.getValue().offset());
-}
+  - seek()
 
+    >  调用时机
+    >
+    > 1. 消费者启动时
+    >
+    > - subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 `consumer.seek(partition, offset)` 
+    > - 其中offset 自己管理，从存储中读取
+    >
+    > 2. onPartitionAssigned()
+    >
+    > - 对每个新分配的 partition，执行`consumer.seek(partition, offset)`
+    > -  其中offset 自己管理，从存储中读取
 
-###### 重设方式
+    ```java
+    void seek(TopicPartition partition, long offset);
+    void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata);
+    ```
 
-####### kafka-consumer-groups.sh
+  -  seekToBeginning() / seekToEnd()
 
-bin/kafka-consumer-groups.sh 
-  --bootstrap-server host:port 
-  --group test-group 
-  --reset-offsets 
-  --all-topics 
+    ```java
+    void seekToBeginning(Collection<TopicPartition> partitions);
+    void seekToEnd(Collection<TopicPartition> partitions);
+    ```
 
-  --to-earliest 
-  --to-latest
-  --to-current
-  --to-offset xx
-  --shift-by XX
-  --to-datetime 2019-08-11T20:00:00.000
-  --by-duration PT0H30M0S
+    
 
-  –execute
-
-
-####### API
+### 位移编码范例
 
 ```java
-
+// 重平衡 RebalanceListener
 class HandleRebalance implements ConsumerRebalanceListener {
 
   public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
-  // Assigned: 找到偏移量
-  for (TopicPartition p : partitions) 
-    consumer.seek(p, getOffsetFromDB(p));
-  
+    // Assigned: 找到偏移量
+    for (TopicPartition p : partitions) 
+      consumer.seek(p, getOffsetFromDB(p));
   }
   
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-  // Revoked: 提交偏移量
+    // Revoked: 提交偏移量
     commitDbTrx();
   }
 
@@ -1495,16 +1344,16 @@ try {
   while (true) {
     // 轮询
     ConsumerRecords<String, String> records =  consumer.poll(100);
-  for (ConsumerRecord record : records) {
-    // 同一事务里：存储记录、offset
-     storeRecordInDB();
-     storeOffsetInDB();
-  }
-  commitDbTrx();
+    for (ConsumerRecord record : records) {
+       // 同一事务里：存储记录、offset
+       storeRecordInDB();
+       storeOffsetInDB();
+    }
+    commitDbTrx();
   
 
-  // 使用异步提交规避阻塞
-  commitAysnc(currOffsets, null);
+    // 使用异步提交规避阻塞
+    commitAysnc(currOffsets, null);
   }
 } catch (WakeupException e) {
   // ignore.
@@ -1522,41 +1371,57 @@ try {
 ```
 
 
-######## seek()
 
-```java
 
-void seek(TopicPartition partition, long offset);
 
-void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata);
+### CommitFailedException
 
-```
+含义
 
-######### 调用时机
+- 提交位移时发生**不可恢复**的错误
 
-########## 1. 消费者启动时
+- 而对于可恢复异常，很多api都是支持自动错误重试，例如commitSync()
 
-########### subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 consumer.seek(partition, offset) 
 
-########### 其中offset 自己管理，从存储中读取
 
-########## 2. onPartitionAssigned()
+**原因**
 
-########### 对每个新分配的 partition，执行consumer.seek(partition, offset)
+- 消费者组开启rebalance，并将要提交位移的分区分配给了另一个消费者
 
-########### 其中offset 自己管理，从存储中读取
+  > 当超过max.poll.interval.ms配置的时间Kafka server认为kafka consumer掉线了，于是就执行分区再均衡将这个consumer踢出消费者组。但是consumer又不知道服务端把自己给踢出了，下次在执行poll()拉取消息的时候（在poll()拉取消息之前有个自动提交offset的操作），就会触发该问题。 
 
-######## seekToBeginning() / seekToEnd()
+- 深层原因：连续两次调用poll的间隔 超过了max.poll.interval.ms
 
-```java
+  > 因为触发了重平衡？
 
-void seekToBeginning(Collection<TopicPartition> partitions);
-  
-void seekToEnd(Collection<TopicPartition> partitions);
+- 冷门原因：Standalone 消费者的groupId与其他消费者组重复
 
-```
 
-## rebalance
+
+**规避**
+
+- 缩短单条消息处理的时间
+
+- 增大消费一批消息的最大时长：增大 `max.poll.interval.ms`
+
+- 减少poll方法一次性返回的消息数量：减小 `max.poll.records`
+
+- 多线程消费
+
+
+
+### 问题
+
+Q: 消费者重启后，如何获取 offset？
+
+-  去 位移主题 里查询？
+- Coordinator 会缓存
+
+
+
+
+
+## 7. Rebalance
 
 ### 触发条件
 
