@@ -2094,7 +2094,7 @@ http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/
 
 
 
-#### **生产者 -幂等性 Idempotence**
+#### 生产者 -幂等性 Idempotence
 
 - 配置：`props.put("enable.idempotence", true)`
 
@@ -2108,7 +2108,7 @@ http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/
 
 
 
-#### **生产者 -事务 Transaction**
+#### 生产者 -事务 Transaction
 
 - 配置：
 
@@ -3206,60 +3206,53 @@ producer = new KafkaProduer<String, String>(p);
 
   
 
+**常用动态配置项**
 
-##### 常用动态配置项
+- log.retention.ms
 
-###### log.retention.ms
+- num.io.threads / num.network.threads
 
-###### num.io.threads / num.network.threads
+- num.replica.fetchers
 
-###### num.replica.fetchers
 
-#### 集群配置参数
 
-##### /config/server.properties
+**集群配置参数**
 
-#### 分区管理
+`/config/server.properties`
 
-##### kafka-preferred-replica-election.sh
 
-###### 触发 prefered replica election，让broker重置首领
 
-##### kafka-reassign-partitions.sh
+**分区管理**
 
-###### 修改副本分配
+- kafka-preferred-replica-election.sh
 
-###### 修改分区的副本因子 replica-factor
+  > 触发 prefered replica election，让broker重置首领
 
-##### kafka-replica-verification.sh
+- kafka-reassign-partitions.sh
 
-###### 验证副本
+  > 修改副本分配
+  >
+  > 修改分区的副本因子 replica-factor
 
-### 运维
+- kafka-replica-verification.sh
 
-#### 管理工具
+  > 验证副本
 
-##### KafkaAdminClient
 
-###### 作用
 
-####### 实现.sh的各种功能
+## || 管理工具
 
-###### 原理
+**KafkaAdminClient**
 
-####### 前端主线程
+> 实现.sh的各种功能
 
-######## 将操作转成对应的请求，发送到后端IO线程队列中
+- 原理
+  - 前端主线程：将操作转成对应的请求，发送到后端IO线程队列中
+  - 后端IO线程：从队列中读取请求，发送到对应的Broker；把结果保存起来，等待前段线程来获取
+    - wait / notify 实现通知机制
+    - kafka-admin-client-thread-xx
 
-####### 后端IO线程
-
-######## 从队列中读取请求，发送到对应的Broker；把结果保存起来，等待前段线程来获取
-
-######### wait / notify 实现通知机制
-
-######## kafka-admin-client-thread-xx
-
-###### 代码
+- 代码
 
 ```java
 Properties props = new Properties();
@@ -3269,1245 +3262,1024 @@ props.put("request.timeout.ms", 600000);
 String groupID = "test-group";
 
 try (AdminClient client = AdminClient.create(props)) {
-
   ListConsumerGroupOffsetsResult result = client.listConsumerGroupOffsets(groupID);
   
-  Map<TopicPartition, OffsetAndMetadata> offsets = 
- result.partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
- 
+  Map<TopicPartition, OffsetAndMetadata> offsets = result.partitionsToOffsetAndMetadata().get(10, TimeUnit.SECONDS);
   System.out.println(offsets);
 }
-
-
 ```
 
-##### MirrorMaker
+**MirrorMaker**
 
-###### 跨集群镜像
+- 跨集群镜像
 
-###### 本质是一个 消费者 + 生产者 程序
+- 本质是一个 消费者 + 生产者 程序
 
-#### 安全
 
-##### 认证机制
 
-###### SSL / TLS
 
-Transport Layer Securit
 
-####### 一般只用来做通信加密；而非认证
+## || 安全
 
-###### SASL
+**认证机制**
 
-####### 用于认证
+- SSL / TLS：Transport Layer Securit
 
-####### 认证机制
+  > 一般只用来做通信加密；而非认证
 
-######## GSSAPI
+- SASL
+  - 用于认证
+  - 认证机制
+    - GSSAPI：基于 Kerberos 认证
+    - PLAIN：简单用户名密码；不能动态增减用户，必须重启Broker
+    - SCRAM：PLAIN进阶；认证信息保存在ZK，可动态修改
+    - OAUTHBEARER：基于OAuth2
+    - Delegation Token
 
-######### 基于 Kerberos 认证
+**授权管理**
 
-######## PLAIN
+- 权限模型
+  - `ACL`：Access Control List
+  - `RBAC`：Role Based Access Control
+  - `ABAC`：Attribute Based Access Control
+  - `PBAC`：Policy Based Access Control
 
-######### 简单用户名密码
+- Kafka ACL
 
-########## 不能动态增减用户，必须重启Broker
+  - 启用：server.properties
 
-######## SCRAM
+    > authorizer.class.name=kafka.security.auth.SimpleAclAuthorizer
 
-######### PLAIN进阶
+  - 设置：kafka-acls
 
-########## 认证信息保存在ZK，可动态修改
+    ```shell
+    $ kafka-acls 
+      --authorizer-properties
+      zookeeper.connect=localhost:2181 
+      --add 
+      --allow-principal User:Alice 
+      --operation All 
+      --topic '*' 
+      --cluster
+    ```
 
-######## OAUTHBEARER
+    
 
-######### 基于OAuth2
+## || 监控
 
-######## Delegation Token
+### **线程**
 
-##### 授权管理
+- 服务端
 
-###### 权限模型
+  - **Log Compaction 线程**
 
-####### ACL
+    > kafka-log-cleaner-thread-*
 
-######## Access Control List
+  - **副本拉取线程**
 
-####### RBAC
+    > ReplicaFetcherThread*
 
-######## Role Based Access Control
+- 客户端
+  - 生产者消息发送线程
 
-####### ABAC
+    > kafka-producer-network-thread-*
 
-######## Attribute Based Access Control
+  - 消费者心跳线程
 
-####### PBAC
+    > kafka-coordinator-heartbeat-thread-*
 
-######## Policy Based Access Control
 
-###### Kafka ACL
 
-####### 启用：server.properties
+### **端到端监控**
 
-authorizer.class.name=kafka.security.auth.SimpleAclAuthorizer
+- Kafka Monitor
 
+  > https://github.com/linkedin/kafka-monitor
+  >
+  > Linkedin
 
-####### 设置：kafka-acls
+- Kafka Manager
 
-$ kafka-acls 
-  --authorizer-properties
-  zookeeper.connect=localhost:2181 
-  --add 
-  --allow-principal User:Alice 
-  --operation All 
-  --topic '*' 
-  --cluster
+  > Yahoo，GUI界面
 
+- Burrow
 
-#### 监控
+  > Linkedin，监控消费进度
 
-##### 线程
+- Kafka Eagle
 
-###### 服务端
+- JMXTrans + InfluxDB + Grafana
 
-####### Log Compaction 线程
 
-######## kafka-log-cleaner-thread-*
 
-####### 副本拉取线程
+### **Broker 指标**
 
-######## ReplicaFetcherThread*
+- **Under-Replicated 非同步分区数**
 
-###### 客户端
+  > MBEAN:
+  > kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions
+  - 概念：作为首领的Broker有多少个分区处于非同步状态；
 
-####### 生产者消息发送线程
+  - **原因1：数量稳定时：某个Broker离线**
 
-######## kafka-producer-network-thread-*
+    > 具体现象：
+    >
+    > - 有问题的Broker不上报metric;
+    > - 其他Broker的under-replicated数目 == 有问题的Broker上的分区数目。
+    >
+    > 排查：此时先执行“preferred replica election” 再排查
 
-####### 消费者心跳线程
+  - **原因2：数量变动时：性能问题**
 
-######## kafka-coordinator-heartbeat-thread-*
+    > 排查：通过 kafka-topics.sh --describe --under-replicated 列出非同步分区
+    >
+    > - Cluster 问题
+    >   - 负载不均衡
+    >     排查：看每个Broker的 分区数量、Leader分区数量、消息速度 是否均衡
+    >     解决：kafka-reassign-partitions.sh --> 自动化：linkedin kafka-assign 
+    >   - 资源耗尽
+    >     排查：关注 all topics bytes in rate 趋势
+    > - Broker问题
+    >   - 硬件问题
+    >   - 进程冲突 - top 命令
+    >   - 本地配置不一致 - 使用配置管理系统：Chef / Puppet
 
-##### 端到端监控
 
-###### Kafka Monitor
 
-https://github.com/linkedin/kafka-monitor
+- **Offline 分区数**
 
-####### Linkedin
+  > MBEAN:
+  > kafka.controller:type=KafkaController,name=OfflinePartitionsCount
+  - 概念：没有首领的分区个数；只在 Controller上会上报此 metric
+  - 原因1：所有相关的broker都挂了
+  - 原因2：ISR 副本未能成为 leader，因为消息数量不匹配 --> ？
 
-###### Kafka Manager
 
-####### Yahoo，GUI界面
 
-###### Burrow
+- **Active controller 数目**
 
-####### Linkedin，监控消费进度
+  > MBEAN:
+  > kafka.controller:type=KafkaController,name=ActiveControllerCount
 
-###### Kafka Eagle
+  - `= 1`：正常
+  - `= 0`：可能zk产生分区
+  - `> 1`：一个本该退出的控制器线程被阻塞了；需要重启brokers
+  - ActiveControllerCount：如果多台broker该值为1，则出现脑裂
 
-###### JMXTrans + InfluxDB + Grafana
+  
 
-##### 指标
+- **Request handler 空闲率**
 
-###### Broker
+  > MBEAN:
+  > kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
 
-####### Under-Replicated 非同步分区数
+  - 含义：请求处理器负责处理客户端请求，包括读写磁盘；空闲率不可太低，< 20% 则潜在问题；
 
-MBEAN:
-kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions
+  - 原因1：集群过小
 
-######## 概念
+  - 原因2：线程池过小，== cpu核数
 
-######### 作为首领的Broker有多少个分区处于非同步状态
+  - 原因3：线程负责了不该做的事，例如老版本会负责消息解压、验证消息、分配偏移量、重新压缩
 
-######## 原因
+    > 0.10 的优化：
+    >
+    > - batch里可以包含相对位移。
+    > - broker则无需再解压、重新压缩；
 
-######### 数量稳定时：某个Broker离线
 
-具体现象：
-- 有问题的Broker不上报metric;
-- 其他Broker的under-replicated数目 == 有问题的Broker上的分区数目。
 
+- **All topics bytes in / out**
 
-########## 排查：此时先执行“preferred replica election” 再排查
+  > MBEAN:
+  > kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec
+  > kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
+  - 含义：消息流入流出速率
+  - bytes in: 据此决定是否该扩展集群
+  - bytes out: 也包含 replica的流量
 
-######### 数量变动时：性能问题
 
-########## 排查：通过 kafka-topics.sh --describe --under-replicated 列出非同步分区
 
-########## Cluster 问题
+- **Partition count**
 
-########### 负载不均衡
+  > MBEAN:
+  > kafka.server:type=ReplicaManger,name=PartitionCount
 
-############ 排查：看每个Broker的 分区数量、Leader分区数量、消息速度 是否均衡
+  - 含义：每个Broker上的分区数目
+  - 如果运行自动创建分区，则需关注此指标
 
-############ 解决：kafka-reassign-partitions.sh
 
-自动化：linkedin kafka-assign
 
-########### 资源耗尽
+- **Leader count**
 
-############ 排查：关注 all topics bytes in rate 趋势
+  > MBEAN:
+  > kafka.server:type=ReplicaManger,name=LeaderCount
 
-########## Broker问题
+  - 含义：每个 Broker 上的 Leader 分区数目
+  - 作用：用于判断集群是否不均衡，可执行 preferred replica election 来重平衡
 
-########### 硬件问题
 
-########### 进程冲突
 
-############ top 命令
+- **Reqeust Metrics**
+  - Total time
+  - request per second
 
-########### 本地配置不一致
 
-############ 使用配置管理系统：Chef / Puppet
 
-####### Offline 分区数
+### Topic 指标
 
-MBEAN:
-kafka.controller:type=KafkaController,name=OfflinePartitionsCount
+- **Bytes in/out rate**
 
-######## 概念
+  > MBEAN:
+  > kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=X
 
-######### 没有首领的分区个数
+  
 
-######### 只在 Controller上会上报此 metric
+- **Failed fetch rate**
 
-######## 原因
+  > MBEAN:
+  > kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestPerSec,topic=XX
 
-######### 所有相关的broker都挂了
 
-######### ISR 副本未能成为 leader，因为消息数量不匹配
 
-########## ？
+- **Fetch request rate**
 
-####### Active controller 数目
+  > MBEAN:
+  > kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestPer,topic=XX
 
-MBEAN:
-kafka.controller:type=KafkaController,name=ActiveControllerCount
 
-######## = 1
 
-######### 正常
+- **Produce request rate**
 
-######## = 0
+  > MBEAN:
+  > kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestPerSec,topic=XX
 
-######### 可能zk产生分区
 
-######## > 1
 
-######### 一个本该退出的控制器线程被阻塞了；需要重启brokers
+### Partition 指标
 
-######## ActiveControllerCount
+- Partition Size
 
-######### 如果多台broker该值为1，则出现脑裂
+  > MBEAN:
+  > kafka.log:type=Log,name=Size,topic=XX,partition=0
 
-####### Request handler 空闲率
+- Log segment count
 
-MBEAN:
-kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
+  > MBEAN:
+  > kafka.log:type=Log,name=NumLogSegments,topic=XX,partition=0
 
-######## 含义
+- Log start/end offset
 
-######### 请求处理器负责处理客户端请求，包括读写磁盘
+  > MBEAN:
+  > kafka.log:type=Log,name=LogStartOff,topic=XX,partition=0
 
-######### 空闲率不可太低，< 20% 则潜在问题
 
-######## 原因
 
-######### 集群过小
+- ISRShrink / ISRExpand
+  - 副本频繁进出ISR --> 什么原因？
 
-######### 线程池过小
 
-########## == cpu核数
 
-######### 线程负责了不该做的事
+### Produer 指标
 
-########## 例如老版本会负责消息解压、验证消息、分配偏移量、重新压缩
+> MBEAN:
+> kafka.producer:type=producer-metrics,client-id=CLIENT
 
-0.10 的优化：
-- batch里可以包含相对位移。
-- broker则无需再解压、重新压缩；
 
-####### All topics bytes in / out
 
-MBEAN:
-kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec
+**错误相关**
 
-kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
+- **record-error-rate**
 
-######## 含义
+  > 经过重试仍然失败，表明严重错误
 
-######### 消息流入流出速率
+- **record-retry-rate**
 
-######### bytes in: 据此决定是否该扩展集群
 
-######### bytes out: 也包含 replica的流量
 
-####### Partition count
+**性能相关**
 
-MBEAN:
-kafka.server:type=ReplicaManger,name=PartitionCount
+- request-latency-avg
+- record-queue-time-avg
 
-######## 含义
 
-######### 每个Broker上的分区数目
 
-######### 如果运行自动创建分区，则需关注此指标
+**流量相关**
 
-####### Leader count
+- outgoing-byte-rate - 每秒消息大小
+- record-send-rate - 每秒生产的消息数目
+- request-rate - 每秒发送的请求数目；= N * batch?
 
-MBEAN:
-kafka.server:type=ReplicaManger,name=LeaderCount
 
-######## 含义
 
-######### 每个Broker上的Leader分区数目
+**大小相关**
 
-######### 用于判断集群是否不均衡
+- request-size-avg
+- batch-size-avg - 据此调整 batch设置
+- record-size-avg - `= msg`
+- record-per-request-avg：关联`max.partition.bytes` / `linger.ms`
 
-########## 执行 preferred replica election 来重平衡
 
-####### Reqeust Metrics
 
-######## Total time
+**限流**
 
-######## request per second
+- produce-throttle-time-avg
 
-###### Topic
+  > MBEAN:
+  > kafka.producer:type=producer-metrics,client-id=CLIENT, attribute produce-throttle-time-avg
 
-####### Bytes in/out rate
 
-MBEAN:
-kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=X
 
-####### Failed fetch rate
+**Per-Broker**
 
-MBEAN:
-kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestPerSec,topic=XX
-
-####### Fetch request rate
-
-MBEAN:
-kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestPer,topic=XX
-
-####### Produce request rate
-
-MBEAN:
-kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestPerSec,topic=XX
-
-###### Partition
-
-####### Partition Size
-
-MBEAN:
-kafka.log:type=Log,name=Size,topic=XX,partition=0
-
-####### Log segment count
-
-MBEAN:
-kafka.log:type=Log,name=NumLogSegments,topic=XX,partition=0
-
-####### Log start/end offset
-
-MBEAN:
-kafka.log:type=Log,name=LogStartOff,topic=XX,partition=0
-
-####### ISRShrink / ISRExpand
-
-######## 副本频繁进出ISR
-
-什么原因？
-
-
-###### 生产者
-
-####### Overall
-
-MBEAN:
-kafka.producer:type=producer-metrics,client-id=CLIENT
-
-######## 错误相关
-
-######### record-error-rate
-
-########## 经过重试仍然失败，表明严重错误
-
-######### record-retry-rate
-
-######## 性能相关
-
-######### request-latency-avg
-
-######### record-queue-time-avg
-
-######## 流量相关
-
-######### outgoing-byte-rate
-
-########## 每秒消息大小
-
-######### record-send-rate
-
-########## 每秒生产的消息数目
-
-######### request-rate
-
-########## 每秒发送的请求数目
-
-########### = N * batch?
-
-######## 大小相关
-
-######### request-size-avg
-
-######### batch-size-avg
-
-########## 据此调整 batch设置
-
-######### record-size-avg
-
-########## = msg
-
-######### record-per-request-avg
-
-########## 关联 max.partition.bytes / linger.ms
-
-######## 限流
-
-######### produce-throttle-time-avg
-
-MBEAN:
-kafka.producer:type=producer-metrics,client-id=CLIENT, attribute produce-throttle-time-avg
-
-####### Per-Broker
-
-MBEAN:
+> MBEAN:
 kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKERID
 
-####### Per-Topic
 
-MBEAN:
-kafka.producer:type=producer-topic-metrics,topic=TOPICNAME
 
-######## 适用于 MirrorMaker 
+**Per-Topic** (适用于 MirrorMaker )
 
-###### 消费者
+> MBEAN:
+> kafka.producer:type=producer-topic-metrics,topic=TOPICNAME
 
-####### Overall
 
-MBEAN:
-kafka.consumer:type=cons-metrics,client-id=CLIENT
 
-####### Fetch Manager
+### Consumer 指标
 
-MBEAN:
-kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT
+> MBEAN:
+> kafka.consumer:type=cons-metrics,client-id=CLIENT
 
-######## 性能
 
-######### fetch-latency-avg
 
-########## 关联 fetch.min.bytes / fetch.max.wait.ms
+**Fetch Manager**
 
-########## 对于慢主题，该指标会时慢时快
+​	> MBEAN: kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT
 
-######## 流量
 
-######### bytes-consumed-rate
 
-######### records-consumed-rate
+**性能**
 
-######### fetch-rate
+- **fetch-latency-avg**
+  - 关联 `fetch.min.bytes` / `fetch.max.wait.ms`
+  - 对于慢主题，该指标会时慢时快
 
-######## 大小
 
-######### fetch-size-avg
 
-######### records-per-request-avg
+**流量**
 
-######### 注意没有类似 record-size-avg，消费者并不能知道每条消息的大小？
+- **bytes-consumed-rate**
+- **records-consumed-rate**
 
-######## 限流
+- **fetch-rate**
 
-######### fetch-throttle-time-avg
 
-MBEAN:
-kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT, attribute fetch-throttle-time-avg
 
-######## Lag
+**大小**
 
-######### records-lag-max
+- **fetch-size-avg**
+- **records-per-request-avg**
+- 注意没有类似 record-size-avg，消费者并不能知道每条消息的大小？
 
-########## 只考虑lag最大的那个分区
 
-########## consumer 挂了就监控不到lag了
 
-######### records-lag
+**限流**
 
-######### 外部监控：Burrow
+- **fetch-throttle-time-avg**
 
-https://engineering.linkedin.com/apache-kafka/burrow-kafka-consumer-monitoring-reinvented
+  > MBEAN:
+  > kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT, attribute fetch-throttle-time-avg
 
-####### Per-Topic
 
-MBEAN:
-kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT,topic=XX
 
-######## 如果消费者对应多个主题，则可用
+**Lag**
 
-####### Per-Broker
+- **records-lag-max**
+  - 只考虑lag最大的那个分区
+  - consumer 挂了就监控不到 lag 了
 
-MBEAN:
-kafka.consumer:type=consumer-node-metrics,client-id=CLIENT,node-id=XX
+- **records-lag**
 
-####### Coordinator
+- **外部监控：Burrow**
+  https://engineering.linkedin.com/apache-kafka/burrow-kafka-consumer-monitoring-reinvented
 
-MBEAN:
+
+
+**Per-Topic**
+
+> MBEAN:
+> kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT,topic=XX
+
+如果消费者对应多个主题，则可用
+
+
+
+**Per-Broker**
+
+> MBEAN:
+> kafka.consumer:type=consumer-node-metrics,client-id=CLIENT,node-id=XX
+
+
+
+**Coordinator**
+
+> MBEAN:
 kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
 
-######## sync-time-avg / sync-rate
+- **sync-time-avg / sync-rate**
+- **commit-latency-avg**
+- **assigned-partitions**
 
-######## commit-latency-avg
 
-######## assigned-partitions
 
-### 问题排查
 
-#### 主题删除失败
 
-##### 原因
+# | Streaming
 
-###### 副本所在Broker宕机
+## || Connect
 
-###### 待删除主题部分分区依然在执行迁移过程
+**概念**
 
-##### 解决
+- 通过 `connector + 配置` 实现数据移动：Kafka <--> 其他存储
 
-###### 手动删除zk /admin/delete_topics/xx
+- 无需编码实现 Producer / Consumer
 
-###### 手动删除该主题在磁盘上的分区目录
+**组件**
 
-###### 执行zk rmr /controller，触发controller重选举
+- **Worker Processes**
 
-#### __consumer_offsets 磁盘占用大
+  > 职责：
+  >
+  > - 是 Connector / Task 的容器
+  > - 处理 REST API、配置管理、可靠性、高可用、负载均衡
+  > - offset 自动提交
+  >   - Source Connector：worker 包含逻辑partition (数据表)、逻辑offset (主键)，将其发送到Kafka broker；
+  >   - Sink Connector：写入数据后，提交 offset；
+  >
+  > - 重试 （task 报错时）
 
-##### 原因
+  - Connect 集群
+  - Worker 重启时，会 rebalance 重新分配 connectors / tasks
 
-###### kafka-log-cleaner-thread 线程挂掉，无法清理此内部主题
 
-###### 用 jstack 确认
 
-##### 解决
+- **Connector Plugins**
 
-###### 重启broker
+  > 职责：
+  >
+  > - 决定需要运行多少个 Task：并行度 = `min { max.tasks, 表的个数 }`
+  > - 按照任务来 拆分数据复制
+  > - 从worker获取任务的配置，并启动任务
+  - 负责移动数据
+  - 可通过 REST API 配置和管理 connector
 
-## 高级应用
 
-### Connect
 
-#### 概念
+- **Tasks**
 
-##### 通过“connector + 配置”实现数据移动：Kafka <--> 其他存储
+  > 职责：负责实际的数据读取、写入
+  - Connector 执行 tasks
+    - Source connector tasks：读取数据，提供Connect数据对象给 worker processes；
+    - Sink connector tasks：从worker processes获取 connect数据对象，写入目标系统
 
-##### 无需编码实现 Producer / Consumer
 
-#### 组件
 
-##### Worker Processes
+- **Convertors**
 
-###### Connect 集群
+  > 职责：支持将数据对象存储为不同的格式：JSON / Avro / string
 
-###### Worker 重启时，会 rebalance 重新分配 connectors / tasks
 
-###### 职责
 
-####### 是 Connector / Task 的容器
+**场景**
 
-####### 处理 REST API、配置管理、可靠性、高可用、负载均衡
+- 如果可以修改应用代码，则用传统API；否则用 Connect
 
-####### offset 自动提交
+- 关注点分离：Connect 内置处理 REST API、配置管理、可靠性、高可用、负载均衡
 
-######## Source Connector
+- 类比
+  - Flume
+  - Logstash
+  - Fluentd
 
-######### worker 包含逻辑partition (数据表)、逻辑offset (主键)，将其发送到Kafka broker
 
-######## Sink Connector
 
-######### 写入数据后，提交 offset
+**配置**
 
-####### 重试 （task 报错时）
+1. 安装 connector plugin
 
-##### Connector Plugins
+   > github --> mvn install --> 拷贝到 /libs
 
-###### 负责移动数据
+2. 启动 Connect Workers 
 
-###### 可通过 REST API 配置和管理 connector
+   > connect-distributed.sh config
 
-###### 职责
+3. 配置 connector plugin 
 
-####### 决定需要运行多少个 Task：并行度
+   > POST host/connectors 
+   >
+   > 查可选输入参数 GET host/connector-plugins/JdbcSourceConnector/config/validate 
+   >
 
-######## = min { max.tasks, 表的个数 }
 
-####### 按照任务来 拆分数据复制
 
-####### 从worker获取任务的配置，并启动任务
+**类别**
 
-##### Tasks
+- Source connector
 
-###### Connector 执行 tasks
+- Sink connector
 
-####### Source connector tasks
 
-######## 读取数据，提供Connect数据对象给 worker processes
 
-####### Sink connector tasks
+## || MirrorMaker
 
-######## 从worker processes获取 connect数据对象，写入目标系统
+**概念**
 
-###### 职责
+- 在不同数据中心之间同步数据
 
-####### 负责实际的数据读取、写入
+- 原则
+  - 一个数据中心至少一个kafka集群
+  - exactly-once 复制
+  - 尽量从远程数据中心 消费数据，而不往远程数据中心 生产数据
 
-##### Convertors
+  
 
-###### 支持将数据对象存储为不同的格式：JSON / Avro / string
+**架构**
 
-#### 场景
+- **Hub-Spokes 架构**
 
-##### 如果可以修改应用代码，则用传统API；否则用 Connect
+  - 一个中央集群，从其他分支集群拉取数据、聚合；简化：两个集群，一个 Leader， 一个 Follower
 
-##### 关注点分离
+  - 场景：各分支集群数据集完全隔离、没有依赖；例如银行的各个分行
 
-###### Connect 内置处理 REST API、配置管理、可靠性、高可用、负载均衡
+  - 优点：简单，易于部署、配置、监控
 
-##### 类比
+    > 生产者只关心本地集群
+    >
+    > Replication 是单向的
 
-###### Flume
+  - 缺点：不可跨区读取
 
-###### Logstash
+  
 
-###### Fluentd
+- **Active-Active 架构**
+  - 各数据中心 共享部分或全部数据；互相复制
 
-#### 配置
+  - 优点
 
-##### 1. 安装 connector plugin
+    - 便于就近服务
+    - 数据冗余、可靠
 
-###### github --> mvn install --> 拷贝到 /libs
+  - 缺点
 
-##### 2. 启动 Connect Workers
+    - 数据异步读写，需要避免数据冲突
 
-###### connect-distributed.sh config
+      > 同步延迟问题： stick-session
+      >
+      >  数据冲突问题：多个集群同时写入同一个数据集
 
-##### 3. 配置 connector plugin
+    - Mirroring Process 过多
 
-###### 命令
+      > 要避免“来回复制”；一般可引入“逻辑主题” / “namespace”：
+      >
+      > - 常规主题：user
+      > - 逻辑主题：clusterA-user, clusterB-user
 
-####### POST host/connectors 
 
-####### 查可选输入参数
 
-######## GET host/connector-plugins/JdbcSourceConnector/config/validate 
+- **Active-Standby 架构**
+  - 一个数据中心专门用于 Inactive / Cold 复制，而不对外提供服务
+  - 优点：简单，无需考虑冲突
 
-###### 类别
+  - 缺点
 
-####### Source connector
+    - 数据丢失
 
-####### Sink connector
+    - 资源浪费
 
-### MirrorMaker
+      > 优化：
+      >
+      > - DR 集群用较小规模 --> 有风险！
+      >
+      > - DR 集群服务部分只读请求
 
-#### 概念
+    -  Failover 困难
 
-##### 在不同数据中心之间同步数据
+      - 数据丢失、不一致
 
-##### 原则
+      - Failover 之后的“起始偏移量”
 
-###### 一个数据中心至少一个kafka集群
+        > 1. Auto offset reset: 
+        >    earliset / latest
+        >
+        > 2. Replicate offset topic: 
+        >    对 `__consumer_offsets` 主题进行镜像；
+        >
+        >
+        > 3. Time-based failover:
+        >    每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
+        >
+        > 4. External offset mapping:
+        >    用外部存储保存两个数据中心的偏移量对应关系。
 
-###### exactly-once 复制
 
-###### 尽量从远程数据中心 消费数据，而不往远程数据中心 生产数据
 
-#### 架构
+- **Stretch Clusters**
+  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
+  - 优点
+    - 同步复制
+    - 没有资源浪费
 
-##### Hub-Spokes 架构
 
-###### 概念
 
-####### 一个中央集群，从其他分支集群拉取数据、聚合
+**原理**
 
-######## 简化：两个集群，一个 Leader， 一个 Follower
+一个 Producer + 多个 Consumer
 
-####### 场景：各分支集群数据集完全隔离、没有依赖
+- 一个 Producer
+  - 用于写入 Target Cluster
 
-######## 例如银行的各个分行
+- 多个 Consumer
+  - 用于读取 Source Cluster
+  - 所有consumer属于同一个消费者组
+  - 个数可配：`num.streams`
+  - 每隔 60s 提交 offset 到 Source Cluster `auto.commit.enable = false`
 
-###### 优点
 
-####### 简单：易于部署、配置、监控
 
-######## 生产者只关心本地集群
+**注意**
 
-######## Replication 是单向的
+- **MirrorMaker 部署位置**
+  -  一般部署在 Target Cluster：远程消费” 比 “远程生产” 更安全，否则可能丢失数据
 
-###### 缺点
+    > 如果消费者断链，只是不能读取，消息还会保存在Broker；而如果生产者断链，则消息可能丢失
 
-####### 不可跨区读取
+  - 如果集群间是加密传输，则可部署在 Source Cluster
 
-##### Active-Active 架构
+    > 消费加密传输更影响性能
+    >
+    > 此时注意 acks = all，减少数据丢失
 
-###### 概念
+- **部署多个 MirrorMaker 实例，可以提高吞吐量**
+  - 注意要是同一个消费者组
 
-####### 各数据中心 共享部分或全部数据
+- **建议提前创建好主题，否则会按照默认配置自动创建主题**
 
-####### 互相复制
 
-###### 优点
 
-####### 便于就近服务
+**问题**
 
-####### 数据冗余、可靠
+- **Rebalance 期间会停止消费**
+  - whitelist 正则匹配，分区变化 会导致 Rebalance
 
-###### 缺点
+  - MirrorMaker 实例增删 会导致Rebalance
 
-####### 数据异步读写，需要避免数据冲突
+  - 参考 Uber uReplicator
 
-######## 同步延迟问题
+    > https://eng.uber.com/ureplicator-apache-kafka-replicator/
+    >
+    > 引入 Apache Helix 提供分片管理
+    >
+    > 引入自定义 Consumer，接受Helix分配的分区
 
-######### stick-session
 
-######## 数据冲突问题：多个集群同时写入同一个数据集
 
-####### Mirroring Process 过多
+- **配置信息如何保证一致**
 
-######## 要避免“来回复制”
+  > Confluent's Replicator
+  > https://www.confluent.io/product/confluent-platform/global-resilience/
 
-一般可引入“逻辑主题” / “namespace”：
-- 常规主题：user
-- 逻辑主题：clusterA-user, clusterB-user
 
-##### Active-Standby 架构
 
-###### 概念
-
-####### 一个数据中心专门用于 Inactive / Cold 复制，而不对外提供服务
-
-###### 优点
-
-####### 简单；无需考虑冲突
-
-###### 缺点
-
-####### 数据丢失
-
-####### 资源浪费
-
-######## 优化
-
-######### DR 集群用较小规模 --> 有风险！
-
-DR = Disaster Recov
-
-######### DR 集群服务部分只读请求
-
-####### Failover 困难
-
-######## 数据丢失、不一致
-
-######## Failover 之后的“起始偏移量”
-
-1. Auto offset reset: 
-earliset / latest
-
-2. Replicate offset topic: 
-对 `__consumer_offsets` 主题进行镜像；
-
-
-3. Time-based failover:
-每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
-
-4. External offset mapping:
-用外部存储保存两个数据中心的偏移量对应关系。
-
-##### Stretch Clusters
-
-###### 概念
-
-####### 跨数据中心，部署单一的 Kafka 集群
-
-######## 通过 Rack
-
-###### 优点
-
-####### 同步复制
-
-####### 没有资源浪费
-
-#### 原理
-
-##### 组件
-
-###### 一个 Producer
-
-####### 用于写入 Target Cluster
-
-###### 多个 Consumer
-
-####### 用于读取 Source Cluster
-
-####### 所有consumer属于同一个消费者组
-
-####### 个数可配
-
-######## num.streams
-
-####### 每隔 60s 提交 offset 到 Source Cluster
-
-######## auto.commit.enable = false
-
-##### 注意
-
-###### MirrorMaker 部署位置
-
-####### 一般部署在 Target Cluster
-
-######## “远程消费” 比 “远程生产” 更安全，否则可能丢失数据
-
-如果消费者断链，只是不能读取，消息还会保存在Broker;
-而如果生产者断链，则消息可能丢失
-
-####### 如果集群间是加密传输，则可部署在 Source Cluster
-
-######## 消费加密传输更影响性能
-
-######## 此时注意 acks = all，减少数据丢失
-
-###### 部署多个 MirrorMaker 实例，可以提高吞吐量
-
-####### 注意要是同一个消费者组
-
-###### 建议提前创建好主题，否则会按照默认配置自动创建主题
-
-#### 问题
-
-##### Rebalance 期间会停止消费
-
-###### whitelist 正则匹配，分区变化 会导致 Rebalance
-
-###### MirrorMaker 实例增删 会导致Rebalance
-
-###### 参考 Uber uReplicator
-
-https://eng.uber.com/ureplicator-apache-kafka-replicator/
-
-####### 引入 Apache Helix 提供分片管理
-
-####### 引入自定义 Consumer，接受Helix分配的分区
-
-##### 配置信息如何保证一致
-
-###### Confluent's Replicator
-
-https://www.confluent.io/product/confluent-platform/global-resilience/
-
-### Stream
-
-#### 概念
+## || Stream
 
 持续地从一个无边界的数据集读取数据，进行处理、生成结果，那么就是流式处理。
 
-##### 名词
+**名词** 
 
-###### 时间 Time
+- **时间 Time**
+  - 事件时间 Event time
 
-####### 分类
+    > 事件的发生时间、记录的创建时间
 
-######## 事件时间 Event time
+  - 日志追加时间 Log append time
 
-######### 事件的发生时间、记录的创建时间
+    > 事件达到Broker的时间
 
-######## 日志追加时间 Log append time
+  - 处理时间 Processing time
 
-######### 事件达到Broker的时间
+    > stream-processing应用收到并处理事件的时间
 
-######## 处理时间 Processing time
 
-######### stream-processing应用收到并处理事件的时间
 
-###### 状态 State
+- **状态 State**
+  存储于事件与事件之间的信息称为状态
 
-####### 存储于事件与事件之间的信息称为状态
+  - 本地状态、内部状态
 
-####### 分类
+    > 存储在应用实例内存中
 
-######## 本地状态、内部状态
+  - 外部状态
 
-######### 存储在应用实例内存中
+    > 存储在外部数据存储中，例如Cassandra
 
-######## 外部状态
 
-######### 存储在外部数据存储中，例如Cassandra
 
-###### 流 vs. 表：流表二元性
+- **流 vs. 表**：流表二元性
+  - 流包含修改历史（ChangeLog），而表是一个快照（Snapshot）
 
-####### 流包含修改历史（ChangeLog），而表是一个快照（Snapshot）
+  - 表 --> 流
 
-####### 表 --> 流
+    > CDC: Change Data Capture
 
-######## CDC: Change Data Capture
+  - 流 --> 表
 
-####### 流 --> 表
+    > Materializing：回放stream中的所有变化
 
-######## Materializing
 
-回放stream中的所有biang
 
-###### 时间窗口 Time Windows
+- **时间窗口 Time Windows**
+  - 窗口大小
 
-####### 窗口大小
+  - 移动间隔 Advance Interval
 
-####### 移动间隔 Advance Interval
+    - 滚动窗口 Tumbling Window
 
-######## 滚动窗口 Tumbling Window
+      > 当移动间隔 == 窗口大小
 
-######### 当移动间隔 == 窗口大小
+    - 滑动窗口 Sliding Window
 
-######## 滑动窗口 Sliding Window
+      > 当窗口随着每条记录移动
 
-######### 当窗口随着每条记录移动
+  - 多久之后禁止更新？
 
-####### 多久之后禁止更新？
 
-##### 特点
 
-###### 无界
+**特点**
 
-###### 有序
+- 无界
+- 有序
+- 数据记录不可变
+- 可重播
 
-###### 数据记录不可变
 
-###### 可重播
 
-#### 设计模式
+**设计模式**
 
-##### 单个事件处理 
-Single-Event Processing
+- **单个事件处理 Single-Event Processing**
 
-https://github.com/gwenshap/kafka-streams-wordcount/blob/master/src/main/java/com/shapira/examples/streams/wordcount/WordCountExample.java
+  >https://github.com/gwenshap/kafka-streams-wordcount/blob/master/src/main/java/com/shapira/examples/streams/wordcount/WordCountExample.java
+  - 又称 Map / Filter 模式：转换、过滤
+   - 独立地处理单个事件
+   - 无需维护内部状态，易于恢复
+   - 例子
+      - 从流中读取日志消息，将ERROR写入一个高优先级流，其他日志写入低优先级流
+      - 从流中读取JSON，转成Avro
 
-###### 又称 Map / Filter 模式：转换、过滤
 
-####### 独立地处理单个事件
 
-####### 无需维护内部状态，易于恢复
+- **使用本地状态 Processing with Local State**
 
-###### 例子
+  > https://github.com/gwenshap/kafka-streams-stockstats/blob/master/src/main/java/com/shapira/examples/streams/stockstats/StockStatsExample.java
+  - 当需要“group by 聚合”数据时，需要维护状态
 
-####### 从流中读取日志消息，将ERROR写入一个高优先级流，其他日志写入低优先级流
+  - 例子
 
-####### 从流中读取JSON，转成Avro
+    - 每个股票的一日均价
 
-##### 使用本地状态 
-Processing with Local State
+  - 注意
 
-https://github.com/gwenshap/kafka-streams-stockstats/blob/master/src/main/java/com/shapira/examples/streams/stockstats/StockStatsExample.java
+    - 内存使用
 
-###### 当需要“group by 聚合”数据时，需要维护状态
+    - 持久化
 
-###### 例子
+      > RocksDB：同时存入磁盘
+      >
+      > Kafka Streaming: 将状态同时发送到一个主题，通过Log Compaction保证容量
 
-####### 每个股票的一日均价
+    - 重平衡：重平衡后的新consumer需要能读取到最新的状态
 
-###### 注意
 
-####### 内存使用
 
-####### 持久化
+- **多阶段处理 / 重分区 Multiphase Processing / Repartitioning**
+  - “高级聚合”需要同时使用多个partition的数据，则需要阶段处理
 
-######## RocksDB：同时存入磁盘
+    - 阶段一：聚合单个分区
+    -  阶段二：聚合所有分区的结果
 
-######## Kafka Streaming: 将状态同时发送到一个主题，通过Log Compaction保证容量
+  - 例子
 
-####### 重平衡
+    - 当日股票市场的 top 10 股票
 
-######## 重平衡后的新consumer需要能读取到最新的状态
+      > 1. 对每只股票计算当日收益，写入单一分区
+      > 2. 使用单一程序 处理此单一分区
 
-##### 多阶段处理 / 重分区
-Multiphase Processing / Repartitioning
+    - 类似 MapReduce
 
-###### “高级聚合”需要同时使用多个partition的数据，则需要阶段处理
 
-####### 阶段一：聚合单个分区
 
-####### 阶段二：聚合所有分区的结果
+- **使用外部查找: 流与表连接 Processing with External Lookup: Stream-Table Join**
 
-###### 例子
+  > https://github.com/gwenshap/kafka-clickstream-enrich/blob/master/src/main/java/com/shapira/examples/streams/clickstreamenrich/ClickstreamEnrichment.java
+  - 读取外部Table数据进行 Enrich --> CDC 更新本地 Cache
+  - 例子
+    - 使用数据库存储的规则，校验交易
+    - 将用户点击流 关联到用户信息表 --> 生成 Enriched clicks topic
 
-####### 当日股票市场的 top 10 股票
 
-######## 1. 对每只股票计算当日收益，写入单一分区
 
-######## 2. 使用单一程序 处理此单一分区
+- **流与流连接 Streaming Join** 
 
-####### 类似 MapReduce
+  > https://github.com/gwenshap/kafka-clickstream-enrich/blob/master/src/main/java/com/shapira/examples/streams/clickstreamenrich/ClickstreamEnrichment.java
+  - 基于同一个时间窗口、同一个key
+    - 对比 Stream-Table 连接：table只用考虑当前数据，而stream需要连接所有相关的历史变更
+    - 需要保证按key分区，不同主题的同一个分区号被分配到相同的任务
+  - 例子
+    - 流1：搜索事件流；流2：搜索结果点击流
 
-##### 使用外部查找: 流与表连接
-Processing with External Lookup: Stream-Table Join
 
-https://github.com/gwenshap/kafka-clickstream-enrich/blob/master/src/main/java/com/shapira/examples/streams/clickstreamenrich/ClickstreamEnrichment.java
 
-###### 读取外部Table数据进行 Enrich --> CDC 更新本地 Cache
+- **乱序事件 Out-of-Sequence Events**
+  - 乱序很常见，尤其对IoT事件
 
-###### 例子
+  - 需要处理的场景
+    - 识别乱序：检查Event Time
+    - 决定是reconcile还是忽略：定一个时间阈值
+    - Reconcile能力
+    - 支持更新结果
 
-####### 使用数据库存储的规则，校验交易
+  
 
-####### 将用户点击流 关联到用户信息表 --> 生成 Enriched clicks topic
+- **重新处理 Reprocessing**
+  - 两个变种
+    - 对流式处理应用进行了改进，生成新的结果、对比、切换；更安全，更好回退
+    - 对老的流式处理应用进行修复，重新计算结果
 
-##### 流与流连接
-Streaming Join
 
-https://github.com/gwenshap/kafka-clickstream-enrich/blob/master/src/main/java/com/shapira/examples/streams/clickstreamenrich/ClickstreamEnrichment.java
 
-###### 基于同一个时间窗口、同一个key
+**架构**
 
-####### 对比 Stream-Table 连接：table只用考虑当前数据，而stream需要连接所有相关的历史变更
+- **拓扑 Topology**
+  - 又称 DAG，定义了一系列操作
+  - Processors 操作算子
+    - 操作类型：filter, map, aggregate
+    - 种类
+      - Source Processors
+      - Sink Processors
 
-####### 需要保证按key分区，不同主题的同一个分区号被分配到相同的任务
 
-###### 例子
 
-####### 流1：搜索事件流；流2：搜索结果点击流
+- **Scaling**
+  - 手段
+    - 同一实例内可以开启多个执行线程
+    - 可以启动多个实例
+  - Tasks
+    - 将拓扑分为多个task，以便并行执行：每个 Task 独立运行
+    - Task 数目：取决于Streams引擎、分区数
 
-##### 乱序事件
-Out-of-Sequence Events
 
-###### 乱序很常见，尤其对IoT事件
 
-###### 需要处理的场景
+- **Failover**
 
-####### 识别乱序
+  - 本地状态存储在kafka
+  - 任务失败时，通过消费者协调机制，保证高可用
 
-######## 检查Event Time
+  
 
-####### 决定是reconcile还是忽略
+- **精确一次语义**
 
-######## 定一个时间阈值
+  > Kafka Streams 在底层大量使用 Kafka 事务机制和幂等性 Producer 来实现多分区的原子性写入，又因为它只能读写 Kafka，因此 Kafka Streams 很容易地就实现了端到端的 EOS。
+  - Kafka 事务机制
+  - 幂等性 Producer
 
-####### Reconcile能力
 
-####### 支持更新结果
 
-##### 重新处理
-Reprocessing
 
-###### 两个变种
 
-####### 对流式处理应用进行了改进，生成新的结果、对比、切换
+# | 源码
 
-######## 更安全，更好回退
+|| Consumer
 
-####### 对老的流式处理应用进行修复，重新计算结果
+**变量**
 
-#### 架构
+- **SubscriptionState**
+  - 维护订阅主题、分区的消费位置
+  - 消费者订阅时，传入 topic list，存于此处
 
-##### 拓扑 Topology
+- **ConsumerMetadata**
+  - 维护Broker节点、主题和分区在节点上的分布
+  - 维护Coordinator 给消费者分配的分区信息
 
-###### 又称 DAG，定义了一系列操作
+- **subscribe(topic list): 订阅**
 
-###### Processors 操作算子
-
-####### 操作类型
-
-######## filter, map, aggregate
-
-####### 种类
-
-######## Source Processors
-
-######## Sink Processors
-
-##### Scaling
-
-###### 手段
-
-####### 同一实例内可以开启多个执行线程
-
-####### 可以启动多个实例
-
-###### Tasks
-
-####### 将拓扑分为多个task，以便并行执行
-
-######## 每个 Task 独立运行
-
-####### Task 数目
-
-######## 取决于Streams引擎、分区数
-
-##### Failover
-
-###### 本地状态存储在kafka
-
-###### 任务失败时，通过消费者协调机制，保证高可用
-
-##### 精确一次语义
-
-Kafka Streams 在底层大量使用 Kafka 事务机制和幂等性 Producer 来实现多分区的原子性写入，又因为它只能读写 Kafka，因此 Kafka Streams 很容易地就实现了端到端的 EOS。
-
-###### Kafka 事务机制
-
-###### 幂等性 Producer
-
-
-
-
-
-# DR
-
-
-
-
-
-
-
-## 文档
-
-### 参考
-
-#### 论文
-
-https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
-
-
-https://www.kancloud.cn/kancloud/log-real-time-datas-unifying/58708
-
-
-#### doc
-
-http://kafka.apache.org/documentation/#design
-
-#### acks vs. min.insync.replicas
-
-https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
-
-#### improvement proposal
-
-https://cwiki.apache.org/confluence/display/KAFKA/Kafka+Improvement+Proposals
-
-### 源码
-
-#### Consumer
-
-##### 变量
-
-###### SubscriptionState
-
-####### 维护订阅主题、分区的消费位置
-
-####### 消费者订阅时，传入 topic list，存于此处
-
-###### ConsumerMetadata
-
-####### 维护Broker节点、主题和分区在节点上的分布
-
-####### 维护Coordinator 给消费者分配的分区信息
-
-##### subscribe(topic list): 订阅
-
-```
+```java
 public void subscribe(Collection<String> topics, ConsumerRebalanceListener listener) {
+  //保证只能被单线程调用
   acquireAndEnsureOpen();
-   ry {
-      // 省略部分代码
+  try {
+      // 存储主题列表
+      subscriptions.subscribe(new HashSet<>(topics), listener);
 
-      // 重置订阅状态
-      this.subscriptions.subscribe(new HashSet<>(topics), listener);
-
-      // 更新元数据
+      //更新元数据
+      // 只是更新标志位 needUpdate = true
+      // 在poll() 之前会实际去更新元数据
       metadata.setTopics(subscriptions.groupSubscription());
   } finally {
       release();
   }
 }
-
 ```
 
-###### aquireAndEnsureOpen()
-
-####### 保证只能被单线程调用
-
-###### subscriptions.subscribe()
-
-####### 存储主题列表
-
-###### metadata.setTopics()
-
-```
-public synchronized int requestUpdate() {
-  this.needUpdate = true;
-  return this.updateVersion;
-}
-```
-
-####### 只是更新标志位 needUpdate = true
-
-####### 在poll() 之前会实际去更新元数据
-
-##### poll(): 拉取消息
-
-###### updateAssignmentMetadataIfNeeded
 
 
-> coordinator.poll()
-> > ConsumerNetworkClient.ensureFreshMetadata()
-> >
-> > > ConsumerNetworkClient.poll()  与cluster通信。
+- **poll(): 拉取消息**
+  - 更新元数据 `updateAssignmentMetadataIfNeeded`
 
-####### 更新元数据
+    > 底层用ConsumerNetworkClient，封装网络通信，异步实现
+    >
+    > coordinator.poll()
+    > --> ConsumerNetworkClient.ensureFreshMetadata()
+    > --> ConsumerNetworkClient.poll()  与cluster通信。
 
-####### 底层用ConsumerNetworkClient，封装网络通信，异步实现
+  - 拉取消息 `pollForFetches`
 
-###### pollForFetches
+    ```java
+    private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollForFetches(Timer timer) {
+    
+      //1. fetcher.fetchedRecords()
+      // 如果缓存里面有未读取的消息，直接返回这些消息 - 从ConcurrentLinkedQueue中获取
+      Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords(); 
+      if (!records.isEmpty()) {
+          return records;
+      }
+      
+      //2. 构造拉取消息请求，并发送
+      // 回调：rep 会被暂存到ConcurrentLinkedQueue
+      fetcher.sendFetches();
+    
+      //3. client.poll()
+      // 发送网络请求拉取消息，等待直到有消息返回或者超时
+       client.poll(pollTimer, () -> {
+          return !fetcher.hasCompletedFetches();
+       });
+       
+       //4. 返回拉到的消息
+       return fetcher.fetchedRecords();
+     }
+    ```
 
-```
- private Map<TopicPartition, List<ConsumerRecord<K, V>>> pollForFetches(Timer timer) {
 
-  // 如果缓存里面有未读取的消息，直接返回这些消息
-  final Map<TopicPartition, List<ConsumerRecord<K, V>>> records = fetcher.fetchedRecords();
-  
-  if (!records.isEmpty()) {
-      return records;
-  }
-  
-  // 构造拉取消息请求，并发送
-  fetcher.sendFetches();
 
-  // 发送网络请求拉取消息，等待直到有消息返回或者超时
-   client.poll(pollTimer, () -> {
-      return !fetcher.hasCompletedFetches();
-   });
-   
-   // 返回拉到的消息
-   return fetcher.fetchedRecords();
- }
 
-```
 
-####### 拉取消息
+# | 问题排查
 
-####### fetcher.fetchedRecords(): 若已有数据，则直接返回
+### 主题删除失败
 
-######## 从ConcurrentLinkedQueue中获取
+**原因**
 
-####### fetcher.sendFetches(): 构造拉取消息请求，并发送
+- 副本所在Broker宕机
+- 待删除主题部分分区依然在执行迁移过程
 
-######## 回调：rep 会被暂存到ConcurrentLinkedQueue
+**解决**
 
-####### client.poll(): 发送网络请求
+- 手动删除zk `/admin/delete_topics/xx`
 
-######## 等待有消息返回，或超时
+- 手动删除该主题在磁盘上的分区目录
 
-####### fecther.fetchedRecords()
+- 执行zk `rmr /controller`，触发controller重选举
+
+
+
+### __consumer_offsets 磁盘占用大
+
+**原因**
+
+- kafka-log-cleaner-thread 线程挂掉，无法清理此内部主题
+
+- 用 jstack 确认
+
+**解决**
+
+- 重启broker
+
+
+
+
+
+
+
+# | 参考
+
+- 论文
+  - https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
+  - https://www.kancloud.cn/kancloud/log-real-time-datas-unifying/58708
+
+- doc
+  - http://kafka.apache.org/documentation/#design
+
+- acks vs. min.insync.replicas
+  - https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
+
+- improvement proposal
+  - https://cwiki.apache.org/confluence/display/KAFKA/Kafka+Improvement+Proposals
+
+
+
