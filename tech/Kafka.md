@@ -1414,7 +1414,7 @@ kafka-console-consumer.sh
 
 
 
-### 位移重设
+### 位移重设 offsetsForTimes
 
 **重设策略**
 
@@ -2348,7 +2348,7 @@ Q: 什么情况下消息不丢失
 
 - **并发发送**
 
-  > RPC可直接在当前线程发送消息，因为rpc多线程
+  > RPC 可直接在当前线程发送消息，因为rpc多线程
 
 - **批量发送**
 
@@ -2367,8 +2367,6 @@ Q: 什么情况下消息不丢失
   > 注意 rebalance 的影响
 
 - **降级**
-
-
 
 
 
@@ -2438,7 +2436,359 @@ Q: 什么情况下消息不丢失
     >
     > 原因：消息留存时间达到，之前的老消息被删除，导致lead变小
 
-  
+
+
+
+## || DR
+
+> https://eng.uber.com/kafka/ 
+>
+> https://www.confluent.io/blog/disaster-recovery-multi-datacenter-apache-kafka-deployments 
+
+
+
+**单 DC**
+
+背景：单 DC 如何保证高可用？
+
+> https://www.confluent.io/white-paper/optimizing-your-apache-kafka-deployment/
+
+- 基于 replica，生产端设置 acks = all。如果 leader broker挂了，会在 ISR 中选取新 leader；
+- 客户端通过 bootstrap brokers指定一组broker，如果一个broker挂了，其他broker还能提供连接。
+- zk quorum 确保可靠的分布式协同。
+- 全局 schema registry：只有 leader instance 提供写服务。
+
+
+
+**DR 考虑因素**
+
+- Multi-datacenter designs
+- Centralized schema management
+- Prevention of cyclic repetition of messages
+- Automatic consumer offset translation
+
+
+
+### 多 DC 架构
+
+> 多 DC 架构 : https://docs.confluent.io/platform/current/multi-dc-deployments/multi-region-architectures.html#multi-region-architectures
+
+
+
+
+
+**Hub-Spokes 架构 (Aggregation)**
+
+- 原理
+
+  - 一个中央集群，从其他分支集群拉取数据、聚合；简化：两个集群，一个 Leader， 一个 Follower
+  - `RPO > 0` `RTO >= 0`
+
+- 场景：各分支集群数据集完全隔离、没有依赖；例如银行的各个分行
+
+- 优点：简单，易于部署、配置、监控
+
+  > 生产者只关心本地集群
+  >
+  > Replication 是单向的
+
+- 缺点：不可跨区读取
+
+
+
+**Active-Active 架构**
+
+- 原理
+
+  - 各数据中心 共享部分或全部数据；
+  - 互相异步复制： `RPO > 0` `RTO = 0` 
+  - 生产者往 Local DC写入；
+  - 消费者从 Local DC读取；
+
+- 优点
+
+  - 便于就近服务
+  - 数据冗余、可靠
+
+- 缺点
+
+  - 数据异步读写，需要避免数据冲突
+
+    > 同步延迟问题： stick-session
+    >
+    > 数据冲突问题：多个集群同时写入同一个数据集
+
+  - Mirroring Process 过多
+
+    > 要避免“来回复制”；一般可引入“逻辑主题” / “namespace”：
+    >
+    > - 常规主题：user
+    > - 逻辑主题：clusterA-user, clusterB-user
+
+
+
+**Active-Standby 架构**
+
+- 原理
+
+  - 有一个数据中心专门用于 Inactive / Cold 复制，而不对外提供写入服务；
+  - 生产者只往 active DC 写入；
+  - 消费者可以从 local DC 读取；
+  - `RPO >0` `RTO > 0`
+
+- 优点：简单，无需考虑冲突
+
+- 缺点
+
+  - 数据丢失
+
+  - 资源浪费
+
+    > 优化：
+    >
+    > - DR 集群用较小规模 --> 有风险！
+    >
+    > - DR 集群服务部分只读请求
+
+  - Failover 困难
+
+    - 数据丢失、不一致
+
+    - Failover 之后的“起始偏移量”
+
+      > 1. Auto offset reset: 
+      >    earliset / latest
+      >
+      > 2. Replicate offset topic: 
+      >    对 `__consumer_offsets` 主题进行镜像；
+      >
+      >
+      > 3. Time-based failover:
+      >    每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
+      >
+      > 4. External offset mapping:
+      >    用外部存储保存两个数据中心的偏移量对应关系。
+
+
+
+**Stretch Clusters**
+
+- 原理
+
+  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
+
+    > Rack awareness ensures that replica placement is such that at least one topic-partition replica exists in each region (or rack).
+
+- 优点
+
+  - 同步复制：RPO = 0, RTO = 0
+  - 没有资源浪费 
+
+- 要求：DC 间延迟 < 50 ms
+
+
+
+### Failover
+
+**1. Cyclic Message Repetition** 
+
+ Prevent Duplicates or Cyclic Message Repetition 
+
+
+
+- **Replicator Provenance Hader**
+  Replicator为每条消息添加 `provenance header`，来避免重复消息、循环复制；包含：
+  - 源 cluster id
+  - 源 topic name
+  - Replicator 初次复制消息时的 timestamp
+
+如果源 cluster+topic与目标clsuter+topic雷同，则不复制。
+
+
+
+- **Topic Naming Strategy**
+  还可以通过 主题命名 来避免循环复制。
+
+  - Topic 名中包含DC：`dc1-topicX` 
+
+    > Replicator 配置为只复制 topic 名中包含对方DC的
+
+  - 复制后自动给Topic名字加后缀：`topicX.replica` 
+
+    > Replicator 配置为只复制不含 后缀的主题
+
+
+
+
+
+**2. Offset Translation - Timestamp Preservation**
+
+- **问题：同一条消息在不同 DC 的 offset 可能不同**，DR 之后不能直接通过 `__consumer_offsets` 恢复消费。
+  - 在消费被复制之前，源 DC 由于rentention策略或compaction，删除了消息；
+  - 消息复制失败时会重新发送，导致重复，导致offset不匹配；
+  - 消息复制可能落后于 offset主题复制，导致DR后消费者尝试读取一个还未复制的消息。
+
+
+
+- 可基于 timestamp 进行 **offset translation**，offset虽然在多DC间可能不一致，但timestamp不会；https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-failover.html#replicator-failover 
+
+  > - auto.offset.reset 则需要到指定offset，而不是 latest/earliest；
+  >
+  > - 为消费者配置timestamp-interceptor，将 timestamp - offset 信息存储到 `__consumer_timestamps` 主题；
+
+
+
+Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
+
+
+
+**3. Failover 流程**
+
+1. Replicator 从源DC 读取 `__consumer_timestamps`，获取消费者组的进度；
+
+2. 将源DC的committed offset 翻译为目标DC的offset；
+
+   > How? 
+
+3. 将翻译后的offset写入目标DC `__consumer_offsets` 
+
+   > 而如果消费者组中已有消费者 目标DC，则不会写入。因为这些消费者会自己提交维护offset。
+
+4. Failover：如果两个DC都有消费者， 源DC消费者可以选择不迁移，等待源DC恢复；
+
+5. Failover：如果只有源 DC 有消费者，需要在消费者程序考虑迁移到新DC：重配置 bootstrap servers；
+
+6. 新版本无需reset offset，因为 "Timestamp Preservation"
+
+   
+
+注意
+
+- Failover 后还是可能有重复消费，因为
+  - 同步有延迟
+  - offset提交是周期性的
+  - 同一ts 可能对应多个消息
+- Failover 后可能会丢消息
+  - Replication Lag
+
+
+
+### Failback
+
+- **数据同步**
+
+  - Active-Active 模式：源DC恢复后，Replicator 会自动同步新DC数据回来。
+
+  - Active-Passive 模式： 需要手工同步数据。
+
+    > Replicator 默认不会同步有 provenance header 的消息。
+
+- **同步后消息顺序不能保证**
+  - 原因？
+- **客户应用重启**
+
+
+
+### Raplicator
+
+**部署**
+
+- Raplicator 其实是一个 Kafka connector
+- Raplicator 部署在目标DC
+- Active-Active 模式下，要禁止 Replicator 提交 offset：`offset.timestamps.commit=false`
+
+
+
+**监控**
+
+- replication lag: 影响 RPO
+
+
+
+
+
+### MirrorMaker
+
+**概念**
+
+- 在不同数据中心之间同步数据
+
+- 原则
+  - 一个数据中心至少一个kafka集群
+  - exactly-once 复制
+  - 尽量从远程数据中心 消费数据，而不往远程数据中心 生产数据
+
+
+
+
+**原理**
+
+一个 Producer + 多个 Consumer
+
+- 一个 Producer
+  - 用于写入 Target Cluster
+
+- 多个 Consumer
+  - 用于读取 Source Cluster
+  - 所有consumer属于同一个消费者组
+  - 个数可配：`num.streams`
+  - 每隔 60s 提交 offset 到 Source Cluster `auto.commit.enable = false`
+
+
+
+**注意**
+
+- **MirrorMaker 部署位置**
+
+  - 一般部署在 Target Cluster：远程消费” 比 “远程生产” 更安全，否则可能丢失数据
+
+    > 如果消费者断链，只是不能读取，消息还会保存在Broker；而如果生产者断链，则消息可能丢失
+
+  - 如果集群间是加密传输，则可部署在 Source Cluster
+
+    > 消费加密传输更影响性能
+    >
+    > 此时注意 acks = all，减少数据丢失
+
+- **部署多个 MirrorMaker 实例，可以提高吞吐量**
+
+  - 注意要是同一个消费者组
+
+- **建议提前创建好主题，否则会按照默认配置自动创建主题**
+
+
+
+**问题**
+
+- **Rebalance 期间会停止消费**
+
+  - whitelist 正则匹配，分区变化 会导致 Rebalance
+
+  - MirrorMaker 实例增删 会导致Rebalance
+
+  - 参考 Uber uReplicator
+
+    > https://eng.uber.com/ureplicator-apache-kafka-replicator/
+    >
+    > 引入 Apache Helix 提供分片管理
+    >
+    > 引入自定义 Consumer，接受Helix分配的分区
+
+
+
+- **配置信息难以保证一致**
+- **无法避免循环复制**
+
+
+
+可用替换：Confluent's Replicator
+https://www.confluent.io/product/confluent-platform/global-resilience/
+
+
+
+### 
+
+
 
 # | 配置参数
 
@@ -3785,166 +4135,6 @@ kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
 - Source connector
 
 - Sink connector
-
-
-
-## || MirrorMaker
-
-**概念**
-
-- 在不同数据中心之间同步数据
-
-- 原则
-  - 一个数据中心至少一个kafka集群
-  - exactly-once 复制
-  - 尽量从远程数据中心 消费数据，而不往远程数据中心 生产数据
-
-  
-
-**架构**
-
-- **Hub-Spokes 架构**
-
-  - 一个中央集群，从其他分支集群拉取数据、聚合；简化：两个集群，一个 Leader， 一个 Follower
-
-  - 场景：各分支集群数据集完全隔离、没有依赖；例如银行的各个分行
-
-  - 优点：简单，易于部署、配置、监控
-
-    > 生产者只关心本地集群
-    >
-    > Replication 是单向的
-
-  - 缺点：不可跨区读取
-
-  
-
-- **Active-Active 架构**
-  - 各数据中心 共享部分或全部数据；互相复制
-
-  - 优点
-
-    - 便于就近服务
-    - 数据冗余、可靠
-
-  - 缺点
-
-    - 数据异步读写，需要避免数据冲突
-
-      > 同步延迟问题： stick-session
-      >
-      >  数据冲突问题：多个集群同时写入同一个数据集
-
-    - Mirroring Process 过多
-
-      > 要避免“来回复制”；一般可引入“逻辑主题” / “namespace”：
-      >
-      > - 常规主题：user
-      > - 逻辑主题：clusterA-user, clusterB-user
-
-
-
-- **Active-Standby 架构**
-  - 一个数据中心专门用于 Inactive / Cold 复制，而不对外提供服务
-  - 优点：简单，无需考虑冲突
-
-  - 缺点
-
-    - 数据丢失
-
-    - 资源浪费
-
-      > 优化：
-      >
-      > - DR 集群用较小规模 --> 有风险！
-      >
-      > - DR 集群服务部分只读请求
-
-    -  Failover 困难
-
-      - 数据丢失、不一致
-
-      - Failover 之后的“起始偏移量”
-
-        > 1. Auto offset reset: 
-        >    earliset / latest
-        >
-        > 2. Replicate offset topic: 
-        >    对 `__consumer_offsets` 主题进行镜像；
-        >
-        >
-        > 3. Time-based failover:
-        >    每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
-        >
-        > 4. External offset mapping:
-        >    用外部存储保存两个数据中心的偏移量对应关系。
-
-
-
-- **Stretch Clusters**
-  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
-  - 优点
-    - 同步复制
-    - 没有资源浪费
-
-
-
-**原理**
-
-一个 Producer + 多个 Consumer
-
-- 一个 Producer
-  - 用于写入 Target Cluster
-
-- 多个 Consumer
-  - 用于读取 Source Cluster
-  - 所有consumer属于同一个消费者组
-  - 个数可配：`num.streams`
-  - 每隔 60s 提交 offset 到 Source Cluster `auto.commit.enable = false`
-
-
-
-**注意**
-
-- **MirrorMaker 部署位置**
-  -  一般部署在 Target Cluster：远程消费” 比 “远程生产” 更安全，否则可能丢失数据
-
-    > 如果消费者断链，只是不能读取，消息还会保存在Broker；而如果生产者断链，则消息可能丢失
-
-  - 如果集群间是加密传输，则可部署在 Source Cluster
-
-    > 消费加密传输更影响性能
-    >
-    > 此时注意 acks = all，减少数据丢失
-
-- **部署多个 MirrorMaker 实例，可以提高吞吐量**
-  - 注意要是同一个消费者组
-
-- **建议提前创建好主题，否则会按照默认配置自动创建主题**
-
-
-
-**问题**
-
-- **Rebalance 期间会停止消费**
-  - whitelist 正则匹配，分区变化 会导致 Rebalance
-
-  - MirrorMaker 实例增删 会导致Rebalance
-
-  - 参考 Uber uReplicator
-
-    > https://eng.uber.com/ureplicator-apache-kafka-replicator/
-    >
-    > 引入 Apache Helix 提供分片管理
-    >
-    > 引入自定义 Consumer，接受Helix分配的分区
-
-
-
-- **配置信息如何保证一致**
-
-  > Confluent's Replicator
-  > https://www.confluent.io/product/confluent-platform/global-resilience/
 
 
 
