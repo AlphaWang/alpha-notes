@@ -1862,7 +1862,7 @@ https://time.geekbang.org/column/article/110482
 
 - **文件格式**
   - DumpLogSegment 工具：查看segment文件内容
-  - 对于压缩过的消息，Broker不会解压，而是直接存储为 Wrapper Message
+  - 对于压缩过的消息，Broker不会解压，而是直接存储为 Wrapper Message。
 
 ### Indexes
 
@@ -1872,7 +1872,7 @@ https://time.geekbang.org/column/article/110482
 
 ## || 高性能
 
-### 原理
+**原理**
 
 - 批量消息
 
@@ -1912,56 +1912,6 @@ https://time.geekbang.org/column/article/110482
   > --> 内核缓冲区 
   > --> Socket缓冲区
   > --> 网卡缓冲区
-
-
-
-### 调优
-
-- 链接调优
-  - 复用 Producer / Consumer 对象
-  - 及时关闭 Socket连接、ByteBuffer缓冲区
-
-- **吞吐量调优**：允许延时、允许丢消息
-
-  - Producer 端
-
-    > `batch.zise` 增大
-    >
-    > `linger.ms` 增大批次缓存时间
-    >
-    > `compress.type=lz4 / zstd` 压缩
-    >
-    > `acks=0/1`, 不要是all
-    >
-    > `retries=0`
-
-  - Broker 端
-
-    > `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息
-
-  - Consumer 端
-
-    > `fetch.min.bytes`：Broker 积攒了 N 字节数据，就可以返回给 consumer 
-    >
-    > 多线程方案
-
-- 延时调优：
-
-  - Producer端：希望消息尽快发出，不要停留
-
-    > `linger.ms=0`
-    >
-    > `compress.type=none`
-    >
-    > `acks=1`
-
-  - Broker端
-
-    > `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息
-
-  - Consumer端
-
-    > `fetch.min.bytes=1`：只要Broker有数据就立即返回给 Consumer
 
 
 
@@ -2790,515 +2740,6 @@ https://www.confluent.io/product/confluent-platform/global-resilience/
 
 
 
-# | 配置参数
-
-## || 操作系统配置
-
-- **`ulimit -n 1000000`** 
-
-  > 文件描述符限制
-
-- **swappiness**
-  - 建议设一个小值，例如1
-  - 但不要设成0，否则物理内存耗尽可能直接被OOM Killer
-
-- **提交时间 / Flush落盘时间**
-
-  > Kafka收到数据并不马上写入磁盘，而是写入操作系统Page Cache上。
-  > 随后操作系统根据LRU算法，定期将页缓存上的脏数据落盘到物理磁盘。
-  > 默认5秒，可适当调大。
-
-
-
-## || Broker配置
-
-**Broker连接相关配置**
-
-- **listeners**
-
-  > PLAINTEXT://localhost:9092
-  > 告诉外部连接者通过什么协议访问主机名和端口开放的Kafka服务
-
-- **advertised.listeners**
-
-  > 对外发布的
-
-- **host.name/port**
-
-  > 过期参数
-
-- **borkerlid**
-
-  > 默认为0，可以取任意值
-
-- **zookeeper.connect**
-
-  > 建议配置 chroot
-  > 建议配置多个zk地址
-
-  > zk1:2181,zk2:2181,zk3:2181/kafka1
-  >
-  > zk记录了元数据信息：
-  >
-  > - 有哪些Broker在运行
-  > - 有哪些Topic
-  > - 每个Topic有多少分区
-  > - 每个分区的Leader副本都在哪些机器上
-
-
-
-**内存环境变量**
-
-- KAFKA_HEAP_OPTS： 堆大小
-- KAFKA_JVM_PERFORMANCE_OPTS：GC参数
-
-> 配置环境变量：
->
-> $> export KAFKA_HEAP_OPTS=--Xms6g  --Xmx6g
->
-> $> export  KAFKA_JVM_PERFORMANCE_OPTS= -server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -Djava.awt.headless=true
->
-> $> bin/kafka-server-start.sh config/server.properties
-
-
-
-**Retention 数据留存配置**
-
-- **log.dirs**
-
-  > 含义：指定Broker使用的文件目录列表；
-  >
-  > 1. 建议挂在到不同物理磁盘
-  >    - 提升读写性能
-  >    - 实现故障转移
-  > 2. 可配置多个：
-  >    - broker会按照“least-used”原则选择目录；
-  >    - least-used == 存储的分区数目最少，而非容量！
-
-- **log.retention.hour|minutes|ms**
-
-  > 含义：一条消息被保存多久
-
-- **log.retention.bytes**
-
-  > 含义：Broker为消息保存的总磁盘大小
-
-- **message.max.bytes**
-
-  > 含义：一条消息最大大小；
-  >
-  > 默认值1000012，偏小！
-
-- **log.cleaner.enabled**
-
-  > log compacted：对每一个key，只保留最新的一条消息
-  >
-  > 适合 change log 类型的消息；
-
-  > 原理
-  >
-  > 1. segment 分为两部分
-  >    - Clean：上次 compact 过的消息；clean部分每个key只对应一个value；
-  >    - Dirty：上次compact过后新增的消息
-  >
-  > 2. 多个 compaction 线程
-  >    - 遍历 Dirty 部分，构造 offset map
-  >    - 遍历 Clean 部分，对 offset map进行补充
-  >    - 替换 segment ?
-
-
-
-**主题相关**
-
-- **auto.create.topics.enable=false**
-
-  > 含义：是否允许自动创建主题
-  >
-  > 应该设为false，把控主题名称
-
-- **unclean.leader.election.enable=false**
-
-  > 含义：是否允许unclean leader选举：允许落后很多的副本参与选举
-  >
-  > 应该设为false，否则数据可能丢失
-
-- **auto.leader.rebalance.enable=false**
-
-  > 含义：是否允许定期进行Leader选举；
-  >
-  > 应该设为false
-
-
-
-## || Topic配置
-
-**分区配置**
-
-- **num.partitions**
-
-  > 注意分区数只能增加，不能减少；建议设得大一些，方便扩展消费者数目
-  >
-  > 如何定值？--> 期望吞吐量 / 消费者吞吐量
-
-
-
-**消息配置**
-
-- **retention.ms | bytes**
-
-  > 默认7天，无限大
-
-- **message.max.bytes**
-
-  > 含义：定义一条消息最大大小；
-  >
-  > 大消息有缺点
-  >
-  > - 会增加磁盘写入块的大小，影响 IO 吞吐量
-  > - 处理网络连接和请求的线程要花费更多时间来处理
-
-  > 联动参数
-  >
-  > - `fetch.message.max.bytes` 消费者能读取的最大消息大小，如果 < `max.message.bytes`，则消费会被阻塞
-  > - `replica.fetch.max.bytes` 集群同步的最大消息大小，原则同上
-
-- **log.segment.ms | bytes**
-
-  > 含义：单个 log segment的大小；达到该值时，当前日志片段会关闭 并创建新的日志片段
-  >
-  > 如何定值？
-  >
-  > - 若太小，会频繁关闭和分配文件
-  > - 若太大，而写入数据量又很小，则可能等到超过 log.retention.ms 很多后才能被过期
-
-
-
-配置操作
-
-kafka-topics.sh --config 创建topic时
-
-```shell
-bin/kafka-topics.sh
---bootstrap-server localhost:9092
---create
---topic transaction
---partitions 1
---replication-factor 1
---config retention.ms=15552000000
---config max.message.bytes=5242880
-```
-
-kafka-configs.sh
-
-```shell
-bin/kafka-configs.sh
---zookeeper localhost:2181
---entity-type topics
---entity-name transaction
---alter
---add-config
-max.message.bytes=10485760
-```
-
-
-
-
-## || 副本配置
-
-**Producer 端**
-
-- **acks**
-
-  > 含义：表示多少 Replica 写入成功才算真的写入成功
-  >  https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
-
-  - `acks = 0` 发完即认为成功，保证性能
-  - `acks = 1` 只要 Leader 写入成功即可
-  - `acks = all` 需要所有 ISR 副本写入成功，保证可靠性
-
-**Broker 端**
-
-- **min.insync.replica**
-
-  > 含义：表示 `acks=all` 时最少需要多少个 ISR 存在；值越小，性能影响越小，但丢失数据的风险越大
-  >
-  > 注意：可设置 broker or topic level
-
-  > 配合acks
-  >
-  > - 如果acks = all，但ISR中只有 Leader 一个，则有问题：写入这一个即认为成功；
-  > - 如果 ISR 少于 min，则返回 NotEnoughReplicasException
-
-- **replica.lag.time.max.ms**
-
-  > 含义：follower的延迟如果超过该值，则被踢出 ISR
-
-- **replication.factor**
-
-  > 含义：副本个数，消息被复制的份数，默认 3
-  >
-  > 值越大，则可用性可靠性越大；同时需要的 Broker 数目也越大
-
-- **unclean.leader.election.enable**
-
-  > 含义：是否允许 OSR replica 被选为 leader，
-  >
-  > - 默认 true：提高可用性，但可能消息丢失、数据不一致；适用于用户行为跟踪
-  > - 设为false：可保证 committed data 不丢失；适用于银行支付信息
-
-
-
-## || 生产者配置
-
-```
-Properties p = new Properties();
-p.put("bootstrap.servers", "b1:p1,b1:p2");
-p.put("key.serializer", "");
-p.put("value.serializer", "");
-
-producer = new KafkaProduer<String, String>(p);
-```
-
-
-
-- bootstrap.servers
-
-- key.serializer / value.serializer
-
-- **acks**
-
-  > 含义：表示多少 Replica 写入成功才算真的写入成功
-  >
-  > https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
-  - `acks = 0` 发完即认为成功，保证性能、吞吐量，但会丢消息
-  - `acks = 1` 只要 Leader 写入成功即可
-    - 写入分区数据文件，但不一定同步到磁盘
-    - 只要 Leader 写入成功即可
-    - Leader 选举阶段会返回 LeaderNotAvailableException
-  - `acks = all` 需要所有 ISR 副本写入成功，保证可靠性
-
-- **retries**
-
-  > 含义：遇到临时性错误时的重试次数
-  >
-  > 注意：
-  >
-  > - 无需在业务代码里处理重试！
-  >
-  > - 业务代码只需关注 不可重试的错误，或者重试失败的情况
-  >
-  > - MirrorMaker 会设置 retries = MAX
-
-  - 可重试错误
-    - A lack of leader for a partition；
-    - LEADER_NOT_AVAILABLE
-  - 不可重试错误
-    - e.g. message too large
-    - INVALID_CONFIG
-  - 配合 `retry.backoff.ms`， 默认退避 100ms
-
-- **batch.size**
-
-  > 含义：每个batch的字节数，注意不是size!
-  >
-  > 注意：
-  >
-  > - 不宜过小，过小会导致频繁发送消息
-  > - 生产者并不是非要等到 达到 batch.size才会发送出去；配合 `linger.ms`
-
-- **linger.ms**
-
-  > 含义：每个batch发送之前的等待时间
-  >
-  > 注意：
-  >
-  > - 调大会增加延迟，也会提升吞吐量
-  > - 当发现生产者总是发送空batch，则应该增大该值
-
-- **max.in.flight.requests.per.connection**
-
-  > 含义：生产者在收到broker响应之前可以发送多少消息
-  >
-  > 注意：
-  >
-  > - 调大会增加内存占用，会提高吞吐量
-  > -  但设置过高会降低吞吐量 --> 因为 batching becomes less efficient --？
-  > - 如果对有序性要求高，建议设置为 1。
-  >
-  > 乱序场景
-  >
-  > - `in.flight` > 1 && `retries` > 0 时，依次发送batch-1 / 2 --> batch-1 失败 --> batch-2 成功 --> batch-1 重试成功，则乱序
-  > - 设置 in.flight = 1 可确保当有重试时，下一个消息不会被发送；但会严重影响吞吐量。或者设置 retries = 0，但会影响 reliable
-
-- compression.type
-
-  > 取值
-  >
-  > - gzip - CPU 消耗高，压缩比更大
-  > - snappy - CPU 消耗少，压缩比可观
-  > - LZ4
-  > - Zstandard (zstd)
-  >
-  > vs. Broker压缩
-  >
-  > - 如果Broker指定的compression.type != producer，则会重新进行解压压缩； 还会丧失zero copy特性
-  >
-  > 解压
-  >
-  > - 只会发生在 Consumer 端 --> 如何设置每条消息的 offset、校验 checksum？
-  > - Producer 端压缩、Broker 端保持、Consumer 端解压缩
-
-
-
-- buffer.memory
-
-  > 含义：生产者内存缓冲区大小 --> Q: 跟batch什么关系？
-
-- client.id
-
-  > 含义：客户端的标识，可以为任意字符串；用户 日志、metrics、quotas
-
-- 超时 request.timeout.ms
-
-  >  Producer：等待发送数据返回响应的超时
-
-- 超时 metadata.fetch.timeout.ms
-
-  > Producer：请求元数据的超时
-
-- 超时 timeout.ms
-
-  > Broker：等待 In-Sync Replica 返回消息确认的超时
-  >
-  > 与 `acks` 相关：若超时，且 acks = all 则认为写入失败
-
-- max.block.ms
-
-  > 含义1：调用 send() 时的阻塞时间，例如 send buffer 已满
-  >
-  > 含义2：调用 partitionFor()获取元数据时的阻塞时间，例如元数据不可用
-  >
-  > 注意：会抛出 timeout 异常
-
-- max.request.size
-
-  > 含义：生产者发送的请求大小
-  >
-  > 注意：配合 Broker端参数：`message.max.bytes`，最好取值一样；否则生产者发出的大消息 可能被Broker拒绝
-
-- receive.buffer.bytes / send.buffer.bytes
-
-  > 含义：TCP Socket 发送和接受缓冲区大小
-
-
-
-## || 消费者配置
-
-- bootstrap.servers
-
-- key.deserializer / value.deserializer
-
-- group.id
-- client.id
-
-
-
-- **fetch.min.bytes**
-
-  > 含义：消费者能获取的最小字节数；broker 收到消费者请求时如果数据量 < `fetch.min.bytes`，会等待 `fetch.max.wait.ms`，直到有足够的数据
-  >
-  > 注意：
-  >
-  > - 提高该值，可以减少网络来回，减少 broker和consumer负载
-  >   - 如果消费者 CPU高、且可用数据量不大，调高该值
-  >   - 如果消费者过多 导致Broker负载过高，调高该值
-  > -  如果发现 fetch-rate 很高，应该增大该值
-  > - 配合 `fetch.max.wait.ms`
-
-- **fetch.max.wait.ms**
-
-  > 含义：等待足够数据的时间
-  >
-  > 注意：调高会增加 Latency
-
-- **fetch.max.bytes**
-
-  > 如果通过监控发现 fetch-size-agv/max 接近 fetch.max.bytes，则应该增大该值
-
-- **max.partition.fetch.bytes**
-
-  > 含义：服务器从每个分区能返回的最大字节数，每次 poll() 从“单个分区”返回的数据 不会超过此值
-  >
-  > 注意：
-  >
-  > - 必须 > max.message.size；否则会导致大消息无法被消费，consumer被hang住 --> 之后的消息也会无法消费。
-  > - 如果设置过大，会导致 consumer处理耗时，影响poll()频率
-
-- **max.poll.record**
-
-  > 含义：poll() 返回的最大记录个数
-  >
-  > https://time.geekbang.org/column/article/102132
-  >
-  > - 目前java consumer的设计是一次取出一批，缓存在客户端内存中，然后再过滤出 `max.poll.records`条消息返给你 
-  > - 若无限制，broker可能返回超大消息，导致消费者OOM
-
-  - vs. `fetch.min.bytes`
-    - 如果 max.poll.record < fetch.min.bytes，什么结果???
-
-  - vs. `max.partition.fetch.bytes`
-    - 个数 vs. 大小
-    - 总体 vs. 按分区
-
-
-
-- session.timeout.ms
-
-  > 含义：消费者被认为死亡的超时时间；**超时后会触发 Rebalance**
-  >
-  > 注意：
-  >
-  > - 配合 `heartbeat.internal.ms`，通常一起修改、必须比它大；推荐设置 `session.timeout.ms` = 3 * `heartbeat.internal.ms`
-  > - 调高 session.timeout 可以减少不必要的 rebalance，但可能导致“故障探测时间”更长
-
-- **auto.offset.reset**
-
-  > 含义：消费者读取一个没有偏移量、或偏移量无效的分区时，该如何处理；
-  >
-  > 原因：消费者死掉好久，包含偏移量的记录已被删除
-
-  - `latest`：从最新记录开始读取
-  - `earliest`：从起始位置开始读取
-
-- **enable.auto.commit**
-
-  > 含义：是否自动提交，默认为 true
-  >
-  > 注意：
-  >
-  > - 配合 auto.commit.interval.ms
-  > - 设为false，可减少重复、丢失
-
-- **partition.assignment.strategy**
-
-  > 含义：给消费者分配 Partition 的策略
-
-  - `Range`：把主题的若干“连续”分区分配给消费者，分配可能不均衡
-
-    > C1: t1_p0, t1_p1, t2_p0, t2_p1  -- 连续分区 分配给C1
-    > C2: t1_p2, t2_p2
-
-  - `RoundRobin`：把主题的所有分区“逐个”分配给消费者，分配更均衡
-
-    > C1: t1_p0, t1_p2, t2_p1 -- 连续分区 分配给C1
-    > C2: t1_p1, t2_p0, t2_p2
-
-- **receive.buffer.bytes / send.buffer.bytes**
-
-  > 含义：TCP Socket 发送和接受缓冲区大小
-
-
-
 # | 运维
 
 ## || 安装
@@ -3516,80 +2957,6 @@ producer = new KafkaProduer<String, String>(p);
 
 
 
-## || 配置
-
-**动态配置**
-
-- 配置分类
-  - per-broker
-  - cluster-wide
-  - 静态配置 server.properties
-  - kafka 默认值
-
-- 原理：保存在 zk 持久化节点 `/config/brokers/` 
-
-  > /config/brokers/<default> 
-  > cluster-wider 动态参数
-  >
-  > /config/brokers/<broker_id>
-  > per-broker 动态参数
-
-- 设置 `kafka-configs.sh --alter --add-config` 
-
-  ```shell
-  # cluster-wider:
-  $ bin/kafka-configs.sh 
-    --bootstrap-server host:port 
-    --entity-type brokers 
-    --entity-default 
-    --alter 
-    --add-config unclean.leader.election.enable=true
-  
-  # per-broker:
-  $ bin/kafka-configs.sh 
-    --bootstrap-server host:port 
-    --entity-type brokers 
-    --entity-name 1 
-    --alter 
-    --add-config unclean.leader.election.enable=false
-  ```
-
-  
-
-**常用动态配置项**
-
-- log.retention.ms
-
-- num.io.threads / num.network.threads
-
-- num.replica.fetchers
-
-
-
-**集群配置参数**
-
-`/config/server.properties`
-
-
-
-**分区管理**
-
-- kafka-preferred-replica-election.sh
-
-  > 触发 prefered replica election，让broker重置首领
-
-- kafka-reassign-partitions.sh
-
-  > 修改副本分配
-  >
-  > 修改分区的副本因子 replica-factor
-
-- kafka-replica-verification.sh
-
-  > 验证副本
-
-
-
 ## || 管理工具
 
 **KafkaAdminClient**
@@ -3673,7 +3040,689 @@ try (AdminClient client = AdminClient.create(props)) {
       --cluster
     ```
 
-    
+
+
+
+
+
+## || 配置
+
+**动态配置**
+
+- 配置分类
+
+  - per-broker
+  - cluster-wide
+  - 静态配置 server.properties
+  - kafka 默认值
+
+- 原理：保存在 zk 持久化节点 `/config/brokers/` 
+
+  > /config/brokers/<default> 
+  > cluster-wider 动态参数
+  >
+  > /config/brokers/<broker_id>
+  > per-broker 动态参数
+
+- 设置 `kafka-configs.sh --alter --add-config` 
+
+  ```shell
+  # cluster-wider:
+  $ bin/kafka-configs.sh 
+    --bootstrap-server host:port 
+    --entity-type brokers 
+    --entity-default 
+    --alter 
+    --add-config unclean.leader.election.enable=true
+  
+  # per-broker:
+  $ bin/kafka-configs.sh 
+    --bootstrap-server host:port 
+    --entity-type brokers 
+    --entity-name 1 
+    --alter 
+    --add-config unclean.leader.election.enable=false
+  ```
+
+  
+
+**常用动态配置项**
+
+- log.retention.ms
+
+- num.io.threads / num.network.threads
+
+- num.replica.fetchers
+
+
+
+**集群配置参数**
+
+`/config/server.properties`
+
+
+
+**分区管理**
+
+- kafka-preferred-replica-election.sh
+
+  > 触发 prefered replica election，让broker重置首领
+
+- kafka-reassign-partitions.sh
+
+  > 修改副本分配
+  >
+  > 修改分区的副本因子 replica-factor
+
+- kafka-replica-verification.sh
+
+  > 验证副本
+
+
+
+
+
+## || 配置参数
+
+### 操作系统配置
+
+- **`ulimit -n 1000000`** 
+
+  > 文件描述符限制
+
+- **swappiness**
+
+  - 建议设一个小值，例如1
+  - 但不要设成0，否则物理内存耗尽可能直接被OOM Killer
+
+- **提交时间 / Flush落盘时间**
+
+  > Kafka收到数据并不马上写入磁盘，而是写入操作系统Page Cache上。
+  > 随后操作系统根据LRU算法，定期将页缓存上的脏数据落盘到物理磁盘。
+  > 默认5秒，可适当调大。
+
+
+
+### Broker配置
+
+**Broker连接相关配置**
+
+- **listeners**
+
+  > PLAINTEXT://localhost:9092
+  > 告诉外部连接者通过什么协议访问主机名和端口开放的Kafka服务
+
+- **advertised.listeners**
+
+  > 对外发布的
+
+- **host.name/port**
+
+  > 过期参数
+
+- **borkerlid**
+
+  > 默认为0，可以取任意值
+
+- **zookeeper.connect**
+
+  > 建议配置 chroot
+  > 建议配置多个zk地址
+
+  > zk1:2181,zk2:2181,zk3:2181/kafka1
+  >
+  > zk记录了元数据信息：
+  >
+  > - 有哪些Broker在运行
+  > - 有哪些Topic
+  > - 每个Topic有多少分区
+  > - 每个分区的Leader副本都在哪些机器上
+
+
+
+**内存环境变量**
+
+- KAFKA_HEAP_OPTS： 堆大小
+- KAFKA_JVM_PERFORMANCE_OPTS：GC参数
+
+> 配置环境变量：
+>
+> $> export KAFKA_HEAP_OPTS=--Xms6g  --Xmx6g
+>
+> $> export  KAFKA_JVM_PERFORMANCE_OPTS= -server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -Djava.awt.headless=true
+>
+> $> bin/kafka-server-start.sh config/server.properties
+
+
+
+**Retention 数据留存配置**
+
+- **log.dirs**
+
+  > 含义：指定Broker使用的文件目录列表；
+  >
+  > 1. 建议挂在到不同物理磁盘
+  >    - 提升读写性能
+  >    - 实现故障转移
+  > 2. 可配置多个：
+  >    - broker会按照“least-used”原则选择目录；
+  >    - least-used == 存储的分区数目最少，而非容量！
+
+- **log.retention.hour|minutes|ms**
+
+  > 含义：一条消息被保存多久
+
+- **log.retention.bytes**
+
+  > 含义：Broker为消息保存的总磁盘大小
+
+- **message.max.bytes**
+
+  > 含义：一条消息最大大小；
+  >
+  > 默认值1000012，偏小！
+
+- **log.cleaner.enabled**
+
+  > log compacted：对每一个key，只保留最新的一条消息
+  >
+  > 适合 change log 类型的消息；
+
+  > 原理
+  >
+  > 1. segment 分为两部分
+  >    - Clean：上次 compact 过的消息；clean部分每个key只对应一个value；
+  >    - Dirty：上次compact过后新增的消息
+  >
+  > 2. 多个 compaction 线程
+  >    - 遍历 Dirty 部分，构造 offset map
+  >    - 遍历 Clean 部分，对 offset map进行补充
+  >    - 替换 segment ?
+
+
+
+**主题相关**
+
+- **auto.create.topics.enable=false**
+
+  > 含义：是否允许自动创建主题
+  >
+  > 应该设为false，把控主题名称
+
+- **unclean.leader.election.enable=false**
+
+  > 含义：是否允许unclean leader选举：允许落后很多的副本参与选举
+  >
+  > 应该设为false，否则数据可能丢失
+
+- **auto.leader.rebalance.enable=false**
+
+  > 含义：是否允许定期进行Leader选举；
+  >
+  > 应该设为false
+
+
+
+### Topic配置
+
+**分区配置**
+
+- **num.partitions**
+
+  > 注意分区数只能增加，不能减少；建议设得大一些，方便扩展消费者数目
+  >
+  > 如何定值？--> 期望吞吐量 / 消费者吞吐量
+
+
+
+**消息配置**
+
+- **retention.ms | bytes**
+
+  > 默认7天，无限大
+
+- **message.max.bytes**
+
+  > 含义：定义一条消息最大大小；
+  >
+  > 大消息有缺点
+  >
+  > - 会增加磁盘写入块的大小，影响 IO 吞吐量
+  > - 处理网络连接和请求的线程要花费更多时间来处理
+
+  > 联动参数
+  >
+  > - `fetch.message.max.bytes` 消费者能读取的最大消息大小，如果 < `max.message.bytes`，则消费会被阻塞
+  > - `replica.fetch.max.bytes` 集群同步的最大消息大小，原则同上
+
+- **log.segment.ms | bytes**
+
+  > 含义：单个 log segment的大小；达到该值时，当前日志片段会关闭 并创建新的日志片段
+  >
+  > 如何定值？
+  >
+  > - 若太小，会频繁关闭和分配文件
+  > - 若太大，而写入数据量又很小，则可能等到超过 log.retention.ms 很多后才能被过期
+
+
+
+配置操作
+
+kafka-topics.sh --config 创建topic时
+
+```shell
+bin/kafka-topics.sh
+--bootstrap-server localhost:9092
+--create
+--topic transaction
+--partitions 1
+--replication-factor 1
+--config retention.ms=15552000000
+--config max.message.bytes=5242880
+```
+
+kafka-configs.sh
+
+```shell
+bin/kafka-configs.sh
+--zookeeper localhost:2181
+--entity-type topics
+--entity-name transaction
+--alter
+--add-config
+max.message.bytes=10485760
+```
+
+
+
+
+### 副本配置
+
+**Producer 端**
+
+- **acks**
+
+  > 含义：表示多少 Replica 写入成功才算真的写入成功
+  > https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
+
+  - `acks = 0` 发完即认为成功，保证性能
+  - `acks = 1` 只要 Leader 写入成功即可
+  - `acks = all` 需要所有 ISR 副本写入成功，保证可靠性
+
+**Broker 端**
+
+- **min.insync.replica**
+
+  > 含义：表示 `acks=all` 时最少需要多少个 ISR 存在；值越小，性能影响越小，但丢失数据的风险越大
+  >
+  > 注意：可设置 broker or topic level
+
+  > 配合acks
+  >
+  > - 如果acks = all，但ISR中只有 Leader 一个，则有问题：写入这一个即认为成功；
+  > - 如果 ISR 少于 min，则返回 NotEnoughReplicasException
+
+- **replica.lag.time.max.ms**
+
+  > 含义：follower的延迟如果超过该值，则被踢出 ISR
+
+- **replication.factor**
+
+  > 含义：副本个数，消息被复制的份数，默认 3
+  >
+  > 值越大，则可用性可靠性越大；同时需要的 Broker 数目也越大
+
+- **unclean.leader.election.enable**
+
+  > 含义：是否允许 OSR replica 被选为 leader，
+  >
+  > - 默认 true：提高可用性，但可能消息丢失、数据不一致；适用于用户行为跟踪
+  > - 设为false：可保证 committed data 不丢失；适用于银行支付信息
+
+
+
+### 生产者配置
+
+```
+Properties p = new Properties();
+p.put("bootstrap.servers", "b1:p1,b1:p2");
+p.put("key.serializer", "");
+p.put("value.serializer", "");
+
+producer = new KafkaProduer<String, String>(p);
+```
+
+
+
+- bootstrap.servers
+
+- key.serializer / value.serializer
+
+- **acks**
+
+  > 含义：表示多少 Replica 写入成功才算真的写入成功
+  >
+  > https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
+
+  - `acks = 0` 发完即认为成功，保证性能、吞吐量，但会丢消息
+  - `acks = 1` 只要 Leader 写入成功即可
+    - 写入分区数据文件，但不一定同步到磁盘
+    - 只要 Leader 写入成功即可
+    - Leader 选举阶段会返回 LeaderNotAvailableException
+  - `acks = all` 需要所有 ISR 副本写入成功，保证可靠性
+
+- **retries**
+
+  > 含义：遇到临时性错误时的重试次数
+  >
+  > 注意：
+  >
+  > - 无需在业务代码里处理重试！
+  >
+  > - 业务代码只需关注 不可重试的错误，或者重试失败的情况
+  >
+  > - MirrorMaker 会设置 retries = MAX
+
+  - 可重试错误
+    - A lack of leader for a partition；
+    - LEADER_NOT_AVAILABLE
+  - 不可重试错误
+    - e.g. message too large
+    - INVALID_CONFIG
+  - 配合 `retry.backoff.ms`， 默认退避 100ms
+
+- **batch.size**
+
+  > 含义：每个batch的字节数，注意不是size!
+  >
+  > 注意：
+  >
+  > - 不宜过小，过小会导致频繁发送消息
+  > - 生产者并不是非要等到 达到 batch.size才会发送出去；配合 `linger.ms`
+
+- **linger.ms**
+
+  > 含义：每个batch发送之前的等待时间
+  >
+  > 注意：
+  >
+  > - 调大会增加延迟，也会提升吞吐量
+  > - 当发现生产者总是发送空batch，则应该增大该值
+
+- **max.in.flight.requests.per.connection**
+
+  > 含义：生产者在收到broker响应之前可以发送多少消息
+  >
+  > 注意：
+  >
+  > - 调大会增加内存占用，会提高吞吐量
+  > - 但设置过高会降低吞吐量 --> 因为 batching becomes less efficient --？
+  > - 如果对有序性要求高，建议设置为 1。
+  >
+  > 乱序场景
+  >
+  > - `in.flight` > 1 && `retries` > 0 时，依次发送batch-1 / 2 --> batch-1 失败 --> batch-2 成功 --> batch-1 重试成功，则乱序
+  > - 设置 in.flight = 1 可确保当有重试时，下一个消息不会被发送；但会严重影响吞吐量。或者设置 retries = 0，但会影响 reliable
+
+- compression.type
+
+  > 取值
+  >
+  > - gzip - CPU 消耗高，压缩比更大
+  > - snappy - CPU 消耗少，压缩比可观
+  > - LZ4
+  > - Zstandard (zstd)
+  >
+  > vs. Broker压缩
+  >
+  > - 如果Broker指定的compression.type != producer，则会重新进行解压压缩； 还会丧失zero copy特性
+  >
+  > 解压
+  >
+  > - 只会发生在 Consumer 端 --> 如何设置每条消息的 offset、校验 checksum？
+  > - Producer 端压缩、Broker 端保持、Consumer 端解压缩
+
+
+
+- buffer.memory
+
+  > 含义：生产者内存缓冲区大小 --> Q: 跟batch什么关系？
+
+- client.id
+
+  > 含义：客户端的标识，可以为任意字符串；用户 日志、metrics、quotas
+
+- 超时 request.timeout.ms
+
+  >  Producer：等待发送数据返回响应的超时
+
+- 超时 metadata.fetch.timeout.ms
+
+  > Producer：请求元数据的超时
+
+- 超时 timeout.ms
+
+  > Broker：等待 In-Sync Replica 返回消息确认的超时
+  >
+  > 与 `acks` 相关：若超时，且 acks = all 则认为写入失败
+
+- max.block.ms
+
+  > 含义1：调用 send() 时的阻塞时间，例如 send buffer 已满
+  >
+  > 含义2：调用 partitionFor()获取元数据时的阻塞时间，例如元数据不可用
+  >
+  > 注意：会抛出 timeout 异常
+
+- max.request.size
+
+  > 含义：生产者发送的请求大小
+  >
+  > 注意：配合 Broker端参数：`message.max.bytes`，最好取值一样；否则生产者发出的大消息 可能被Broker拒绝
+
+- receive.buffer.bytes / send.buffer.bytes
+
+  > 含义：TCP Socket 发送和接受缓冲区大小
+
+
+
+### 消费者配置
+
+- bootstrap.servers
+
+- key.deserializer / value.deserializer
+
+- group.id
+- client.id
+
+
+
+- **fetch.min.bytes**
+
+  > 含义：消费者能获取的最小字节数；broker 收到消费者请求时如果数据量 < `fetch.min.bytes`，会等待 `fetch.max.wait.ms`，直到有足够的数据
+  >
+  > 注意：
+  >
+  > - 提高该值，可以减少网络来回，减少 broker和consumer负载
+  >   - 如果消费者 CPU高、且可用数据量不大，调高该值
+  >   - 如果消费者过多 导致Broker负载过高，调高该值
+  > - 如果发现 fetch-rate 很高，应该增大该值
+  > - 配合 `fetch.max.wait.ms`
+
+- **fetch.max.wait.ms**
+
+  > 含义：等待足够数据的时间
+  >
+  > 注意：调高会增加 Latency
+
+- **fetch.max.bytes**
+
+  > 如果通过监控发现 fetch-size-agv/max 接近 fetch.max.bytes，则应该增大该值
+
+- **max.partition.fetch.bytes**
+
+  > 含义：服务器从每个分区能返回的最大字节数，每次 poll() 从“单个分区”返回的数据 不会超过此值
+  >
+  > 注意：
+  >
+  > - 必须 > max.message.size；否则会导致大消息无法被消费，consumer被hang住 --> 之后的消息也会无法消费。
+  > - 如果设置过大，会导致 consumer处理耗时，影响poll()频率
+
+- **max.poll.record**
+
+  > 含义：poll() 返回的最大记录个数
+  >
+  > https://time.geekbang.org/column/article/102132
+  >
+  > - 目前java consumer的设计是一次取出一批，缓存在客户端内存中，然后再过滤出 `max.poll.records`条消息返给你 
+  > - 若无限制，broker可能返回超大消息，导致消费者OOM
+
+  - vs. `fetch.min.bytes`
+    - 如果 max.poll.record < fetch.min.bytes，什么结果???
+
+  - vs. `max.partition.fetch.bytes`
+    - 个数 vs. 大小
+    - 总体 vs. 按分区
+
+
+
+- session.timeout.ms
+
+  > 含义：消费者被认为死亡的超时时间；**超时后会触发 Rebalance**
+  >
+  > 注意：
+  >
+  > - 配合 `heartbeat.internal.ms`，通常一起修改、必须比它大；推荐设置 `session.timeout.ms` = 3 * `heartbeat.internal.ms`
+  > - 调高 session.timeout 可以减少不必要的 rebalance，但可能导致“故障探测时间”更长
+
+- **auto.offset.reset**
+
+  > 含义：消费者读取一个没有偏移量、或偏移量无效的分区时，该如何处理；
+  >
+  > 原因：消费者死掉好久，包含偏移量的记录已被删除
+
+  - `latest`：从最新记录开始读取
+  - `earliest`：从起始位置开始读取
+
+- **enable.auto.commit**
+
+  > 含义：是否自动提交，默认为 true
+  >
+  > 注意：
+  >
+  > - 配合 auto.commit.interval.ms
+  > - 设为false，可减少重复、丢失
+
+- **partition.assignment.strategy**
+
+  > 含义：给消费者分配 Partition 的策略
+
+  - `Range`：把主题的若干“连续”分区分配给消费者，分配可能不均衡
+
+    > C1: t1_p0, t1_p1, t2_p0, t2_p1  -- 连续分区 分配给C1
+    > C2: t1_p2, t2_p2
+
+  - `RoundRobin`：把主题的所有分区“逐个”分配给消费者，分配更均衡
+
+    > C1: t1_p0, t1_p2, t2_p1 -- 连续分区 分配给C1
+    > C2: t1_p1, t2_p0, t2_p2
+
+- **receive.buffer.bytes / send.buffer.bytes**
+
+  > 含义：TCP Socket 发送和接受缓冲区大小
+
+
+
+
+
+## || 调优
+
+### 链接调优
+
+- 复用 Producer / Consumer 对象
+- 及时关闭 Socket连接、ByteBuffer缓冲区
+
+
+
+### Throughput 调优
+
+**目的**
+
+在给定时间内，尽可能多地移动数据。允许延时、允许丢消息
+
+
+
+**手段**
+
+- Producer 端
+
+  > `batch.zise = 100000 – 200000` 增大批次大小（default = 16384）
+  >
+  > `linger.ms = 10 - 100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
+  >
+  > `compress.type=lz4/zstd` 压缩，gzip会导致cpu冲高；
+  >
+  > `acks=0/1`, 不要是all（default = 1）；--> 损失 durability
+  >
+  > `retries=0` 
+  >
+  > `buffer.memory`：如果分区很多，则可增大（default = 33554432）；表示为未发送消息分配的内存。
+
+- Broker 端
+
+  > `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息 
+  >
+  > `主题分区数调大`：不同的分区可以并行生产、并行消费。--> 损失latency
+
+- Consumer 端
+
+  > `fetch.min.bytes = 100000`：Broker 积攒了 N 字节数据，就可以返回给 consumer，表示每次fetch数据的大小（default = 1）；--> 损失 latency
+  >
+  > `多线程消费`。
+  >
+  > `GC调优` 减少GC停顿时间。
+
+
+
+### Latency 调优
+
+多数参数默认值 都是以 Latency 为目的。
+
+- Producer端：希望消息尽快发出，不要停留
+
+  > `linger.ms=0`
+  >
+  > `compress.type=none`
+  >
+  > `acks=1`
+
+- Broker端
+
+  > `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息（default = 1）
+  >
+  > `主题分区数调小`：broker默认用单线程同步数据，分区越多同步越慢
+
+- Consumer端
+
+  > `fetch.min.bytes=1`：只要Broker有数据就立即返回给 Consumer
+  >
+  > `fetch.max.wait.ms`：增大？
+
+
+
+### Durability 调优
+
+
+
+
+
+### Availability 调优
+
+
+
+
+
+
 
 ## || 监控
 
