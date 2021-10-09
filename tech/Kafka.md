@@ -2017,13 +2017,13 @@ https://time.geekbang.org/column/article/110482
 
 ## || 可靠性交付
 
-### At Most Once
+### At-Most-Once
 
 需要Producer禁止重试
 
 
 
-### At Least Once
+### At-Least-Once
 
 默认提供
 
@@ -2065,80 +2065,134 @@ A：Broker返回应答时 网络抖动，Producer此时选择重试
 
 
 
-### Exactly Once
+### Exactly-Once
 
 http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/ 
 
-https://www.confluent.io/blog/enabling-exactly-once-kafka-streams/  ! 
+https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/ ！！
+
+https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#heading=h.97qeo7mkx9jx 设计文档
 
 
 
-#### 生产者 -幂等性 Idempotence
+#### 生产者幂等性 Idempotence
 
-- 配置：`props.put("enable.idempotence", true)`
+保证生产的消息即便重试也不会有重复。
 
-- 原理
-  - Broker此时会多保存一些字段，用于判断消息是否重复，自动去重
-  - Kafka 发送时自动去重
+**配置：**
 
-- 限制
-  - 无法实现跨分区的幂等
-  - 无法实现跨会话的幂等：Producer重启后会丧失幂等性
+- `enable.idempotence = true`
+
+**原理**
+
+- Broker此时会多保存一些字段，用于判断消息是否重复，自动去重：每条消息会有一个 sequence number，
+- Kafka 发送时自动去重
+
+**限制**
+
+- 无法实现跨分区的幂等
+- 无法实现跨会话的幂等：Producer重启后会丧失幂等性
 
 
 
-#### 生产者 -事务 Transaction
+#### 生产者事务 Transaction
 
-- 配置：
+保证消息原子性地写入到多个分区，要么全部成功，要么全部失败 
 
-  - `props.put("enable.idempotence", true)`
+> 但即便失败，也会写入日志；因为没法回滚
+>
+> 解决幂等性生产者的限制：不能跨分区、跨会话
 
-  - 同时设置 transactional.id
 
-    > 如果配置了transaction.id，则此时enable.idempotence会被设置为true；
-    >
-    > 在使用相同TransactionalId的情况下，老的事务必须完成才能开启新的事务
 
-  - 代码中显式地提交事务
+**配置：**
 
-    ```java
-    producer.initTransactions();
+- `enable.idempotence = true`
+
+- 同时设置 transactional.id
+
+  > 如果配置了transaction.id，则此时enable.idempotence会被设置为true；
+  >
+  > 在使用相同TransactionalId的情况下，老的事务必须完成才能开启新的事务
+
+- 代码中显式地提交事务
+
+  ```java
+  producer.initTransactions();
+  
+  try {
+    producer.beginTransaction();
+    producer.send(record1);
+    producer.send(record2);
+    producer.commitTransaction();
     
-    try {
-      producer.beginTransaction();
-      producer.send(record1);
-      producer.send(record2);
-      producer.commitTransaction();
-      
-    } catch (KafkaException e) {
-      producer.abortTransaction();
-    }
-    ```
+  } catch (KafkaException e) {
+    producer.abortTransaction();
+  }
+  ```
 
-    
+  
 
 - consumer改动：设置`isolation.level` 
-  - read_uncommitted
+  - read_uncommitted：类似无事务consumer；
   - read_committed：只读取成功提交了的事务，否则消费者会读到提交失败的消息
 
-- 原理
+  
+  
 
-  - 保证消息原子性地写入到多个分区，要么全部成功，要么全部失败 
+**原理**
 
-    > 但即便失败，也会写入日志；因为没法回滚
-    >
-    > 解决幂等性生产者的限制：不能跨分区、跨会话
+> https://www.confluent.io/blog/transactions-apache-kafka
 
-  - 区别 RocketMQ 的半消息！
+- 组件
 
-  - 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
+  - Transaction Coordinator
+  - Transaction Log
+    - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
+    - 其每个分区被一个 Cooridinator 管理；
+    - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是每个tid 对应一个 coordinator；
 
-- 限制
-  - 性能更差
+- 流程
+
+  1. **Producer - Tx Coordinator**
+
+     > 三个场景下，producer 需要跟 Coordinator 交互
+     >
+     > - initTransactions：coordinator 关闭同一txid下的其他未完成事务；
+     > - 首次发送数据：分区与coordinator注册；
+     > - commitTransaction / abortTransaction：触发两阶段提交
+
+  2. **Tx Coordinator - Tx Log**
+
+     > Coordinator 将事务状态存到内存、写入Log
+
+  3. **Producer - Topic**
+
+     > Producer 正常写入主题
+
+  4. **Tx Coordinator - Topic** 
+
+     > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
+     >
+     > - In the first phase, the coordinator updates its internal state to **`prepare_commit`** and updates this state in the transaction log. Once this is done the transaction is guaranteed to be committed no matter what.
+     >
+     > - The coordinator then begins phase 2, where it writes `transaction commit markers` to the topic-partitions which are part of the transaction.
+     >   - These `transaction markers` are not exposed to applications, but are used by consumers in **`read_committed`** mode to **filter out messages** from aborted transactions and to not return messages which are part of *open transactions* (i.e., those which are in the log but don’t have a `transaction marker` associated with them).
+     >   - Once the markers are written, the transaction coordinator marks the transaction as **`complete`** and the producer can start the next transaction.
 
 
 
-#### 消费者 幂等性
+**限制**
+
+- 性能更差
+
+
+
+区别 RocketMQ 的半消息！
+
+
+
+#### 消费者幂等性
 
 1. 通过“Unique Key”存储，保证消费幂等性
 
@@ -2147,6 +2201,16 @@ https://www.confluent.io/blog/enabling-exactly-once-kafka-streams/  !
 2. 通过RDB事务性，原子性写入记录、存储offset
 
    > 当重启时，通过 consumer.seek() 找到上次处理位置
+
+
+
+### Kafka EOS
+
+>  Exactly-Once Stream
+>
+>  https://www.confluent.io/blog/enabling-exactly-once-kafka-streams/  
+
+因为上述幂等性、原子性，在Streams应用中只需要配置 `processing.guarantee=exactly_once` 即可保证 Exactly-Once. 
 
 
 
