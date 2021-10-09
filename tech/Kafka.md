@@ -2069,6 +2069,8 @@ A：Broker返回应答时 网络抖动，Producer此时选择重试
 
 http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/ 
 
+https://www.confluent.io/blog/enabling-exactly-once-kafka-streams/  ! 
+
 
 
 #### 生产者 -幂等性 Idempotence
@@ -3798,9 +3800,33 @@ producer = new KafkaProduer<String, String>(p);
 
 ### Availability 调优
 
+**目的**
+
+发生故障时能尽快恢复。
 
 
 
+**手段**
+
+- Broker
+
+  > `replica 数目不能过大`：副本越多，选主时间越长；
+  >
+  > `min.insync.replicas=1`：减小 min ISR，减少 produce失败这种不可用；
+  >
+  > `unclean.leader.election.enable=true` 让选主更快，而不考虑可能的数据丢失；
+  >
+  > `num.recovery.threads.per.data.dir` 设置为磁盘数，提高 log recovery速度（新broker启动时使用）；
+  >
+  > 
+
+- Consumer
+
+  > `session.timeout.ms` 调低；加快 consumer fail被发现的时间、尽快触发rebalance. 
+  >
+  > - !!! 同时要注意不能太低，以便处理 soft failures；例如“处理时间过长的情况”，此时可以：
+  > - 增大 `max.poll.interval.ms` 
+  > - 减小 `max.poll.records`
 
 
 
