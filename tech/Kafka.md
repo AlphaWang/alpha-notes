@@ -326,6 +326,33 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
+### 重试
+
+默认会自动重试；相关参数：`retries` `delivery.timeout.ms`
+
+- 自动重试的问题
+  - 重复：生产者会重复发送同一消息；
+  - 乱序：之前发送的消息被重试；
+
+- 解决1：`enable.idempotence=true` 
+
+  > - Broker此时会多保存一些字段，用于判断消息是否重复，自动去重
+  > - Kafka 发送时自动去重
+
+- 解决2：`max.in.flight.requests.per.connection=1` ，一次只能发送一个请求；
+
+  > 保证消息顺序，并允许重试错误消息；
+
+- 解决3：手工重试
+
+  - `retries=0`
+
+  - 实现回调 `onCompletion()` 
+
+    
+
+
+
 ## || 消费者
 
 ### 消费者组
@@ -3656,9 +3683,9 @@ producer = new KafkaProduer<String, String>(p);
 
 - Producer 端
 
-  > `batch.zise = 100000 – 200000` 增大批次大小（default = 16384）
+  > `batch.zise = 100000–200000` 增大批次大小（default = 16384）
   >
-  > `linger.ms = 10 - 100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
+  > `linger.ms = 10-100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
   >
   > `compress.type=lz4/zstd` 压缩，gzip会导致cpu冲高；
   >
@@ -3686,11 +3713,17 @@ producer = new KafkaProduer<String, String>(p);
 
 ### Latency 调优
 
-多数参数默认值 都是以 Latency 为目的。
+**目的**
+
+减少消息从生产到消费的耗时；多数参数默认值 都是以 Latency 为目的。
+
+
+
+**手段**
 
 - Producer端：希望消息尽快发出，不要停留
 
-  > `linger.ms=0`
+  > `linger.ms=0` 另外batch.size 就无需指定了
   >
   > `compress.type=none`
   >
@@ -3712,7 +3745,54 @@ producer = new KafkaProduer<String, String>(p);
 
 ### Durability 调优
 
+**目的**
 
+减少消息丢失的几率。
+
+
+
+**手段**
+
+- Producer 端
+
+  > `replication.factor=3`，多副本
+  >
+  > `acks=all` 生产消息保所到所有 ISR 副本；
+  >
+  > `retries=MAX_INT`
+  >
+  > `delivery.timeout.ms` 增大等待ack回复的超时时间；
+  >
+  > - `enable.idempotence=true` 配置生产者幂等，因为retry会引起消息重复、乱序
+  > - `max.in.flight.requests.per.connection=1` 如果非幂等生产，则调整每次只发送一个请求（default = 5）
+- Broker 端
+
+  > `replication.factor=3` 主题副本个数
+  >
+  > `min.insync.replicas=2` 主题最小ISR
+  >
+  > `unclean.leader.election.enable=false` OSR 副本不可选为leader；--> tradeoff: 低于 min ISR 时会不可用；
+  >
+  > `打开 rack awareness` 确保同一分区的不同副本分配到不同机架上；
+  >
+  > 
+  >
+  > 内部主题副本
+  >
+  > - `default.replication.factor=3` 自动创建的topic保证多副本；
+  >
+  > - `offsets.topic.replication.factor =3` __consumer_offsets 主题保证多副本；
+  >
+  > - `transaction.state.log.replication.factor=3` Exactly-Once-Semantics 主题保证多副本；
+  >
+  > 如果主题流量很小，还可以调整flush
+  >
+  > - `log.flush.interval.ms` `log.flush.interval.messages` 调小，更频繁地将page cache刷盘；
+- Consumer 端
+
+  > `enable.auto.commit=false`  否则是在 poll() 的时候以一定时间间隔自动提交；
+  >
+  > `isolation.level = read_committed` 对 EOS 事务
 
 
 
