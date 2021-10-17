@@ -2568,6 +2568,8 @@ Q: 什么情况下消息不丢失
     > - 常规主题：user
     > - 逻辑主题：clusterA-user, clusterB-user
 
+![image-20211015114236090](../img/kafka/dr-active-active.png)
+
 
 
 **Active-Standby 架构**
@@ -2612,7 +2614,7 @@ Q: 什么情况下消息不丢失
       > 4. External offset mapping:
       >    用外部存储保存两个数据中心的偏移量对应关系。
 
-
+![image-20211015114124539](../img/kafka/dr-active-passive.png)
 
 **Stretch Clusters**
 
@@ -2673,10 +2675,11 @@ Q: 什么情况下消息不丢失
 
 
 
-- 可基于 timestamp 进行 **offset translation**，offset虽然在多DC间可能不一致，但timestamp不会；https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-failover.html#replicator-failover 
+- 可基于 timestamp 进行 **offset translation**，offset虽然在多DC间可能不一致，但timestamp不会；
 
-  > - auto.offset.reset 则需要到指定offset，而不是 latest/earliest；
+  > https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-failover.html#understanding-consumer-offset-translation
   >
+  > - auto.offset.reset 则需要到指定offset，而不是 latest/earliest；
   > - 为消费者配置timestamp-interceptor，将 timestamp - offset 信息存储到 `__consumer_timestamps` 主题；
 
 
@@ -2734,9 +2737,16 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 ### Raplicator
 
+> - 15 things : https://www.confluent.io/blog/15-facts-about-confluent-replicator-and-multi-cluster-kafka-deployment/ 
+> - Multi-Region: https://www.confluent.io/blog/multi-region-data-replication/ 
+> - 入门 https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-quickstart.html#replicator-quickstart 
+> - DEMO https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-docker-tutorial.html#replicator 
+
+
+
 **部署**
 
-- Raplicator 其实是一个 Kafka connector
+- Raplicator 其实是一个 Kafka connector（所以支持 Single Message Transforms，SMTs）
 - Raplicator 部署在目标DC
 - Active-Active 模式下，要禁止 Replicator 提交 offset：`offset.timestamps.commit=false`
 
@@ -2747,6 +2757,8 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 - replication lag: 影响 RPO
 
 
+
+![image-20211015114407360](../img/kafka/dr-replicator.png)
 
 
 
@@ -2826,10 +2838,6 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 可用替换：Confluent's Replicator
 https://www.confluent.io/product/confluent-platform/global-resilience/
-
-
-
-### 
 
 
 
