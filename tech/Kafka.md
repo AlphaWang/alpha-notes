@@ -1026,7 +1026,7 @@ return Math.abs(key.hashCode()) % partitions.size();
 
 - AR: Assigned Replicas - 所有副本集合
 
-- ISR: In-Sync Replicas - 只有ISR集合中的副本才可能选为新leader
+- **ISR**: In-Sync Replicas - 只有ISR集合中的副本才可能选为新leader
 
   > 判断是否 In-Sync：`replica.lag.time.max.ms` (default = 10s)， **是判断落后的时间间隔，而非落后的消息数！**
   >
@@ -1038,7 +1038,14 @@ return Math.abs(key.hashCode()) % partitions.size();
   >
   > - 除此之外，当ISR集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个Set，如果发现这个Set中有ISR集合的变更记录，那么它会在zk中持久化一个节点。然后因为Controllr在这个节点的路径上注册了一个Watcher，所以它就能够感知到ISR的变化，并向它所管理的broker发送更新元数据的请求。最后删除该路径下已经处理过的节点。
 
-- OSR: Out-of-Sync Replicas
+- **OSR**: Out-of-Sync Replicas
+
+- **Observer**：不参与选主，只**异步**复制数据
+
+  - Improved durability without sacrificing write throughput.
+  - Replicates across slower/higher-latency links without falling in and out of sync (also known as ISR thrashing)
+  - Complements *Follower Fetching*
+  - 可用于 DR - 复制到另一个DC中的 Observer
 
 
 
@@ -2067,17 +2074,15 @@ A：Broker返回应答时 网络抖动，Producer此时选择重试
 
 ### Exactly-Once
 
-http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/ 
-
-https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/ ！！
-
-https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#heading=h.97qeo7mkx9jx 设计文档
+> - http://www.dengshenyu.com/kafka-exactly-once-transaction-interface/ 
+> - https://www.confluent.io/blog/exactly-once-semantics-are-possible-heres-how-apache-kafka-does-it/ ！！
+> - https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/edit#heading=h.97qeo7mkx9jx 设计文档
 
 
 
-#### 生产者幂等性 Idempotence
+#### 生产者幂等性 
 
-保证生产的消息即便重试也不会有重复。
+Idempotence 保证生产的消息即便重试也不会有重复。
 
 **配置：**
 
@@ -2095,9 +2100,9 @@ https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/
 
 
 
-#### 生产者事务 Transaction
+#### 生产者事务 
 
-保证消息原子性地写入到多个分区，要么全部成功，要么全部失败 
+Transaction 保证消息原子性地写入到多个分区，要么全部成功，要么全部失败 
 
 > 但即便失败，也会写入日志；因为没法回滚
 >
@@ -2109,7 +2114,7 @@ https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/
 
 - `enable.idempotence = true`
 
-- 同时设置 transactional.id
+- 同时设置 `transactional.id`
 
   > 如果配置了transaction.id，则此时enable.idempotence会被设置为true；
   >
@@ -2133,9 +2138,9 @@ https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/
 
   
 
-- consumer改动：设置`isolation.level` 
-  - read_uncommitted：类似无事务consumer；
-  - read_committed：只读取成功提交了的事务，否则消费者会读到提交失败的消息
+- consumer改动：设置 `isolation.level` 
+  - **read_uncommitted**：类似无事务consumer；
+  - **read_committed**：只读取成功提交了的事务，否则消费者会读到提交失败的消息
 
   
   
@@ -2150,7 +2155,7 @@ https://docs.google.com/document/d/11Jqy_GjUGtdXJK94XGsEIK7CP1SnQGdp2eF0wSw9ra8/
   - Transaction Log
     - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
     - 其每个分区被一个 Cooridinator 管理；
-    - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是每个tid 对应一个 coordinator；
+    - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
 
 - 流程
 
@@ -2514,9 +2519,26 @@ Q: 什么情况下消息不丢失
 
 ### 多 DC 架构
 
-> 多 DC 架构 : https://docs.confluent.io/platform/current/multi-dc-deployments/multi-region-architectures.html#multi-region-architectures
+> 多 DC 架构 : https://docs.confluent.io/platform/current/multi-dc-deployments/multi-region-architectures.html
 
 
+
+**Stretch Clusters**
+
+- 原理
+
+  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
+
+    > Rack awareness ensures that replica placement is such that at least one topic-partition replica exists in each region (or rack).
+
+- 优点
+
+  - 同步复制：RPO = 0, RTO = 0
+  - 没有资源浪费 
+
+- 要求：DC 间延迟 < 50 ms
+
+![image-20211017152341752](../img/kafka/multi-dc-stretch-clusters.png)
 
 
 
@@ -2536,6 +2558,8 @@ Q: 什么情况下消息不丢失
   > Replication 是单向的
 
 - 缺点：不可跨区读取
+
+![image-20211017152713339](../img/kafka/multi-dc-aggregation.png)
 
 
 
@@ -2572,7 +2596,7 @@ Q: 什么情况下消息不丢失
 
 
 
-**Active-Standby 架构**
+**Active-Passive 架构**
 
 - 原理
 
@@ -2615,21 +2639,6 @@ Q: 什么情况下消息不丢失
       >    用外部存储保存两个数据中心的偏移量对应关系。
 
 ![image-20211015114124539](../img/kafka/dr-active-passive.png)
-
-**Stretch Clusters**
-
-- 原理
-
-  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
-
-    > Rack awareness ensures that replica placement is such that at least one topic-partition replica exists in each region (or rack).
-
-- 优点
-
-  - 同步复制：RPO = 0, RTO = 0
-  - 没有资源浪费 
-
-- 要求：DC 间延迟 < 50 ms
 
 
 
@@ -2723,14 +2732,17 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 - **数据同步**
 
-  - Active-Active 模式：源DC恢复后，Replicator 会自动同步新DC数据回来。
+  - Active-Active 模式：
+
+    - 源DC恢复后，Replicator 会自动同步新DC数据回来。
+    - 源DC 如果还有未被同步的数据，如果不用保序，则同步到 destination。
 
   - Active-Passive 模式： 需要手工同步数据。
 
     > Replicator 默认不会同步有 provenance header 的消息。
 
 - **同步后消息顺序不能保证**
-  - 原因？
+
 - **客户应用重启**
 
 
@@ -2741,16 +2753,31 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 > - Multi-Region: https://www.confluent.io/blog/multi-region-data-replication/ 
 > - 入门 https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-quickstart.html#replicator-quickstart 
 > - DEMO https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-docker-tutorial.html#replicator 
+> - 配置参数 https://docs.confluent.io/platform/current/multi-dc-deployments/replicator/replicator-failover.html 
 
 
 
 **部署**
 
 - Raplicator 其实是一个 Kafka connector（所以支持 Single Message Transforms，SMTs）
-- Raplicator 部署在目标DC
+- 一般部署在目标DC，每个source cluster对应一个replicator实例。
 - Active-Active 模式下，要禁止 Replicator 提交 offset：`offset.timestamps.commit=false`
 
 
+
+**功能**
+
+- 主题选择：基于白名单、黑名单、正则
+
+- 主题动态创建
+
+- 主题元数据同步：分区数、
+
+- Offset Translation
+
+- Prevent cyclic message repetition.
+
+  
 
 **监控**
 
@@ -2758,11 +2785,31 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 
 
+**架构**
+
+
+
 ![image-20211015114407360](../img/kafka/dr-replicator.png)
+
+- 主题命名：默认source和desitination使用同一主题名，而如果从多个DC复制到单一 destination，则需要独立的主题。
+
+  > 原因：仅仅是防止配置可能不同？--> Q?
+  >
+  > 
+  >
+  > 主题同名需要考虑：
+  >
+  > - Producer 不应等待远程DC的ack; Replicator 在本地commit之后才会异步同步数据；
+  > - 生产的消息不会 “全局有序”；
+  > - 如果没有DC有相同consumer group的消费者，则会被消费多次。
+
+  
 
 
 
 ### MirrorMaker
+
+> https://kafka.apache.org/documentation/#basic_ops_mirror_maker 
 
 **概念**
 
