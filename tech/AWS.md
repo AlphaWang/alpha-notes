@@ -78,7 +78,7 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->       
+>         
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -244,7 +244,7 @@ Auto Scaling 配置
 
 
 
-### **EC2 状态检查、自动恢复**
+### EC2 状态检查、自动恢复
 
 状态检查是内置到 Amazon EC2 中的，所以不能禁用或删除。状态检查每分钟进行一次，会返回一个通过或失败状态。如果所有的检查都通过，则实例的整体状态是OK，如果有一个或多个检查故障，则整体状态为受损。
 
@@ -304,15 +304,18 @@ Lambda 触发器
 
 > 实战：使用 Lambda 定时关闭和启动EC2实例
 >
+> https://iteablue.com/course/aws-certified-solutions-architect-associate/lessons/how-to-stop-and-start-ec2-using-lambda 
+>
 > - Lambda --> 创建函数 
 >
 >   - 函数名称
 >
 >   - 运行时：Python 3.7
 >
->   - 权限：执行角色
+>   - 权限：创建策略，因为默认权限比较小，而启停EC2需要更高权限。
 >
 >     ```json
+>     // Policy
 >     {
 >       "Version": "2012-10-17",
 >       "Statement": [
@@ -358,7 +361,72 @@ Lambda 触发器
 
 # 2. 存储 - Storage
 
+## || S3
 
+**特点**
+
+- 对象存储，而不是块存储；
+
+  > 对象参数包括：
+  >
+  > - Key
+  > - Value
+  > - Version Id
+  > - Metadata
+  > - 访问控制信息
+
+- 文件存储在 **Bucket** 内，bucket相当于文件夹；
+
+- 创建在某个 **Region**，但不可指定 AZ；
+
+- 版本控制：可恢复文件到之前版本；
+
+- 声明周期管理：
+
+- 支持加密、ACL、Bucket Policy
+
+
+
+**数据一致性模型**
+
+- 新对象：Read after Write Consistency
+
+  > 返回200之前先同步到aws的多个物理位置。
+
+- 修改\删除：Eventual Consistency
+
+
+
+**S3 存储类型**
+
+- Standard
+
+- Reduced Redundancy
+
+  > 持久性最低，用于存储可再生数据。不推荐使用。
+
+- Standard - IA (Infrequently Accessed)
+
+  > 用于存储不常访问的数据，跨区存储。
+  >
+  > 存储价格比 Standard 低，但读取更贵。
+
+- Onezone - IA
+
+  > 类似 Standard IA，但只保存到一个可用区
+
+- Glacier
+
+  > 仅做归档
+
+
+
+> 实践：创建存储桶
+>
+> - 名称：唯一性
+> - 区域：必须且只能选择一个
+> - 版本控制：选择是否开启，开启后费用更高
+> - 
 
 
 
@@ -640,7 +708,20 @@ https://www.iloveaws.cn/2170.html
 
 ![image-20210727000149492](../img/aws/ecs_cluster.png)
 
+**分类**
 
+- **ECS on EC2**
+  - 容器运行在EC2实例上；
+  - ECSA Container Agent 安装在实例上；
+  - ECS 是免费的，EC2 收费；
+  - 不好扩容；
+  - 集成了 EKS (托管的k8s服务)
+- **ECS on Fargate** 
+  - 无需 EC2 实例资源；
+  - 为运行的任务付费；
+  - 尚未集成 k8s
+
+![image-20211030104022338](../img/aws/ecs-on-ec2.png)
 
 
 
@@ -648,7 +729,9 @@ https://www.iloveaws.cn/2170.html
 
 任务定义是一个JSON格式的文本文件，这个文件定义了构建应用程序的各种参数。这些参数包括了：要使用哪些容器镜像，使用哪种启动类型，打开什么端口，使用什么数据卷等等。
 
-ECS任务定义有点类似 *CloudFormation*，只是ECS任务定义是用来创建Docker容器的。
+> ECS任务定义有点类似 *CloudFormation* （or 类似 Dockerfile?），只是ECS任务定义是用来创建Docker容器的。
+>
+> Task 类似于 pod？
 
 ```json
 {
@@ -718,11 +801,11 @@ ECS任务调度负责将任务放置到集群中，你可以定义一个**服务
 
  
 
-> 实践：使用ECS
+> 实践：使用ECS 创建 Docker 容器
 >
 > - ECS -> 开始使用 
->   - 容器：sample-app 基于httpd；或者 nginx 
->   - 任务：网络模式，任务内存，任务CPU；相当于是一个模板
+>   - **容器定义**：sample-app 基于httpd；或者 nginx 
+>   - **任务定义**：网络模式，任务内存，任务CPU；相当于是一个模板 Dockfile
 >   - 服务：定义 ALB，port, http
 >   - 集群：VPC，子网
 > - LB --> 查看自动创建的 ALB，可通过其访问 sample-app
@@ -751,7 +834,7 @@ Beanstalk 方式：
 
 
 
-> **实践：创建**
+> **实践：创建 Beanstalk**
 >
 > - Elastic Beanstalk 控制台 --> 创建应用
 >

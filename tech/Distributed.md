@@ -1054,7 +1054,7 @@ https://matt33.com/2018/07/08/distribute-system-consistency-protocol/
   - 更新 redo log --> 写入binlog --> 提交 redo log
 
 - Kafka 精确一次语义
-  - 事务
+  - 事务: `Transaction Coordinator` & `Transaction Log`
   - 保证消息原子性地写入多个分区，要么全部成功，要么全部失败
 
 - Practical Microservices Architectural Pattern
@@ -3051,5 +3051,4 @@ Service Level Agreement 服务等级协议
 **工具**
 
 - JMeter
-
 
