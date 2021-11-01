@@ -48,42 +48,6 @@ EBS 类型
 
 
 
-### EFS
-
-Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
-
-特点：
-
-- 支持Network File System version 4 (NFSv4)协议
-- EFS是**Block Base Storage**，而不是Object Base Storage（例如S3）
-- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用
-- 可以有高达PB级别的存储
-- 同一时间能支持上千个NFS连接
-- 高可用：EFS的数据会存储在一个AWS区域的多个可用区内
-- Read After Write Consistency
-
-
-
-> 实践：创建EFS
->
-> 1. Config file system access: 选择 VPC --> 选择相应子网、安全组
-> 2. Config optional settings：设置 Tags，选择性能模式
->
-> 实践：挂载 EC2
->
-> - EFS --> 找到 EC2 Mount Instructions，拷贝挂载命令
->
-> - CLI 登录 EC2，执行命令
->
->   ```
->   mkdir efs
->   mount mount -t nfs4 -o ... efs
->         
->   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
->   ```
->
->   
-
 
 
 ### AMI 
@@ -144,7 +108,7 @@ Auto Scaling 配置
 
 - **ASG**
 
-  - Auto Scaling 组是 EC2 实例集合，将实例当作一个逻辑单位进行扩展和管理；
+  - Auto Scaling Group 是 EC2 实例集合，将实例当作一个逻辑单位进行扩展和管理；
 
   - 可配置组中的最小最大实例数、在哪个可用区/子网启动实例、ASG是否附加负载均衡器、监控状况检查等；
 
@@ -206,10 +170,10 @@ Auto Scaling 配置
 
 
 
-实践：
-
-- EC2 --> 网络与安全 --> 置放群组 --> 新建
-- EC2 --> 启动实例 --> step3 ”配置实例“ - 选择置放群组
+> 实践：
+>
+> - EC2 --> 网络与安全 --> 置放群组 --> 新建
+> - EC2 --> 启动实例 --> step3 ”配置实例“ - 选择置放群组
 
 
 
@@ -381,7 +345,7 @@ Lambda 触发器
 
 - 版本控制：可恢复文件到之前版本；
 
-- 声明周期管理：
+- 生命周期管理：自动转换存储类型；
 
 - 支持加密、ACL、Bucket Policy
 
@@ -394,6 +358,8 @@ Lambda 触发器
   > 返回200之前先同步到aws的多个物理位置。
 
 - 修改\删除：Eventual Consistency
+
+  > 异步同步
 
 
 
@@ -421,12 +387,117 @@ Lambda 触发器
 
 
 
-> 实践：创建存储桶
+> **实践：创建存储桶**
 >
 > - 名称：唯一性
 > - 区域：必须且只能选择一个
 > - 版本控制：选择是否开启，开启后费用更高
-> - 
+>   - 属性 --> 版本控制 --> 启用
+>   - 文件名 右侧下拉框 --> 切换版本；或列表 --> 版本：显示
+>
+> 
+>
+> **实践：跨区域同步**
+>
+> （作用：高可用、用户距离）
+>
+> - 管理选项卡 --> 复制 --> 添加规则
+>   - 源：整个桶，或桶内部分对象；
+>   - 目标：选择目标桶，必须开启版本控制；
+>   - 权限：IAM 角色、并赋予权限；
+> - 在源上上传文件，会自动同步到目标。
+> - 在源上删除文件某个版本，不会同步到目标。
+> - 在源上删除文件所有版本，会同步到目标。
+>
+> 
+>
+> **实践：生命周期管理**
+>
+> - 管理选项卡 --> 生命周期 --> 添加规则
+>   - 范围
+>   - 转换规则：转到`标准IA` `一区IA` `Glacier`
+>   - 过期：多久后被永久删除
+>
+> 
+>
+> **实践：传输加速**
+>
+> - 原理：将数据上传到离我们最近的**边缘节点**，然后再通过AWS内部网络（更高速，更稳定）传输到对应区域的 S3 存储桶。
+> - 属性 --> 高级设置 --> 转移加速度 --> 启用
+
+
+
+**S3 安全**
+
+- Bucket Policy
+- Access Control List 
+
+
+
+**S3 加密**
+
+- 传输过程中加密：SSL/TLS
+
+- 静态加密
+
+  - 服务端加密（SSE, Server Side Encryption）
+
+    > **SSE-S3**: S3 托管密钥
+    >
+    > **SSE-KMS**: KMS 托管密钥
+    >
+    > **SSE-C**: 服务端加密与客户提供的密钥一起使用
+
+  - 客户端加密（CSE, Client Side Encryption）
+
+
+
+## || Glacier
+
+
+
+
+
+## || EFS
+
+Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
+
+特点：
+
+- 支持Network File System version 4 (NFSv4)协议
+- EFS是**Block Base Storage**，而不是Object Base Storage（例如S3）
+- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用
+- 可以有高达PB级别的存储
+- 同一时间能支持上千个NFS连接
+- 高可用：EFS的数据会存储在一个AWS区域的多个可用区内
+- Read After Write Consistency
+
+
+
+> 实践：创建EFS
+>
+> 1. Config file system access: 选择 VPC --> 选择相应子网、安全组
+> 2. Config optional settings：设置 Tags，选择性能模式
+>
+> 实践：挂载 EC2
+>
+> - EFS --> 找到 EC2 Mount Instructions，拷贝挂载命令
+>
+> - CLI 登录 EC2，执行命令
+>
+>   ```
+>   mkdir efs
+>   mount mount -t nfs4 -o ... efs
+>   
+>   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
+>   ```
+>
+
+
+
+
+
+
 
 
 
@@ -437,6 +508,40 @@ Lambda 触发器
 
 
 # 4. 网络 - Networking
+
+
+
+## || CloudFront CDN
+
+利用CDN访问的是位于全球各地的分发网络（边缘站点），从而达到更快的访问速度和减少源服务器的负载。
+
+- **边缘站点（Edge Location）**：边缘站点是内容缓存的地方，它存在于多个网络服务提供商的机房，它和AWS区域和可用区是完全不一样的概念。
+- **源（Origin）**：这是CDN缓存的内容所使用的源，源可以是一个S3存储桶，可以是一个EC2实例，一个弹性负载均衡器（ELB）或Route53，甚至可以是AWS之外的资源。
+- **分配（Distribution）**：AWS CloudFront创建后的名字。分配分为两种类型，分别是
+  - **Web Distribution**：一般的网站应用
+  - **RTMP (Real-Time Messaging Protocol)**：媒体流
+
+
+
+> 实践：创建 CloudFront CDN
+>
+> - 网络和内容分发 --> CloudFront (无法也无需选择区域) --> Create --> Web Distribution
+> - Origin 设置
+>   - Domain: S3 or LB
+>   - Path: 
+>   - Origin Access Identity: 
+> - Cache 设置
+>   - Protocol 策略
+>   - 允许的http方法
+> - Distribution 设置
+>   - WAF (web application firewall): 防止应用层攻击，SQL注入
+>   - CNAMEs:
+>   - SSL 证书：
+>   - Logging: 可以存储到S3
+> - Geo-Restriction
+>   - 可以把某个国家加到白名单或黑名单
+
+
 
 
 
