@@ -456,6 +456,44 @@ Lambda 触发器
 
 
 
+## || Storage Gateway
+
+作用：将**本地软件设备**与**基于云的存储**相连接。
+
+
+
+**架构**
+
+![image-20211101091255960](../img/aws/storage-gateway-arch.png)
+
+
+
+三种网关类型
+
+- **File Gateway**
+  - 基于**文件系统**，通过 NFS 连接直接访问存储在 S3 / Glacier上的文件，并且本地进行缓存
+
+- **Volume Gateway**
+  - 将本地的**块存储**备份到云上
+    - **Stored Volumes**：所有的数据都将保存到本地，但是会**异步地**将数据备份到AWS S3上 --> 异地容灾；
+    - **Cached Volumes**：所有的数据都会保存到S3，但是会将最经常访问的数据**缓存**到本地
+
+- **Tape Gateway**
+  - 用来取代传统的磁带备份，使用NetBackup，Backup Exec或Veeam 等备份软件将文件备份到 S3 / Glacier 
+
+
+
+> 实践：创建 Storage Gateway
+>
+> - 选择网络类型
+> - 选择主机平台：VMware, Linux KVM, EC2
+>   - EC2 创建、连接到网关选择 ec2 ip
+> - 配置本地磁盘
+> - 配置日志记录
+> - 创建文件共享
+>   - 配置S3存储桶
+>   - Mount 到本地
+
 
 
 ## || EFS
