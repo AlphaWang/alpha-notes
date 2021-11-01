@@ -526,12 +526,19 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->   
+>     
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
 
 
+
+vs. **FSx for Windows File Server**
+
+- 协议：FSx 支持 SMB，EFS 支持NFS
+- 系统：FSx 支持win,linux,mac；EFS 只支持Linux
+- 多可用区：EFS 只能多可用区部署；FSx 可选
+- FSx 支持 MS AD 域用户
 
 
 
