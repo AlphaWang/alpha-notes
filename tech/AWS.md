@@ -773,17 +773,72 @@ VPC Endpoints 是虚拟设备，它是以能够自动水平扩展、高度冗余
 
 
 
-### VPC Peering
-
-VPC Peering 是两个VPC之间的网络连接，通过此连接，你可以使用IPv4地址在两个VPC之间传输流量。这两个VPC内的实例会和如果在同一个网络一样彼此通信。
-
-
-
 ### Elastic IP
 
 通过申请弹性IP地址，你可以将一个固定的公网IP分配给一个EC2实例。在这个实例无论重启，关闭，甚至终止之后，你都可以回收这个弹性IP地址并且在需要的时候分配给一个新的EC2实例。
 
 
+
+## || 网络互联
+
+### VPC Peering
+
+- VPC Peering 是两个VPC之间的网络连接，通过此连接，你可以使用IPv4地址在两个VPC之间传输流量。这两个VPC内的实例会和**如同一个网络**一样彼此通信。
+
+- 如果两个VPC出现了地址覆盖/重复，那么这两个VPC不能做Peering
+
+
+
+### Direct Connect 线路
+
+- 用于连接公司内网与AWS 网络
+
+VS. VPN 连接
+
+- VPN连接可以在数分钟之内就搭建成功。如果有紧急的业务需求，可以使用VPN连接。VPN连接是基于互联网线路的，因此带宽不高，稳定性也不好，但价格便宜
+- AWS Direct Connect使用的是专线，你的数据不会跑在互联网上，是私有的、安全的网络
+
+
+
+![image-20211107225245612](../img/aws/direct-connect.png)
+
+
+
+### Transit Gateway
+
+把不同VPC、本地网络打通；相当于**云上路由器**。
+
+- 没有 Transit Gateway 之前，网络连接复杂：VPN, VPC Peering, Direct Connect
+  ![image-20211107230556135](../img/aws/transit-gateway-0.png)
+
+- 有了 Transit Gateway之后，相当于有了一个 **hub**
+
+  ![image-20211107230857806](../img/aws/transit-gateway-1.png)
+
+  - Transit Gateway 和连接的VPC 必须在同一个Region
+  - 中心化路由策略
+  - 灵活的访问隔离、路由策略
+  - 自动扩展
+
+
+
+**关键概念**
+
+- **Attachment**: 
+  - 可以将 VPC, Direct Connect Gateway, VPN 以附件形式关联到 TGW；
+  - 还可以将另一个 TGW 以 Peering的形式关联到 TGW；实现 Inter-Region-Peering
+- **路由表**
+  - TGW 有一个默认路由表、可自己配置路由策略
+- **Association 关联**
+  - 路由表和 Attachment 建立 1:N 关系
+- **Route Propagation 路由传播**
+  - 用于把 VPC 或VPN内的路由，动态传播到 TGW 
+
+
+
+**整体架构**
+
+![image-20211107231653590](../img/aws/transit-gateway-arch.png)
 
 
 
