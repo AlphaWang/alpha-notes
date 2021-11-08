@@ -842,6 +842,35 @@ VS. VPN 连接
 
 
 
+### Global Accelerator
+
+AGA 提供静态IP地址，充当应用程序终端节点的固定入口；用于提高可用性和性能。
+
+- 静态IP地址，将流量引导到一个或多个 Region；目标可指向 ALB, NLB或 EC2；
+- 所有流量通过边缘节点进入aws骨干网，能抵御DDoS攻击。否则，流量经过运行商 ISP，链路长。
+- 原理：使用 IP Anycast 技术，全球使用一样的地址，但实际访问的是就近资源。
+
+
+
+Vs. CloudFront
+
+- CloudFront 提供cname，存在TTL缓存问题。
+- CloudFront只支持 TCP（http/https）
+
+
+
+> 实践：创建Global Accelerator
+>
+> - Name
+> - IP address type：IPv4
+> - Static IP：可以创建2个
+> - Add Listener：开通什么端口、协议（支持 UDP/TCP）
+> - Add endpoint groups: --> endpoints: EIP，ELB，etc
+
+
+
+
+
 # 5. 安全 - Security
 
 
