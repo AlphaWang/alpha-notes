@@ -8,9 +8,9 @@
 
 特性：
 
-- 默认情况下，所有**入方向**的流量都会被**拒绝**
-- 默认情况下，所有**出方向**的流量都会被**允许**
-- 在安全组内只能设置允许的条目，不能设置拒绝的条目。
+- 默认情况下，所有**入方向**的流量都会被**拒绝**；Allow no inbound traffic
+- 默认情况下，所有**出方向**的流量都会被**允许**；Allow all outbound traffic
+- 在安全组内**只能设置允许的条目**，不能设置拒绝的条目。
 - 一个流量只要被安全组的任何一条规则匹配，那么这个流量就会被允许放行
 - 安全组是有状态的
   - 如果某个流量被入方向的规则放行，那么无论它的出站规则如何，它的出方向**响应流量**都会被无条件放行
@@ -526,7 +526,7 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->         
+>           
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -598,16 +598,6 @@ Virtual Private Cloud 是一个用来隔离你的网络与其他客户网络的�
 
 ### VPC 特点
 
-- VPC内可以创建多个**子网**；
-
-- 一个 VPC 可以跨越多个可用区，**一个子网只能在一个可用区内**
-
-- 可以在选择的子网上启动EC2实例
-
-- 在每一个子网上分配自己规划的IP地址
-
-- 每一个子网配置自己的**路由表**
-
 - 创建一个**Internet Gateway**并且绑定到VPC上，让EC2实例可以访问互联网
 
 - VPC对你的AWS资源有更安全的保护
@@ -619,8 +609,6 @@ Virtual Private Cloud 是一个用来隔离你的网络与其他客户网络的�
     > `安全组（Security Group）`是有状态的：如果入向流量被允许，则出向的响应流量会被自动允许；
     >
     > `网络控制列表（Network Access Control List）`是无状态的：入向规则和出向规则需要分别单独配置，互不影响
-
-- VPC的**子网掩码范围是从`/28`到`/16`**，不能设置在这个范围外的子网掩码
 
 - VPC可以通过**Virtual Private Gateway** (VGW) 来与企业本地的数据中心相连
 
@@ -677,9 +665,31 @@ Virtual Private Cloud 是一个用来隔离你的网络与其他客户网络的�
 
 
 
+### Subnet
+
+- VPC内可以创建**多个子网**；
+- 一个 VPC 可以跨越多个可用区，但是**一个子网只能在一个可用区内**
+- 可以在选择的子网上启动EC2实例
+- 在每一个子网上分配自己规划的IP地址
+- 每一个子网配置自己的**路由表**
+- VPC的**子网掩码范围是从`/28`到`/16`**，不能设置在这个范围外的子网掩码
 
 
-### 网络 ACL 
+
+分类：
+
+- **公有子网**：连接到 Internet Gateway
+- **私有子网**：未连接到 Internet Gateway
+- **VPN-only 子网**：连接到 Virtual Private Gateway
+
+
+
+默认子网
+
+- 默认子网下的实例，有一个 public ip, 一个 private ip.
+- 
+
+### NACL 
 
 网络访问控制列表（NACL）与安全组（Security Group）类似，它能在**子网**的层面控制所有入站和出站的流量，为VPC提供更加安全的保障。
 
@@ -866,6 +876,59 @@ Vs. CloudFront
 > - Static IP：可以创建2个
 > - Add Listener：开通什么端口、协议（支持 UDP/TCP）
 > - Add endpoint groups: --> endpoints: EIP，ELB，etc
+
+
+
+## || Router53
+
+Router53 是 aws DNS 服务。不属于某一个zone。
+
+
+
+**DNS 记录类型**
+
+- **SOA** (Start of Authority)：记录域名的信息，例如主DNS服务器、检查更新的时间间隔、TTL
+
+- **NS** (Name Server)：描述了某个域名所使用的权威的DNS服务器，所有其他DNS服务器进行轮询查询的时候最终都需要到这些权威的DNS服务器上进行查询，获取最新的记录
+
+- **A 记录**：将域名直接转换为 IPv4 地址；
+
+- **CNAME** (Canonical Name)：将一个域名指向另一个域名；
+
+- **Alias 记录**：将一个域名指向另一个域名，例如S3 桶（要求桶名和域名一致）
+
+  > 与CNAME的区别：
+  >
+  > - Alias 可以应用在根域，而CNAME不行；
+  > - CNAME你能指向任何其他域名（例如www.baidu.com）都可以，但是Alias记录不可以。
+  > - Alias 解析速度更快。(?) 因为Route53会自动识别别名记录所指的记录中的更改。例如，假设example.com的一个别名记录指向位于lb1-1234.us-east-2.elb.amazonaws.com上的一个ELB负载均衡器。如果该负载均衡器的IP地址发生更改，Route53将在example.com的DNS应答中自动反映这些更改，而无需对包含example.com的记录的托管区域做出任何更改。
+
+
+
+**Router53 路由策略**
+
+- **简单路由策略（Simple Routing Policy）**：提供单一资源的策略类型，即一个DNS域名指向一个*单一目标*；即一组IP地址，或一个Alias记录。
+- **加权路由策略（Weighted Routing Policy）**：按照不同的权值比例将流量分配到*不同的目标*上去。
+  - 创建多个 Record Set
+  - 例如将 10% 流量切到测试环境
+- **延迟路由策略（Latency Routing Policy）**：根据网络延迟的不同，将与用户延迟最小的结果应答给最终用户
+- **地理位置路由策略（Geolocation Routing Policy）**：根据用户所在的地理位置，将不同的目标结果应答给用户
+  - 使用基于地理位置的路由策略，可以对内容进行本地化（提供当地的语言和特色）；也可以向某些地理位置提供内容服务，而向其他地理位置提供另外的内容服务，甚至不提供服务。
+- **故障转移路由策略（Failover Routing Policy）**：配置主动/被动（Active/Passive）的故障转移策略，保证DNS解析的容灾
+  - 提前配置 Router53 --> Health Check
+  - 创建多个Alias  Recored Set，Failover Record Type: 选择当前是 Primary / Secondary 
+
+
+
+> 实践：
+>
+> - Registered Domain --> 新建 --> 购买域名
+> - Hosted Zone --> 创建 --> 输入在其他供应商购买的域名
+>   - 创建 Record Set： A记录，CNAME；
+>     - 1、在建好create hosted zone后，会看到2条记录，其中第一条是NS域名服务器记录。 
+>     - 2、还需要做的一点是，去到我们的域名提供商那里编辑域名。对DNS的服务器进行手动配置，配置成这4台AWS的域名服务器。配置完之后，过一段时间之后AWS的route53就能完全管理我们这个域名下面的所有的记录了。
+>   - 配置 Record Set: 路由策略 Routing Policy
+>   - 测试 Record Set：输入域名，返回地址/协议
 
 
 
