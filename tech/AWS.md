@@ -601,11 +601,51 @@ Amazon RDS支持的关系数据库有：
 
 ## || DynamoDB
 
+NoSQL 非关系数据库方案；
+
+特点：
+
+- 使用 SSD 存储
+- 数据分散在3个不同地理位置的数据中心（并不是3个可用区）
+- **最终一致性读取**（Eventual Consistent Reads）
+  - 默认的设置，即如果写入数据到DynamoDB之后马上读取该数据，可能会读取到旧的信息
+  - DynamoDB需要时间（一秒内）把写入的数据同步到3个不同地理位置的数据中心
+- **强一致性读取**（Strongly Consistent Reads）
+  - 在写入数据到DynamoDB之后马上读取该数据，会等所有写入操作以及数据同步全部完成后再回馈结果
+  - 即强一致性读取一定会读到最新的数据结果
+- 如果我们需要增加DynamoDB的规格，我们可以直接在AWS管理控制台上进行更改，并且**不会有任何系统downtime**
+- 除非您指定其他读取方式，否则 DynamoDB 将使用最终一致性读取。读取操作 (例如 GetItem，Query 和 Scan) 提供了一个 **ConsistentRead** 参数。如果您将此参数设置为 true，DynamoDB 将在操作过程中使用强一致性读取。
+
+
+
+> 实践：创建表
+>
+> - 名称
+> - 主键：名称、字符串/数字/二进制
+> - 表设置：二级索引、表容量、auto scaling
+>
+> 添加条目 --> 项目 选项卡
+>
+> - 创建项目：输入键 --> append：选择类型、值 （每个项目可以有不同的属性！）
+
 
 
 ## || Redshift
 
-OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等
+OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
+
+特点：
+
+- **单节点**（160Gb）部署模式
+- **多节点**部署模式
+  - **领导节点**：管理连接和接收请求
+  - **计算节点**：存储数据，执行请求和计算任务，最多可以有128个计算节点
+- Columnar Data Storage，列式存储！
+- Advanced Compression
+- Massively Parallel Processing (MPP)
+- 目前Redshift只能部署在一个可用区内，不能跨可用区或者用类似RDS的高可用配置
+  - Redshift是用来产生报告和做商业分析的，并不需要像生产环境一样对可用性有高保证
+- 我们可以对Redshift做快照，并且在需要的时候恢复这个快照到另一个可用区
 
 
 
