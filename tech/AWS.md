@@ -548,6 +548,75 @@ vs. **FSx for Windows File Server**
 
 # 3. 数据库 - Database
 
+## || RDS
+
+Amazon RDS支持的关系数据库有：
+
+- SQL Server
+- Oracle
+- MySQL Server
+- PostgreSQL
+- Aurora
+- MariaDB
+
+
+
+**Multi-AZ 高可用**
+
+- 目的：把AWS RDS数据库部署在多个**可用区（AZ）**内，以提供高可用性和故障转移支持。
+- 原理：在不同的可用区内配置和维护一个主数据库和一个备用数据库，主数据库的数据会自动复制到备用数据库中。--> 同步？
+- 注意：Multi-AZ 只是用来解决灾备的问题，并不能解决读取性能的问题；要提升数据库读取性能，我们需要用到Read Replicas。
+
+
+
+**Read Replicas 只读副本**
+
+将应用程序的数据库读取功能转移到Read Replicas上，来减轻源数据库的负载。对于有大量读取需求的数据库，我们可以使用这种方式来进行灵活的数据库扩展，同时突破单个数据库实例的性能限制。
+
+特点：
+
+- Read Replicas是用来提高读取性能的，不是用来做灾备的
+- 要创建Read Replicas需要源RDS实例开启了自动备份的功能
+- 可以为数据库创建最多**5个**Read Replicas
+- 可以为Read Replicas创建Read Replicas
+- 每一个Read Replicas都有自己的URL Endpoint --> 可利用Router53对应用屏蔽多endpoint.
+- 可以为一个启用了 Multi-AZ 的数据库创建Read Replicas
+- Read Replicas可以提升成为独立的数据库
+- 可以创建位于另一个区域（Region）的Read Replicas
+
+
+
+> 实践：创建 RDS
+>
+> - 选择引擎：Aurora / MySQL、版本、实例类型、存储空间
+> - 高级配置：VPC、子网组、安全组、端口 3306、备份窗口、监控、日志
+>
+> 创建 EC2，连接到RDS
+>
+> - 子网：public
+> - 高级详细信息 - 用户数据：脚本启动 httpd服务、连接 rds
+> - RDS 安全组 - 添加规则：类型= MySQL，**来源=EC2安全组**；（建议选择安全组，而不是ip）
+
+
+
+## || DynamoDB
+
+
+
+## || Redshift
+
+OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等
+
+
+
+## || Elasticache
+
+
+
+## || Aurora
+
+
+
 
 
 
@@ -897,7 +966,7 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 
 - **Alias 记录**：将一个域名指向另一个域名，例如S3 桶（要求桶名和域名一致）
 
-  > 与CNAME的区别：
+  > 与CNAME的区别：https://docs.aws.amazon.com/zh_cn/Route53/latest/DeveloperGuide/resource-record-sets-choosing-alias-non-alias.html
   >
   > - Alias 可以应用在根域，而CNAME不行；
   > - CNAME你能指向任何其他域名（例如www.baidu.com）都可以，但是Alias记录不可以。
@@ -920,15 +989,25 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 
 
 
+
+
+
+
 > 实践：
 >
 > - Registered Domain --> 新建 --> 购买域名
-> - Hosted Zone --> 创建 --> 输入在其他供应商购买的域名
+>
+> - Hosted Zone --> 创建 --> 输入在其他供应商购买的域名 
+>
 >   - 创建 Record Set： A记录，CNAME；
 >     - 1、在建好create hosted zone后，会看到2条记录，其中第一条是NS域名服务器记录。 
 >     - 2、还需要做的一点是，去到我们的域名提供商那里编辑域名。对DNS的服务器进行手动配置，配置成这4台AWS的域名服务器。配置完之后，过一段时间之后AWS的route53就能完全管理我们这个域名下面的所有的记录了。
 >   - 配置 Record Set: 路由策略 Routing Policy
 >   - 测试 Record Set：输入域名，返回地址/协议
+>
+>   
+>
+> - 注意：每个host zone 域名后缀必须相同！
 
 
 
