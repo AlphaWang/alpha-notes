@@ -319,6 +319,16 @@ Lambda 触发器
 
 
 
+## || API Gateway
+
+API Gateway是一个托管的Rest API服务
+
+- API Gateway可以缓存内容，从而更快地将一些常用内容发送给用户
+- API Gateway是一种低成本的**无服务（serverless）方案**，而且它可以自动弹性伸缩（类似ELB，NAT网关）
+- 可以对API Gateway进行节流，以防止恶意攻击
+- 可以将API Gateway的日志放到CloudWatch中
+- 如果你使用JavaScript/AJAX来跨域访问资源，那么你需要保证在API Gateway上已经开启了**CORS (Cross-Origin Resource Sharing)**功能
+
 
 
 
@@ -526,7 +536,7 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->           
+>             
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -564,7 +574,7 @@ Amazon RDS支持的关系数据库有：
 **Multi-AZ 高可用**
 
 - 目的：把AWS RDS数据库部署在多个**可用区（AZ）**内，以提供高可用性和故障转移支持。
-- 原理：在不同的可用区内配置和维护一个主数据库和一个备用数据库，主数据库的数据会自动复制到备用数据库中。--> 同步？
+- 原理：在不同的可用区内配置和维护一个主数据库和一个备用数据库，主数据库的数据会自动复制到备用数据库中。--> **同步!**
 - 注意：Multi-AZ 只是用来解决灾备的问题，并不能解决读取性能的问题；要提升数据库读取性能，我们需要用到Read Replicas。
 
 
@@ -651,13 +661,27 @@ OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
 
 ## || Elasticache
 
+支持 Memcached 和 Redis。
+
 
 
 ## || Aurora
 
+Amazon Aurora是一种兼容MySQL和PostgreSQL的商用级别关系数据库，速度可以达到MySQL数据库的**5倍**
 
+特点：
 
-
+- 10GB的起始存储空间，可以增加到最大64TB的容量
+- 计算资源可以提升到最多32vCPU和244GB的内存
+- Aurora会将你的数据**复制2份**到每一个可用区内，并且**复制到最少3个可用区**，因此你会有**6份数据库备份**
+- 2份及以下的数据备份丢失，不影响Aurora的写入功能
+- 3份及以下的数据备份丢失，不影响Aurora的读取功能
+- Aurora有自动修复的功能，AWS会自动检查磁盘错误和数据块问题并且自动进行修复
+- 有两种数据库只读副本
+  - Aurora Replicas（最多支持15个）
+  - MySQL Replica（最多支持5个）
+  - 两者的区别是Aurora主数据库出现故障的时候，Aurora Replicas可以自动变成主数据库，而MySQL Replica不可以
+- 
 
 
 
@@ -1520,6 +1544,136 @@ Beanstalk 方式：
 
 
 # 10. 大数据 - Big Data
+
+
+
+## || SQS
+
+SQS (Simple Queue Service)  是一种完全托管的消息队列服务，可以让你分离和扩展微服务、分布式系统和无服务应用程序。
+
+
+
+特点
+
+- **Retention**
+  - 消息会在队列中保存1分钟~14天，默认时间是4天 
+- **可见性超时（Visibility Timeout）**
+  - 当SQS队列收到新的消息并且被拉取走进行处理时，会触发Visibility Timeout的时间。这个消息不会被删除，而是会被设置为不可见，用来防止该消息在处理的过程中再一次被拉取
+  - 当这个消息被处理完成后，这个消息会在SQS中被删除，表示这个任务已经处理完毕
+  - 如果这个消息在Visibility Timeout时间结束之后还没有被处理完，则这个消息会设置为可见状态，等待另一个程序来进行处理
+  - 因此同一个消息可能会被处理两次（或以上）
+  - 这个超时时间最大可以设置为12小时
+
+- **长轮询（Long Polling）**
+
+  - 默认情况下，Amazon SQS使用短轮询（Short Polling），即应用程序每次去查询SQS队列，SQS都会做回应（哪怕队列一直是空的）
+  - 使用了长轮询，应用程序每次去查询SQS队列，SQS队列不会马上做回应。而是等到队列里有消息可处理时，或者等到设定的超时时间再做出回应。
+  - 长轮询可以一定程度减少SQS的花销
+
+  
+
+SQS有两种不同类型的队列，它们分别是：
+
+- **标准队列**（Standard Queue）
+  - 标准队列拥有无限的吞吐量，所有消息都会至少传递一次，并且它会尽最大努力进行排序。
+- **FIFO队列**（先进先出队列）
+  - 最多支持300TPS（每秒300个发送、接受或删除操作）。
+  - 在队列中的消息都只会不多不少地被处理一次。
+  - FIFO队列严格保持消息的发送和接收顺序。
+
+
+
+## || SNS 
+
+SNS (Simple Notification Service) 是一种完全托管的发布/订阅消息收发和移动通知服务，用于协调向订阅终端节点和客户端的消息分发。 
+
+目的地：
+
+- 可以使用SNS将消息推送到SQS消息队列中、AWS Lambda函数或者HTTP终端节点上。
+- SNS通知还可以发送推送通知到IOS，安卓，Windows和基于百度的设备，也可以通过电子邮箱或者SMS短信的形式发送到各种不同类型的设备上。
+
+
+
+特点：
+
+- SNS是实时的**推送服务（Push）**，有别于SQS的**拉取服务（Pull/Poll）**
+- 拥有简单的API，可以和其他应用程序兼容
+- 可以通过多种不同的传输协议进行集成
+- 便宜、用多少付费多少的服务模型
+- 在AWS管理控制台上就可以进行简单的操作
+
+
+
+## || SWS
+
+SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理的流程工具。
+
+
+
+概念
+
+- **SWF发起者（Starter）**
+  - 可以激活一个工作流的应用程序，可能是电商网站上下单的行为，或者是在手机APP上点击某个按钮
+- **SWF决策者（ Decider）**
+  - SWF Decider决定了任务之间的协调，处理的顺序，并发性和任务的逻辑控制
+- **SWF参与者（Worker）**
+  - SWF Worker可以在SWF中获取新的任务，处理任务，并且返回结果
+- **SWF域（Domains）**
+  - 域包含了工作流的所有组成部分，比如工作流类型和活动类型
+
+
+
+**vs. SQS**
+
+- SWF是面向任务的；SQS是面向消息的；
+- SWF保证了每一个任务都只执行一次而不会重复；标准的SQS消息可能会被处理多次
+- SWF保证了程序内所有任务都正常被处理，并且追踪工作流；而SQS只能在应用程序的层面追踪工作流
+- SWF内的任务最长可以保存1年；SQS内的消息最长只能保存14天
+
+
+
+## || Kinesis
+
+ Kinesis 可以让你轻松收集、处理和分析实时流数据。可以在收到数据的同时对数据进行处理和分析，无需等到数据全部收集完成才进行处理。
+
+
+
+**Kinesis Data Streams (Kinesis Streams)**
+
+使用自定义的应用程序分析数据流。
+
+- **Producer**（EC2实例、用户的PC终端、移动终端，服务器）会持续将数据推送到Kinesis Data Streams中；
+
+- Kinesis Data Streams由一组**分片（Shards）**组成，每个shards都有一系列的数据记录，每一个数据记录都有一个分配好的序列号。
+- 数据记录在添加到流之后会保存一定的时间，这个**保留周期（Retention Period）**默认是**24小时**，但可以手动设置为**最多7天**。
+
+- **Comsumer**会实时地对Kinesis Streams里的内容进行处理，并将最终结果推送到AWS服务，例如Amazon S3，DynamoDB，Redshift，Amazon EMR或者Kinesis Firehose。
+
+![image-20211117220749741](../img/aws/kinesis-data-streams.png)
+
+
+
+**Kinesis Video Streams**
+
+- 捕获、处理并存储视频流用于分析和机器学习。
+
+- 可以捕获来自多种设备类型的视频流数据（比如智能手机、网络摄像头、车载摄像头、无人机等）。
+
+![image-20211117220912476](../img/aws/kinesis-video-streams.png)
+
+
+
+**Kinesis Data Firehose**
+
+- 让实时数据流传输到我们定义的目标，包括Amazon S3，Amazon Redshift，Amazon Elasticsearch Service (ES)和Splunk。
+
+![image-20211117221014022](../img/aws/kinesis-data-firehose.png)
+
+
+
+**Kinesis Data Analytics**
+
+- 使用标准的SQL语句来处理和分析我们的数据流。这个服务可以让我们使用强大的SQL代码来做实时的数据流分析、创建实时的参数。
 
 
 
