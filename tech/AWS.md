@@ -536,7 +536,7 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->             
+>               
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -1081,11 +1081,11 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 
 
 
-## 5.1 网络安全
+## || 网络安全
 
 
 
-## 5.2 IAM
+## || IAM
 
 组
 
@@ -1130,6 +1130,68 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 > 
 
 
+
+
+
+## || 跨账号访问权限
+
+**跨账号访问权限（Cross Account Access）**可以在AWS管理控制台上轻松地进行账号（角色）的切换，让你在不同的开发账号（角色）、测试账号（角色）、生产账号（角色）中进行快捷的切换。
+
+
+
+示例：让开发账号拥有一定权限，让其访问生产账号中的 S3 资源。
+
+- **生产账号**管理员在 IAM 中创建角色 UpdateAPP，使用策略：允许特定账号访问 productionapp S3 存储桶
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:ListAllMyBuckets",
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+         ],
+        "Resource": "arn:aws:s3:::productionapp"
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject"
+        ],
+        "Resource": "arn:aws:s3:::productionapp/*"
+      }
+    ]
+  }
+  
+  ```
+
+- **开发账号**管理员向成员授权切换角色的权限；向开发人员组授予针对UpdateApp角色调用 AWS Security Token Service **(STS) AssumeRole API** 的权限，策略如下
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::PRODUCTION-ACCOUNT-ID:role/UpdateApp"
+    }
+  }
+  ```
+
+- 用户请求切换角色
+
+- AWS **STS** 返回临时凭证
+
+- 临时凭证允许访问AWS资源，这样切换后的角色就可以访问productionapp的存储桶里的内容了。
 
 
 
@@ -1555,6 +1617,7 @@ SQS (Simple Queue Service)  是一种完全托管的消息队列服务，可以�
 
 特点
 
+- 大小：256K
 - **Retention**
   - 消息会在队列中保存1分钟~14天，默认时间是4天 
 - **可见性超时（Visibility Timeout）**
@@ -1604,7 +1667,19 @@ SNS (Simple Notification Service) 是一种完全托管的发布/订阅消息收
 
 
 
-## || SWS
+SNS  能推送的目标
+
+- HTTP
+- HTTPS
+- Email
+- Email-JSON
+- SQS
+- Application
+- Lambda
+
+
+
+## || SWF
 
 SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理的流程工具。
 
@@ -1683,15 +1758,30 @@ SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理�
 
 
 
+## || 整合账单
+
+可以在AWS **Organization**内创建一个主账户，并且创建不同的**组织单元（OU）**。每一个OU可以代表一个部门或者一个系统环境，如下图的开发、测试和生产环境。
+
+- OU 可嵌套，最多五层。
+
+- 每一个OU下面可以分配若干个不同的AWS账号，每一个账号拥有不同的访问AWS的权限。
+
+**账单整合**（Consolidated Billing）的作用是将多个AWS账户的账单都合并为同一个账单进行付款。
+
+优点：
+
+- **单一的账单**：你不需要为每个账号单独处理账单，所有账号的账单都被统一成一个
+- **方便追踪**：你可以很容易追踪每个账号的具体花费
+- **使用量折扣**：AWS的很多服务是用得越多单价越便宜，因此如果账单进行合并更容易达到便宜折扣的门槛
+- **无额外费用**：整合账单不单独收费
 
 
 
-
-
-
-
-
-
+> 实践：
+>
+> - 创建组织、OU
+> - 创建组织“策略” ，在不同OU上附加不同的策略
+>   - 精准控制不同部门的权限
 
 
 
