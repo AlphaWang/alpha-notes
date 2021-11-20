@@ -1093,11 +1093,17 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 
 
 
-角色
+IAM角色 vs. Policy 
+
+- IAM 角色可附加多个策略。
 
 
 
-策略
+原则
+
+- 最小权限原则 Principle of Least Privilage
+
+
 
 
 
@@ -1128,6 +1134,250 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 > 3. **附加到已有的EC2**：操作 -> 实例设置 -> 附加替换IAM角色
 >
 > 
+
+
+
+
+
+**IAM 策略评估模型**
+
+IAM Policy Evaluation Logic
+
+![image-20210320161945826](../img/aws/iam-policy.png)
+
+- **Deny Evaluation**：是否有显示拒绝策略？-
+  - 隐式拒绝。
+- **Organizations SCPs**：组织是否有可应用的 SCP?
+- **Resource-based Policies**：被请求的资源是否有policy?
+- **IAM Permissions Boundaries**：当前 principal 是否有 permission boundary?
+- **Session Policies**：当前 principal 是否是使用 policy 的session?
+- **Identity-based Policies**：当前 principal 是否有基于identity的策略？
+
+
+
+> **实践：S3 IAM 策略**
+>
+> **实践1**：新增S3策略
+>
+> - IAM --> 用户 --> 添加权限 --> AmazonS3ReadOnlyAccess
+>   - s3:Get, s3:List
+>
+> 
+>
+> **实践2**：有 N 个存储桶，只拒绝第 5 个
+>
+> - 允许访问所有：IAM --> 用户 --> 添加权限 --> AmazonS3FullAccess
+>
+> - 拒绝第5个：IAM --> 用户 --> 添加权限 --> 创建策略（策略编辑器）
+>
+>   - 服务 --> 选择 S3
+>
+>   - 操作 --> 选择所有；选择切换以拒绝权限
+>
+>   - 资源 --> 添加 ARN --> 输入存储桶名称
+>
+>   - 编辑策略 --> 删除部分自动生成的内容 (???)
+>
+>     ```json
+>     {
+>       "Statement": [
+>         {
+>           "Sid": "VisualEditor1",
+>           "Effect": "Deny",
+>           "Action": "s3:*",
+>           "Resource": "arn:aws:s3:::iloveawscn5"
+>         }
+>       ]
+>     }
+>     ```
+>
+>   - 附加策略到用户：
+>
+> > 说明 显式拒绝策略的优先级高于允许策略。
+>
+> 
+>
+> **实践：通过附加 IAM 角色访问 S3**
+>
+> - IAM 角色 --> 附加策略：S3ReadyOnly
+> - EC2 --> 设置IMA 角色 
+>
+
+
+
+
+
+## || STS
+
+STS: Securtiy Token Service，用于创建和控制对你的AWS资源访问的**临时安全凭证**。
+
+**区别**与 IAM 用户
+
+- 临时性，几分钟到几小时。
+- 动态性，只在有需要的时候才生成。
+
+
+
+**场景**
+
+- **企业联合身份验证（Federation）**
+  - 使用了基于*Security Assertion Markup Language (SAML)* 的标准
+  - 可以使用*微软Active Directory*的用户来获取临时权限，不需要创建IAM用户
+  - 支持*单点登录（Single Sign On, SSO）*
+- **Web联合身份验证（Federation with Mobile Apps）**
+  - 使用已知的第三方身份供应商（Amazon, Facebook, Google或其他OpenID提供商）来登录
+- **跨账户访问**
+  - 让一个账号内的用户访问同一个组织（Organization）内其他账号的AWS资源
+
+
+
+**流程**
+
+1. 用户在应用程序内输入账号密码，应用程序将其发送给**Identity Provider (Identity Broker)**
+2. Identity Provider (**IdP**)将用户名和密码发送到企业的LDAP目录进行验证
+3. 验证成功后IdP发送一个SAML认证响应给应用程序
+4. 应用程序使用*AssumeRoleWithSAMLRequest* API发送SMAL请求给STS
+5. STS返回临时安全凭证给应用程序，其中包括了AccessKeyId, SecretAccessKey, SessionToken和时限（1到36小时）
+6. 应用程序使用临时凭证访问S3存储桶
+
+![image-20211120234824457](../img/aws/sts-flow.png)
+
+
+
+什么是临时安全凭证？
+
+- STS 创建可控制你的 aws 资源的临时安全凭证，将凭证提供给**受信任用户**。
+- 临时安全凭证是短期的，有效时间几分钟或几小时。-- 无需显式撤销、轮换。
+- 应用程序无需分配长期 AWS 安全凭证。
+
+
+
+<img src="../img/aws/iam-sts.png" alt="image-20210321201220791" style="zoom:67%;" />
+
+#### 实践：本地开发临时凭证
+
+**实践1：信任管理配置**
+
+- IAM --> 角色 - 选择角色 --> 信任关系  
+
+  ```json
+  //允许EC2代入该角色，调用 sts:AssumeRole 获取临时安全凭证
+  {
+    "Version": "",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "Service": "ec2.amazonaws.com"
+        },
+        "Action": "sts:AssumeRole" //?
+      }
+    ]
+  }
+  ```
+
+
+
+AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
+
+
+
+**实践2：本地开发模拟 EC2 IAM 角色同样的权限**
+
+- Local --> 编辑 credentials 文件 `vim ~/.aws/credentials`
+
+  ```properties
+  [accounta]
+  ...
+  
+  [accountb]
+  ...
+  
+  [ec2role]
+  aws_access_key_id = 
+  aws_secret_access_key = 
+  aws_session_token = //来源自通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
+  ```
+
+- 通过临时凭证访问S3：`aws s3 ls --profile ec2role`
+
+
+
+**实践3：本地开发使用STS生成临时凭证** (推荐)
+
+是对实践2的优化。
+
+![image-20210321203047065](../img/aws/iam-sts-assumerole.png)
+
+只配置本地安全凭证：IAM --> 用户: zhangsan --> 安全证书：访问秘钥 --> 拷贝到 `.aws/credentials` 文件；
+
+--> 并不能访问 S3. 
+
+
+
+步骤：
+
+- 在 IAM 中建立一个跨账户**角色** stroll；
+
+  - IAM --> 角色 --> 创建 --> 选择受信任实体：其他 AWS 账户 - 输入zhangsan账户ID 
+
+    ```json
+    {
+      "Statement": [
+        "Principal": {
+          //受信任实体：aws账户
+          //区别于受信任实体EC2: "Service": "ec2.amazonaws.com"
+          "AWS": "arn:aws:iam::12345:root"
+        },
+        "Action": "sts:AssumeRole"
+      ]
+    }
+    ```
+
+    
+
+  - 附加一个 S3ReadOnly **权限策略**到 IAM 角色：IAM --> 角色 --> 附加权限策略 --> S3ReadOnly
+
+- 给用户添加 **AssumeRole策略**：允许 IAM 用户（开发人员）STS Assume Role 权限，以便获得临时凭证访问 S3；
+
+  - IAM --> 用户：zhangsan --> 添加内联策略
+    - 服务 -->选择 STS
+    - 操作 --> AssumeRole
+    - 资源 --> 添加 ARN --> 拷贝stroll角色的 ARN （指定允许zhangsan承担的角色的ARN）
+
+- 本地测试：
+
+  - 获取临时安全凭证：`aws sts assume-role --role-arn arn:aws:iam::256454142732:role/stroll --role-session-name stroll`
+  - 写入本地文件: `vi ~/.aws/credentials`
+  - 测试访问：`aws s3 ls --profile zhangsansts`
+
+
+
+**实践4：自动化获取临时凭证**
+
+实践3可优化：aws sts assume-role --> 拷贝设置 credentials
+
+思路：为AWS CLI 指定承担的角色。这样CLI 就会自动进行 AssumeRole调用。
+
+> 类似 EC2 自动获取临时凭证，也是因为EC2上附加了 IAM 角色。
+
+
+
+步骤：
+
+- 设置 credentials：`vi ~/.aws/credentials`
+
+  ```properties
+  [default]
+  aws_access_key_id = xx
+  aws_secret_access_key = xx
+  
+  [automate]
+  role_arn = arn:aws:iam::12345:role/stroll #角色
+  source_profile = default #用户访问秘钥所在的profile
+  ```
+
+- 测试： `aws s3 ls --profile automate` 即可访问成功。
 
 
 
@@ -2179,234 +2429,6 @@ S3 访问策略
 # | Design for New Solutions
 
 ## || 安全
-
-### IAM: Identity and Access Management.
-
-IAM vs. Policy 
-
-- IAM 角色可附加多个策略。
-
-
-
-原则
-
-- 最小权限原则 Principle of Least Privilage
-
-
-
-**IAM 策略评估模型**
-
-> IAM Policy Evaluation Logic
-
-![image-20210320161945826](../img/aws/iam-policy.png)
-
-- **Deny Evaluation**：是否有显示拒绝策略？-
-  - 隐式拒绝。
-- **Organizations SCPs**：组织是否有可应用的 SCP?
-- **Resource-based Policies**：被请求的资源是否有policy?
-- **IAM Permissions Boundaries**：当前 principal 是否有 permission boundary?
-- **Session Policies**：当前 principal 是否是使用 policy 的session?
-- **Identity-based Policies**：当前 principal 是否有基于identity的策略？
-
-
-
-#### **实践：S3 IAM 策略**
-
-**实践1**：新增S3策略
-
-- IAM --> 用户 --> 添加权限 --> AmazonS3ReadOnlyAccess
-  - s3:Get, s3:List
-
-
-
-**实践2**：有 N 个存储桶，只拒绝第 5 个
-
-- 允许访问所有：IAM --> 用户 --> 添加权限 --> AmazonS3FullAccess
-
-- 拒绝第5个：IAM --> 用户 --> 添加权限 --> 创建策略（策略编辑器）
-
-  - 服务 --> 选择 S3
-
-  - 操作 --> 选择所有；选择切换以拒绝权限
-
-  - 资源 --> 添加 ARN --> 输入存储桶名称
-
-  - 编辑策略 --> 删除部分自动生成的内容 (???)
-
-    ```json
-    {
-      "Statement": [
-        {
-          "Sid": "VisualEditor1",
-          "Effect": "Deny",
-          "Action": "s3:*",
-          "Resource": "arn:aws:s3:::iloveawscn5"
-        }
-      ]
-    }
-    ```
-
-  - 附加策略到用户：
-
-> 说明 显式拒绝策略的优先级高于允许策略。
-
-
-
-**实践：通过附加 IAM 角色访问 S3**
-
-- IAM 角色 --> 附加策略：S3ReadyOnly
-- EC2 --> 设置IMA 角色 
-
-
-
-### STS: Securtiy Token Service
-
-通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
-
-将返回：
-
-- AccessKeyId: 
-- SecretAccessKey:
-- Token:
-- Expiration: 
-
-Token 并不是IAM角色生成，而是 STS 生成的。IAM 角色与 STS 服务会建立信任管理，通过STS 获取这些凭证。
-
-
-
-什么是临时安全凭证？
-
-- STS 创建可控制你的 aws 资源的临时安全凭证，将凭证提供给**受信任用户**。
-- 临时安全凭证是短期的，有效时间几分钟或几小时。-- 无需显式撤销、轮换。
-- 应用程序无需分配长期 AWS 安全凭证。
-
-
-
-<img src="../img/aws/iam-sts.png" alt="image-20210321201220791" style="zoom:67%;" />
-
-#### 实践：本地开发临时凭证
-
-**实践1：信任管理配置**
-
-- IAM --> 角色 - 选择角色 --> 信任关系  
-
-  ```json
-  //允许EC2代入该角色，调用 sts:AssumeRole 获取临时安全凭证
-  {
-    "Version": "",
-    "Statement": [
-      {
-        "Effect": "Allow",
-        "Principal": {
-          "Service": "ec2.amazonaws.com"
-        },
-        "Action": "sts:AssumeRole" //?
-      }
-    ]
-  }
-  ```
-
-
-
-AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.html
-
-
-
-**实践2：本地开发模拟 EC2 IAM 角色同样的权限**
-
-- Local --> 编辑 credentials 文件 `vim ~/.aws/credentials`
-
-  ```properties
-  [accounta]
-  ...
-  
-  [accountb]
-  ...
-  
-  [ec2role]
-  aws_access_key_id = 
-  aws_secret_access_key = 
-  aws_session_token = //来源自通过 metadata 检索 IAM 角色临时安全凭证：`curl http://169.254.169.254/latest/meta-data/iam/security-credentials/S3ReadOnly/`
-  ```
-
-- 通过临时凭证访问S3：`aws s3 ls --profile ec2role`
-
-
-
-**实践3：本地开发使用STS生成临时凭证** (推荐)
-
-是对实践2的优化。
-
-![image-20210321203047065](../img/aws/iam-sts-assumerole.png)
-
-只配置本地安全凭证：IAM --> 用户: zhangsan --> 安全证书：访问秘钥 --> 拷贝到 `.aws/credentials` 文件；
-
---> 并不能访问 S3. 
-
-
-
-步骤：
-
-- 在 IAM 中建立一个跨账户**角色** stroll；
-
-  - IAM --> 角色 --> 创建 --> 选择受信任实体：其他 AWS 账户 - 输入zhangsan账户ID 
-
-    ```json
-    {
-      "Statement": [
-        "Principal": {
-          //受信任实体：aws账户
-          //区别于受信任实体EC2: "Service": "ec2.amazonaws.com"
-          "AWS": "arn:aws:iam::12345:root"
-        },
-        "Action": "sts:AssumeRole"
-      ]
-    }
-    ```
-
-    
-
-  - 附加一个 S3ReadOnly **权限策略**到 IAM 角色：IAM --> 角色 --> 附加权限策略 --> S3ReadOnly
-  
-- 给用户添加 **AssumeRole策略**：允许 IAM 用户（开发人员）STS Assume Role 权限，以便获得临时凭证访问 S3；
-
-  - IAM --> 用户：zhangsan --> 添加内联策略
-    - 服务 -->选择 STS
-    - 操作 --> AssumeRole
-    - 资源 --> 添加 ARN --> 拷贝stroll角色的 ARN （指定允许zhangsan承担的角色的ARN）
-  
-- 本地测试：
-  - 获取临时安全凭证：`aws sts assume-role --role-arn arn:aws:iam::256454142732:role/stroll --role-session-name stroll`
-  - 写入本地文件: `vi ~/.aws/credentials`
-  - 测试访问：`aws s3 ls --profile zhangsansts`
-
-
-
-**实践4：自动化获取临时凭证**
-
-实践3可优化：aws sts assume-role --> 拷贝设置 credentials
-
-思路：为AWS CLI 指定承担的角色。这样CLI 就会自动进行 AssumeRole调用。
-
-> 类似 EC2 自动获取临时凭证，也是因为EC2上附加了 IAM 角色。
-
-
-
-步骤：
-
-- 设置 credentials：`vi ~/.aws/credentials`
-
-  ```properties
-  [default]
-  aws_access_key_id = xx
-  aws_secret_access_key = xx
-  
-  [automate]
-  role_arn = arn:aws:iam::12345:role/stroll #角色
-  source_profile = default #用户访问秘钥所在的profile
-  ```
-
-- 测试： `aws s3 ls --profile automate` 即可访问成功。
 
 
 
