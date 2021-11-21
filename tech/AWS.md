@@ -1254,7 +1254,7 @@ STS: Securtiy Token Service，用于创建和控制对你的AWS资源访问的**
 
 <img src="../img/aws/iam-sts.png" alt="image-20210321201220791" style="zoom:67%;" />
 
-#### 实践：本地开发临时凭证
+实践：本地开发临时凭证
 
 **实践1：信任管理配置**
 
@@ -1444,6 +1444,52 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 - 临时凭证允许访问AWS资源，这样切换后的角色就可以访问productionapp的存储桶里的内容了。
 
 
+
+## || Cognito
+
+两个主要组件：
+
+- 用户池 User Pool
+  - 认证：提供注册、登录。
+  - 可以通过用户池直接登录；也可通过第三方身份提供商 IdP 联合登录。
+- 身份池 Identity Pool
+  - 授权：提供aws凭证，用于向用户授予对aws服务的访问权限。
+
+
+
+![image-20211121103614553](../img/aws/sec-cognito.png)
+
+
+
+
+
+
+
+## || WAF & Shield
+
+Web Application Firewall，保护常见web漏洞攻击，例如SQL注入、跨站点脚本。
+
+![image-20211121095333244](../img/aws/sec-waf-deploy.png)
+
+
+
+
+
+## || System Manager
+
+**Parameter Store**
+
+- 
+
+> 实践：创建参数 --> 
+>
+> - 名称
+> - 层：标准（4k） or 高级 （8k）
+> - 值：逗号分隔
+>
+> CLI 获取值
+>
+> - `ssm get-parameters --profile xx --name 'param-name'`
 
 
 
@@ -2037,7 +2083,66 @@ SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理�
 
 
 
+# 12. 案例
 
+案例1： 部署一个高可用 WordPress 网站
+
+相关服务
+
+- **Router 53**：解析域名
+
+- **ELB**：负载均衡
+
+- **服务器**：EC2 + ASG + subnet 
+
+  - SG 入站规则： 开放80、443端口；开放SSH 
+
+    ```
+    # 入站规则1：开放80、443端口 
+    类型 = HTTP
+    协议 = TCP
+    端口范围 = 80
+    源 = 0.0.0.0/0
+    
+    # 入站规则2：开放 SSH
+    类型 = SSH
+    协议 = TCP
+    端口范围 = 22
+    源 = 0.0.0.0/0
+    ```
+
+    
+
+- **RDS**：multi-az，Security Group，私有子网
+
+  - SG 入站规则
+
+    ```
+    类型 = MySQL/Aurora
+    协议 = TCP
+    端口范围 = 3306
+    源 = ec2 SG
+    ```
+
+    
+
+- **S3**：静态文件
+
+- **EFS**：应用程序文件
+
+- **CloudWatch**：监控
+
+- **IAM**：定义角色
+
+  - 创建角色，赋予 EC2 访问S3的权限
+
+    ```
+    1. 附加权限：AmazonS3FullAccess
+    ```
+
+    
+
+![image-20211121232202807](../img/aws/case-study-arch.png)
 
 
 
