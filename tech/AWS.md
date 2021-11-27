@@ -1040,11 +1040,12 @@ Router53 是 aws DNS 服务。不属于某一个zone。
   >
   > - Alias 可以应用在根域，而CNAME不行；
   > - CNAME你能指向任何其他域名（例如www.baidu.com）都可以，但是Alias记录不可以。
-  > - Alias 解析速度更快。(?) 因为Route53会自动识别别名记录所指的记录中的更改。例如，假设example.com的一个别名记录指向位于lb1-1234.us-east-2.elb.amazonaws.com上的一个ELB负载均衡器。如果该负载均衡器的IP地址发生更改，Route53将在example.com的DNS应答中自动反映这些更改，而无需对包含example.com的记录的托管区域做出任何更改。
+  > - Alias 解析速度更快。(?) 
+  >   因为Route53会自动识别别名记录所指的记录中的更改。例如，假设example.com的一个别名记录指向位于lb1-1234.us-east-2.elb.amazonaws.com上的一个ELB负载均衡器。如果该负载均衡器的IP地址发生更改，Route53将在example.com的DNS应答中自动反映这些更改，而无需对包含example.com的记录的托管区域做出任何更改。
 
 
 
-**Router53 路由策略**
+**Router53 Record Set & 路由策略**
 
 - **简单路由策略（Simple Routing Policy）**：提供单一资源的策略类型，即一个DNS域名指向一个*单一目标*；即一组IP地址，或一个Alias记录。
 - **加权路由策略（Weighted Routing Policy）**：按照不同的权值比例将流量分配到*不同的目标*上去。
@@ -1899,6 +1900,15 @@ Beanstalk 方式：
 
 
 
+## || CloudFomation
+
+IaaC - Infrastructure as a Code，通过代码描述架构。
+
+概念
+
+- 堆栈：定义要创建的aws服务及其参数
+- 资源组：相同 label 的资源一起管理
+
 
 
 # 9. 无服务架构 - Serverless
@@ -2099,6 +2109,9 @@ SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理�
 
 - **ELB**：负载均衡
 
+  - 必须在 public 子网
+  - ASG：需要基于 AMI --> 配置：从LB接收流量
+
 - **服务器**：EC2 + ASG + subnet 
 
   - SG 入站规则： 开放80、443端口；开放SSH 
@@ -2164,6 +2177,112 @@ SWS (Simple Workflow Service) 提供了给应用程序异步、分布式处理�
     
 
 ![image-20211121232202807](../img/aws/case-study-arch.png)
+
+
+
+# 13. Best Practice
+
+
+
+## || 设计原则
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/welcome.html
+
+- **Stop guessing capacity needs**
+  - 先尽可能使用较少的容量，然后在后期根据需求进行随意伸缩。
+- **Test systems at production scale**
+  - 可以在云环境中轻松搭建与生产环境1:1的测试环境，在做完一系列测试之后清空这些资源，同时只为使用的资源和时间而付费。
+- **Automate to make architectural experimentation easier**
+  - 自动化可以帮助我们降低成本以及手动操作带来的种种投入。我们可以使用CloudTrail追踪各种变更、审计相关的影响并且在必要时进行恢复。我们也可以使用例如Lambda函数来进行大量自动化的工作。
+- **Allow for evolutionary architectures**
+  - 在云计算的环境中，我们可以巧妙利用自动化、DevOps、IaaC (Infrastrature as a Code)的特性来对架构进行更快速的迭代，实现敏捷开发（Agile）
+- **Drive architectures using data**
+  - 收集数据，了解架构对workload的影响
+- **Improve through game days**
+  - 模拟失败、大流量
+
+
+
+## || Security
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/security.html
+
+
+
+- **Implement a strong identity foundation**: Implement the principle of <u>least privilege</u> and enforce <u>separation of duties</u> with appropriate authorization for each interaction with your AWS resources. Centralize <u>identity management</u>, and aim to eliminate reliance on long-term static credentials.
+- **Enable traceability**: Monitor, alert, and audit actions and changes to your environment in real time. Integrate <u>log and metric</u> collection with systems to automatically investigate and take action.
+- **Apply security at all layers**: Apply a defense in depth approach with multiple security controls. <u>Apply to all layers</u> (for example, edge of network, VPC, load balancing, every instance and compute service, operating system, application, and code).
+- **Automate security best practices**: Automated software-based security mechanisms improve your ability to securely scale more rapidly and cost-effectively. Create secure architectures, including the implementation of controls that are defined and managed as code in version-controlled templates.
+- **Protect data in transit and at rest**: Classify your data into sensitivity levels and use mechanisms, such as *encryption*, *tokenization*, and *access control* where appropriate.
+- **Keep people away from data**: 
+- **Prepare for security events**: Prepare for an incident by having incident management and investigation policy and processes that align to your organizational requirements. Run incident response simulations and use tools with automation to increase your speed for detection, investigation, and recovery.
+
+
+
+## || Reliability
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/reliability.html
+
+- **Automatically recover from failure**: By monitoring a workload for KPIs, you can trigger automation when a threshold is breached. This allows for automatic notification and tracking of failures, and for automated recovery processes that work around or repair the failure. *With more sophisticated automation, it’s possible to anticipate and remediate failures before they occur*.
+- **Test recovery procedures**: In an on-premises environment, testing is often conducted to prove that the workload works in a particular scenario. You can use automation to simulate different failures or to recreate scenarios that led to failures before.
+- **Scale horizontally to increase aggregate workload availability**: <u>Replace one large resource with multiple small resources</u> to reduce the impact of a single failure on the overall workload. Distribute requests across multiple, smaller resources to ensure that they don’t share a common point of failure. --> 去掉 SPOF
+- **Stop guessing capacity**: 不用担心workload被打满。
+- **Manage change in automation**: Changes to your infrastructure should be made using automation. The changes that need to be managed include changes to the automation, which then can be tracked and reviewed.
+
+
+
+## || Performance Efficiency
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/performance-efficiency.html 
+
+- **Democratize advanced technologies**: Make advanced technology implementation easier for your team by delegating complex tasks to your cloud vendor.  For example, NoSQL databases, media transcoding, and machine learning --> 无需自研。
+- **Go global in minutes**: Deploying your workload in multiple AWS Regions around the world allows you to provide lower latency and a better experience for your customers at minimal cost.
+- **Use serverless architectures**: Serverless architectures remove the need for you to run and maintain physical servers for traditional compute activities. 
+- **Experiment more often**: With virtual and automatable resources, you can quickly carry out comparative testing using different types of instances, storage, or configurations.
+- **Consider mechanical sympathy**: Understand how cloud services are consumed and always use the technology approach that aligns best with your workload goals. For example, consider data access patterns when you select database or storage approaches. --> 机器同理心?
+
+
+
+## || Cost Optimization
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/cost-optimization.html
+
+- **Implement Cloud Financial Management**: Need to invest in Cloud Financial Management /Cost Optimization. Your organization needs to dedicate time and resources to build capability in this new domain of technology and usage management. 
+- **Adopt a consumption model**: Pay only for the computing resources that you require and increase or decrease usage depending on business requirements, not by using elaborate forecasting. *For example, development and test environments are typically only used for eight hours a day during the work week. You can stop these resources when they are not in use for a potential cost savings of 75% (40 hours versus 168 hours)*.
+- **Measure overall efficiency**: Measure the business output of the workload and the costs associated with delivering it. Use this measure to know the gains you make from increasing output and reducing costs.
+- **Stop spending money on undifferentiated heavy lifting**: AWS does the heavy lifting of data center operations like racking, stacking, and powering servers. It also removes the operational burden of managing operating systems and applications with managed services. This allows you to focus on your customers and business projects rather than on IT infrastructure. --> 无需关注基础设施
+- **Analyze and attribute expenditure**: The cloud makes it easier to accurately identify the usage and cost of systems, which then allows transparent attribution of IT costs to individual workload owners. This helps measure return on investment (ROI) and gives workload owners an opportunity to optimize their resources and reduce costs.
+
+
+
+## || Operational Excellence
+
+https://docs.aws.amazon.com/wellarchitected/latest/framework/operational-excellence.html 
+
+- **Perform operations as code**: You can define your entire workload (applications, infrastructure) as code and update it with code. You can implement your operations procedures as code and automate their execution by triggering them in response to events. By performing operations as code, you limit human error and enable consistent responses to events. --> 减少人工运维
+- **Make frequent, small, reversible changes**: Design workloads to allow components to be updated regularly. Make changes in small increments that can be reversed if they fail (without affecting customers when possible).
+- **Refine operations procedures frequently**: As you use operations procedures, look for opportunities to improve them. As you evolve your workload, evolve your procedures appropriately. Set up regular *game days* to review and validate that all procedures are effective and that teams are familiar with them.
+- **Anticipate failure**: Perform “pre-mortem” exercises to identify potential sources of failure so that they can be removed or mitigated. Test your failure scenarios and validate your understanding of their impact. Test your response procedures to ensure that they are effective, and that teams are familiar with their execution. Set up regular *game days* to test workloads and team responses to simulated events.
+- **Learn from all operational failures**: Drive improvement through lessons learned from all operational events and failures. Share what is learned across teams and through the entire organization.
+
+
+
+
+
+# | Ref
+
+https://jayendrapatil.com/ 
+
+SAA 课程
+
+- https://iteablue.com/course/aws-certified-solutions-architect-associate/lessons 
+
+SAA 模拟题
+
+- https://iteablue.com/course/aws-saa-online-quiz-chinese 
+- https://iteablue.com/course/aws-saa-online-quiz
+
+# ---------------------
 
 
 
