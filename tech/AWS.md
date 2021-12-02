@@ -20,6 +20,10 @@
 
 ## || EC2
 
+EC2 获取元数据：
+
+http://169.254.169.254/latest/meta-data 
+
 ### EBS & 实例存储
 
 **EBS - Elastic Block Store 弹性块存储**
@@ -144,6 +148,11 @@ Auto Scaling 配置
 
 
 
+- 预热时间 Health Check Grace Period，默认300秒
+- 冷却时间，默认300秒
+
+
+
 ### Placement Groups
 
 作用：逻辑性地把一些实例放置在一个组里面，以便组内实例能享受低延迟、高网络吞吐的网络；决定实例启动在哪个底层硬件上、哪个机柜上。例如：
@@ -157,10 +166,9 @@ Auto Scaling 配置
 
 ![image-20210410101119302](../img/aws/place-group.png?lastModify=1626605438)
 
-**1. 集群置放群组 - Cluster Placement Group**
+**1. 集群**置放群组 - Cluster Placement Group
 
-- 将实例尽量放置在一起
-- 在**同一个 AZ 可用区**；
+- 将实例尽量放置在一起；在**同一个 AZ 可用区**；
 - <u>适用于低延迟、高吞吐场景；</u>
 
 > 建议：
@@ -177,7 +185,7 @@ Auto Scaling 配置
 
 
 
-**2. 分区置放群组 - Partition Placement Group**
+**2. 分区**置放群组 - Partition Placement Group
 
 - 将实例分布在不同的”逻辑分区“；每个分区分配一个机柜，不同分区属于不同机柜；
 - 可在**同一区域**下的多个可用区，每个可用区可有最多7个分区。
@@ -185,7 +193,7 @@ Auto Scaling 配置
 
 
 
-**3. 分布置放群组 - Spread Placement Group**
+**3. 分布**置放群组 - Spread Placement Group
 
 - 将实例放置在不同机柜；可以跨越**同一区域**中的多个可用区。
 
@@ -536,7 +544,7 @@ Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->               
+>                 
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -2281,6 +2289,10 @@ SAA 模拟题
 
 - https://iteablue.com/course/aws-saa-online-quiz-chinese 
 - https://iteablue.com/course/aws-saa-online-quiz
+
+免费套餐
+
+- https://aws.amazon.com/cn/free
 
 # ---------------------
 
