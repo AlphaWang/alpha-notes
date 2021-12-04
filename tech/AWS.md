@@ -256,11 +256,18 @@ Auto Scaling 配置
 
 
 
-## || Serverless
+## || Lambda
 
 使用**AWS Lambda**，无需配置和管理任何服务器和应用程序就能运行你的代码。只需要上传代码，Lambda就会处理运行并且根据需要自动进行横向扩展。
 
-Lambda 触发器
+**场景**
+
+- **上传照片到S3**，触发Lambda进行转码处理，存储到另一个存储桶。
+- **HTTP 网页请求**，静态内容S3，动态内容 Lambda处理。
+
+
+
+**Lambda 触发器**
 
 - **API Gateway**
 - **AWS IoT**
@@ -271,6 +278,31 @@ Lambda 触发器
 - S3
 - SNS
 - Cognito Sync Trigger
+
+
+
+**Lambda 原理**
+
+![image-20211204104033652](../img/aws/lambda-arch.png)
+
+- **Worker Manager**：作业调度
+- **Woker / Sandbox**：计算资源
+  - ![image-20211204104209915](../img/aws/lambda-arch-sandbox.png)
+  - FireCracker: 超轻量级虚机
+  - 冷启动问题：启动耗时，
+
+
+
+
+
+**同步、异步调用**
+
+- 同步调用函数，Lambda结束是返回结果；默认行为。
+- 异步调用函数，Lambda将事件发送到队列，执行失败自动重试两次，进入死信队列。
+
+![image-20211204110923080](../img/aws/lambda-case-async.png)
+
+
 
 
 
@@ -324,6 +356,10 @@ Lambda 触发器
 >
 >   - 事件源：事件模式 | 计划
 >   - 目标：选择 lambda
+
+
+
+
 
 
 
