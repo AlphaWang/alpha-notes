@@ -359,6 +359,24 @@ Auto Scaling 配置
 
 
 
+## || Batch
+
+- 利用 Spot 实例（竞价实例），降低费用。
+- 场景
+  - 文件 --> S3 --> Batch 配置资源调度数据分析作业 --> 大数据工具预测下一个交易日 --> 存储结果
+
+
+
+## || Lightsail
+
+- 是入门级云计算 VPS 
+- 价格低廉
+- 场景
+  - 简单web应用
+  - 预配置应用程序、自定义博客、个人网站
+  - 商业软件
+  - 开发测试环境
+
 
 
 
@@ -1769,6 +1787,16 @@ https://www.iloveaws.cn/2170.html
 
 
 
+**概念**
+
+- **任务**：定义task definition，是集群内任务定义的实例化。
+- **服务**：同时运行和维护指定数量的任务。
+- **集群**：托管的Fargate或自建 EC2
+
+
+
+
+
 **ECS Task Definition**
 
 任务定义是一个JSON格式的文本文件，这个文件定义了构建应用程序的各种参数。这些参数包括了：要使用哪些容器镜像，使用哪种启动类型，打开什么端口，使用什么数据卷等等。
@@ -1856,9 +1884,9 @@ ECS任务调度负责将任务放置到集群中，你可以定义一个**服务
 
 
 
-## || Elastic Beanstalk
+## || Beanstalk
 
-使用者只需要上传应用程序，Elastic Beanstalk 将自动处理容量预配置、负载均衡、Auto Scaling 和应用程序运行状况监控的部署细节。
+**快速上云：**使用者只需要上传应用程序，Elastic Beanstalk 将自动处理容量预配置、负载均衡、Auto Scaling 和应用程序运行状况监控的部署细节。
 
 
 
@@ -1944,7 +1972,7 @@ Beanstalk 方式：
 
 
 
-## || CloudFomation
+## || CloudFormation
 
 IaaC - Infrastructure as a Code，通过代码描述架构。
 
