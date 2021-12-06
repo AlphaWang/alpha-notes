@@ -574,7 +574,7 @@ EBS 卷类型
 
 ## || Storage Gateway
 
-作用：将**本地软件设备**与**基于云的存储**相连接。
+作用：混合云存储服务，将 **本地软件设备** 与 **云存储** 相连接。
 
 
 
@@ -584,7 +584,7 @@ EBS 卷类型
 
 
 
-三种网关类型
+**三种网关类型**
 
 - **File Gateway**
   - 基于**文件系统**，通过 NFS 连接直接访问存储在 S3 / Glacier上的文件，并且本地进行缓存
@@ -619,11 +619,11 @@ Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；�
 特点：
 
 - 支持Network File System version 4 (NFSv4)协议
-- EFS是**Block Base Storage**，而不是Object Base Storage（例如S3）
-- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用
+- EFS是 **Block Base Storage**，而不是Object Base Storage（例如S3）
+- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用（区别EBS?）
 - 可以有高达PB级别的存储
 - 同一时间能支持上千个NFS连接
-- 高可用：EFS的数据会存储在一个AWS区域的多个可用区内
+- 高可用：EFS的数据会存储在一个AWS区域的**多个可用区**内
 - Read After Write Consistency
 
 
