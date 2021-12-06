@@ -166,7 +166,7 @@ Auto Scaling 配置
 
 ![image-20210410101119302](../img/aws/place-group.png?lastModify=1626605438)
 
-**1. 集群**置放群组 - Cluster Placement Group
+**1. 集群置放群组 - Cluster Placement Group**
 
 - 将实例尽量放置在一起；在**同一个 AZ 可用区**；
 - <u>适用于低延迟、高吞吐场景；</u>
@@ -185,17 +185,17 @@ Auto Scaling 配置
 
 
 
-**2. 分区**置放群组 - Partition Placement Group
+**2. 分区置放群组 - Partition Placement Group**
 
-- 将实例分布在不同的”逻辑分区“；每个分区分配一个机柜，不同分区属于不同机柜；
+- 将实例分布在不同的”逻辑分区“；每个分区分配一个机柜，<u>不同分区属于不同机柜</u>；
 - 可在**同一区域**下的多个可用区，每个可用区可有最多7个分区。
 - <u>适用于大型分布式，和重复的工作负载，例如Hadoop Cassandra Kafka；</u>
 
 
 
-**3. 分布**置放群组 - Spread Placement Group
+**3. 分布置放群组 - Spread Placement Group**
 
-- 将实例放置在不同机柜；可以跨越**同一区域**中的多个可用区。
+- 将实例放置在<u>不同机柜</u>；可以跨越**同一区域**中的多个可用区。
 
 > Q: 和分区置放群组的区别？
 >
@@ -403,6 +403,10 @@ API Gateway是一个托管的Rest API服务
 
 - 对象存储，而不是块存储；
 
+  - 对象存储：key --> Object
+  - 块存储：硬盘，数据块，索引
+  - 文件存储：文件系统，根，目录，层次结构
+
   > 对象参数包括：
   >
   > - Key
@@ -419,23 +423,29 @@ API Gateway是一个托管的Rest API服务
 
 - 生命周期管理：自动转换存储类型；
 
-- 支持加密、ACL、Bucket Policy
+- 安全性：支持加密、ACL、Bucket Policy；
+
+- 高可用：3 az，11-9 持久性，4-9可用性；
+
+
+
+
 
 
 
 **数据一致性模型**
 
-- 新对象：Read after Write Consistency
+- 新对象：写后读一致性，Read after Write Consistency
 
-  > 返回200之前先同步到aws的多个物理位置。
+  > 返回200之前，先同步到aws的多个物理位置。
 
-- 修改\删除：Eventual Consistency
+- 修改\删除：最终一致性，Eventual Consistency
 
   > 异步同步
 
 
 
-**S3 存储类型**
+**S3 存储类型 & 生命周期**
 
 - Standard
 
@@ -501,18 +511,29 @@ API Gateway是一个托管的Rest API服务
 
 **S3 安全**
 
-- Bucket Policy
-- Access Control List 
+- 基于资源的访问控制：Object ACL, bucket policy, bucket ACL
+- 基于用户的访问控制：IAM policy
+
+![image-20211206094350996](../img/aws/s3-acl.png)
 
 
 
-**S3 加密**
 
-- 传输过程中加密：SSL/TLS
 
-- 静态加密
+**S3 数据保护**
 
-  - 服务端加密（SSE, Server Side Encryption）
+- Versioning 防止误删
+
+- 删除时可要求 MFA 验证
+
+- 加密：
+
+  - 传输过程中加密：SSL/TLS
+
+  - 静态加密
+
+    - 服务端加密（SSE, Server Side Encryption）
+
 
     > **SSE-S3**: S3 托管密钥
     >
@@ -520,7 +541,15 @@ API Gateway是一个托管的Rest API服务
     >
     > **SSE-C**: 服务端加密与客户提供的密钥一起使用
 
-  - 客户端加密（CSE, Client Side Encryption）
+    - 客户端加密（CSE, Client Side Encryption）
+
+
+**跨区复制**
+
+- 要开启Versioning
+- 根据桶、prefix、tag复制
+- 只复制生效后的对象
+- 源桶删除对象，目标桶不会自动删除
 
 
 
