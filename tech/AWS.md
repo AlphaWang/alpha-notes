@@ -24,34 +24,6 @@ EC2 获取元数据：
 
 http://169.254.169.254/latest/meta-data 
 
-### EBS & 实例存储
-
-**EBS - Elastic Block Store 弹性块存储**
-
-- EBS卷可以依附到**同一个可用区（AZ）**内的任何实例上；
-- 可加密；
-- 可备份 - 通过**快照（Snapshot）**来进行增量备份，快照会保存在 **S3 **上；
-- 可基于快照创建 EBS；
-
-
-
-EBS 类型
-
-- 预配置IOPS SSD（Provisioned IOPS SSD）
-- 通用型SSD（General Purpose SSD）
-- 吞吐量优化型HDD（Throughput Optimized HDD）
-- Cold HDD
-- Magnetic
-
-
-
-**Instance Store Volumes 实例存储**
-
-- 用于短暂存储，又叫 Ephemeral Storage 
-- EC2 实例终止 --> 实例存储消失；重启 --> 不影响
-
-
-
 
 
 ### AMI 
@@ -555,6 +527,49 @@ API Gateway是一个托管的Rest API服务
 
 ## || Glacier
 
+特点：
+
+- 数据归档、长期存储：90天/180天起
+- 超低价格、取回收费
+- 高可用：至少3 az，11-9持久性，4-9可用性
+- 取回时间：3-5 小时 ~ 12 - 48 小时
+
+
+
+## || EBS & 实例存储
+
+**Elastic Block Store 弹性块存储**
+
+- 与EC2配合使用：EBS卷可以依附到 **同一个可用区（AZ）**内的任何EC2实例上；
+- 可加密；
+- 可备份 - 通过**快照（Snapshot）**来进行**增量**备份，快照会保存在 **S3 **上；
+  - 
+
+- 可基于快照创建 EBS；
+
+
+
+EBS 卷类型
+
+- `gp2` 通用型SSD（General Purpose SSD）
+- `io1` 预配置IOPS SSD（Provisioned IOPS SSD）
+- `st1` 吞吐量优化型HDD（Throughput Optimized HDD）
+- `sc1` Cold HDD
+- Magnetic
+
+如何选择卷类型
+
+![image-20211206100930547](../img/aws/ebs-volumn-choose.png)
+
+
+
+
+
+**Instance Store Volumes 实例存储**
+
+- 用于短暂存储，又叫 Ephemeral Storage 
+- EC2 实例终止 --> 实例存储消失；重启 --> 不影响
+
 
 
 ## || Storage Gateway
@@ -599,7 +614,7 @@ API Gateway是一个托管的Rest API服务
 
 ## || EFS
 
-Elastic File System 可以简单地理解为是共享盘或NAS存储；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
+Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
 
 特点：
 
