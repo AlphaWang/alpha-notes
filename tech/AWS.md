@@ -512,7 +512,7 @@ API Gateway是一个托管的Rest API服务
     > **SSE-KMS**: KMS 托管密钥
     >
     > **SSE-C**: 服务端加密与客户提供的密钥一起使用
-
+    
     - 客户端加密（CSE, Client Side Encryption）
 
 
@@ -572,6 +572,63 @@ EBS 卷类型
 
 
 
+## || EFS
+
+Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
+
+特点：
+
+- 支持Network File System version 4 (NFSv4)协议
+- EFS是 **Block Base Storage**，而不是Object Base Storage（例如S3）
+- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用（区别EBS?）
+- 可以有高达PB级别的存储
+- 同一时间能支持上千个NFS连接
+- 高可用：EFS的数据会存储在一个AWS区域的**多个可用区**内
+- Read After Write Consistency
+
+
+
+> 实践：创建EFS
+>
+> 1. Config file system access: 选择 VPC --> 选择相应子网、安全组
+> 2. Config optional settings：设置 Tags，选择性能模式
+>
+> 实践：挂载 EC2
+>
+> - EFS --> 找到 EC2 Mount Instructions，拷贝挂载命令
+>
+> - CLI 登录 EC2，执行命令
+>
+>   ```
+>   mkdir efs
+>   mount mount -t nfs4 -o ... efs
+>                   
+>   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
+>   ```
+>
+
+
+
+vs. **EBS**
+
+- EBS 块存储 vs. 文件存储
+- EC2 单机使用 vs. 多机共享
+- 单 AZ，自行快照 vs. 多AZ，托管服务
+- 4 种 EBS vs. 3种instance storage选择
+
+
+
+vs. **FSx for Windows File Server**
+
+- 协议：FSx 支持 SMB，EFS 支持NFS
+- 系统：FSx 支持win,linux,mac；EFS 只支持Linux
+- 多可用区：EFS 只能多可用区部署；FSx 可选
+- FSx 支持 MS AD 域用户
+
+
+
+
+
 ## || Storage Gateway
 
 作用：混合云存储服务，将 **本地软件设备** 与 **云存储** 相连接。
@@ -609,54 +666,6 @@ EBS 卷类型
 > - 创建文件共享
 >   - 配置S3存储桶
 >   - Mount 到本地
-
-
-
-## || EFS
-
-Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；可以在多个EC2实例上使用同样的一个EFS文件系统，以达到共享通用数据的目的。
-
-特点：
-
-- 支持Network File System version 4 (NFSv4)协议
-- EFS是 **Block Base Storage**，而不是Object Base Storage（例如S3）
-- 使用EFS，你只需要为你使用的存储空间付费，没有预支费用（区别EBS?）
-- 可以有高达PB级别的存储
-- 同一时间能支持上千个NFS连接
-- 高可用：EFS的数据会存储在一个AWS区域的**多个可用区**内
-- Read After Write Consistency
-
-
-
-> 实践：创建EFS
->
-> 1. Config file system access: 选择 VPC --> 选择相应子网、安全组
-> 2. Config optional settings：设置 Tags，选择性能模式
->
-> 实践：挂载 EC2
->
-> - EFS --> 找到 EC2 Mount Instructions，拷贝挂载命令
->
-> - CLI 登录 EC2，执行命令
->
->   ```
->   mkdir efs
->   mount mount -t nfs4 -o ... efs
->                 
->   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
->   ```
->
-
-
-
-vs. **FSx for Windows File Server**
-
-- 协议：FSx 支持 SMB，EFS 支持NFS
-- 系统：FSx 支持win,linux,mac；EFS 只支持Linux
-- 多可用区：EFS 只能多可用区部署；FSx 可选
-- FSx 支持 MS AD 域用户
-
-
 
 
 
