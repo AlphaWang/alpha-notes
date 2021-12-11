@@ -753,18 +753,36 @@ Amazon RDS支持的关系数据库有：
 
 NoSQL 非关系数据库方案；
 
-特点：
+
+
+**组件**
+
+![image-20211211222741229](../img/aws/dynamodb.png)
+
+- 表、表项、属性
+- Partition Key、Sort Key (相当于索引)
+
+
+
+**特点：**
 
 - 使用 SSD 存储
+
 - 数据分散在3个不同地理位置的数据中心（并不是3个可用区）
+
 - **最终一致性读取**（Eventual Consistent Reads）
   - 默认的设置，即如果写入数据到DynamoDB之后马上读取该数据，可能会读取到旧的信息
   - DynamoDB需要时间（一秒内）把写入的数据同步到3个不同地理位置的数据中心
+
 - **强一致性读取**（Strongly Consistent Reads）
   - 在写入数据到DynamoDB之后马上读取该数据，会等所有写入操作以及数据同步全部完成后再回馈结果
   - 即强一致性读取一定会读到最新的数据结果
+
 - 如果我们需要增加DynamoDB的规格，我们可以直接在AWS管理控制台上进行更改，并且**不会有任何系统downtime**
+
 - 除非您指定其他读取方式，否则 DynamoDB 将使用最终一致性读取。读取操作 (例如 GetItem，Query 和 Scan) 提供了一个 **ConsistentRead** 参数。如果您将此参数设置为 true，DynamoDB 将在操作过程中使用强一致性读取。
+
+  
 
 
 
@@ -777,6 +795,39 @@ NoSQL 非关系数据库方案；
 > 添加条目 --> 项目 选项卡
 >
 > - 创建项目：输入键 --> append：选择类型、值 （每个项目可以有不同的属性！）
+
+
+
+**高级功能**
+
+- 事务性
+
+  - TransactWriteItems
+
+  - TransactGetItems
+
+- 预配置容量
+
+  - RCU：读取容量单位
+  - WCU：写入容量单位
+  - Auto Scaling: 当 RCU/WCU 得到阈值时
+
+- 二级索引
+
+  - **LSI**：Local Secondary Index
+    - 额外的sort key属性，不修改原有的partition key
+    - 每个表最多 5 个 LSI
+  - **GSI**：Global Secondary Index
+    - 额外的 partition key / sort key，
+    - 全局可用，复合索引
+    - 每个表最多20个GSI，每个RCU、WCU单独收费
+
+- TTL
+  - 根据失效时间戳自动删除数据项
+- DynamoDB Streams
+  - 将变化日志按时间顺序分隔好，提供更新、插入、删除的数据流
+- Global Tables
+  - 多地区容灾
 
 
 
