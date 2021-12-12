@@ -743,6 +743,25 @@ Amazon RDS支持的关系数据库有：
 
 
 
+## || Aurora
+
+Amazon Aurora是一种兼容MySQL和PostgreSQL的商用级别关系数据库，速度可以达到MySQL数据库的**5倍**
+
+特点：
+
+- 10GB的起始存储空间，可以增加到最大64TB的容量
+- 计算资源可以提升到最多32vCPU和244GB的内存
+- Aurora会将你的数据**复制2份**到每一个可用区内，并且**复制到最少3个可用区**，因此你会有**6份数据库备份**
+- 2份及以下的数据备份丢失，不影响Aurora的写入功能
+- 3份及以下的数据备份丢失，不影响Aurora的读取功能
+- Aurora有自动修复的功能，AWS会自动检查磁盘错误和数据块问题并且自动进行修复
+- 有两种数据库只读副本
+  - Aurora Replicas（最多支持15个）
+  - MySQL Replica（最多支持5个）
+  - 两者的区别是Aurora主数据库出现故障的时候，Aurora Replicas可以自动变成主数据库，而MySQL Replica不可以
+
+
+
 **为什么 Aurora 比 MySQL 快？**
 
 ![image-20211211211721779](../img/aws/rds-aurora-mysql.png)
@@ -835,18 +854,38 @@ NoSQL 非关系数据库方案；
 
 OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
 
-特点：
+**特点：**
 
 - **单节点**（160Gb）部署模式
 - **多节点**部署模式
   - **领导节点**：管理连接和接收请求
   - **计算节点**：存储数据，执行请求和计算任务，最多可以有128个计算节点
-- Columnar Data Storage，列式存储！
+- **Columnar Data Storage** 列式存储
 - Advanced Compression
-- Massively Parallel Processing (MPP)
-- 目前Redshift只能部署在一个可用区内，不能跨可用区或者用类似RDS的高可用配置
+  - 同类数据压缩
+  - 压缩方式：连续值、差值、字典
+
+- 目前Redshift只能部署在**一个可用区**内，不能跨可用区或者用类似RDS的高可用配置
   - Redshift是用来产生报告和做商业分析的，并不需要像生产环境一样对可用性有高保证
 - 我们可以对Redshift做快照，并且在需要的时候恢复这个快照到另一个可用区
+
+
+
+**MPP: Massively Parallel Processing** 
+
+- 大规模平行处理
+- 管理节点：
+  - SQL连接、存储元数据、协调SQL并行处理
+- 计算节点：
+  - 本地的列式存储、平行执行查询、备份恢复
+
+![image-20211211230441803](../img/aws/redshift-mpp.png)
+
+
+
+
+
+
 
 
 
@@ -856,23 +895,36 @@ OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
 
 
 
-## || Aurora
+## || 其他
 
-Amazon Aurora是一种兼容MySQL和PostgreSQL的商用级别关系数据库，速度可以达到MySQL数据库的**5倍**
+**Neptune**
 
-特点：
+- 作用：图形数据库服务
+- 场景：建议引擎、欺诈检测、知识图谱
+- 特点
+  - 可存储十亿个关系、毫秒级查询
+  - 高可用：只读副本、时间点恢复、S3持续备份、跨可用区复制
+  - 加密：HTTPS 加密客户端连接、静态加密
 
-- 10GB的起始存储空间，可以增加到最大64TB的容量
-- 计算资源可以提升到最多32vCPU和244GB的内存
-- Aurora会将你的数据**复制2份**到每一个可用区内，并且**复制到最少3个可用区**，因此你会有**6份数据库备份**
-- 2份及以下的数据备份丢失，不影响Aurora的写入功能
-- 3份及以下的数据备份丢失，不影响Aurora的读取功能
-- Aurora有自动修复的功能，AWS会自动检查磁盘错误和数据块问题并且自动进行修复
-- 有两种数据库只读副本
-  - Aurora Replicas（最多支持15个）
-  - MySQL Replica（最多支持5个）
-  - 两者的区别是Aurora主数据库出现故障的时候，Aurora Replicas可以自动变成主数据库，而MySQL Replica不可以
-- 
+
+
+**DocumentDB**
+
+- 类似 DynamoDB，但是 JSON 结构
+- 与 MongoDB兼容
+
+
+
+**Quantum Ledger Database**
+
+- 不可更改性
+
+
+
+**Timestream**
+
+- 时间序列数据库 
+- 适用于 IoT
 
 
 
