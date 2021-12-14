@@ -930,6 +930,12 @@ OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
 
 # 4. 网络 - Networking
 
+AWS 网络整体架构
+
+![image-20211212205357967](../img/aws/network-arch.png)
+
+
+
 
 
 ## || CloudFront CDN
