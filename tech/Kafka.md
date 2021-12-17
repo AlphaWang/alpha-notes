@@ -2554,122 +2554,170 @@ Q: 什么情况下消息不丢失
 
 
 
-**Stretch Clusters**
-
-- 原理
-
-  - 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
-
-    > Rack awareness ensures that replica placement is such that at least one topic-partition replica exists in each region (or rack).
-
-- 优点
-
-  - 同步复制：RPO = 0, RTO = 0
-  - 没有资源浪费 
-
-- 要求：DC 间延迟 < 50 ms
+#### **1. Stretch Clusters**
 
 ![image-20211017152341752](../img/kafka/multi-dc-stretch-clusters.png)
 
+原理
+
+- 跨数据中心，部署单一的 Kafka 集群 >> 通过 Rack
+
+  > Rack awareness ensures that replica placement is such that at least one topic-partition replica exists in each region (or rack).
+
+优点
+
+- 同步复制：RPO = 0, RTO = 0
+- 没有资源浪费 
+
+要求：
+
+- DC 间延迟 < 50 ms
 
 
-**Hub-Spokes 架构 (Aggregation)**
 
-- 原理
 
-  - 一个中央集群，从其他分支集群拉取数据、聚合；简化：两个集群，一个 Leader， 一个 Follower
-  - `RPO > 0` `RTO >= 0`
 
-- 场景：各分支集群数据集完全隔离、没有依赖；例如银行的各个分行
-
-- 优点：简单，易于部署、配置、监控
-
-  > 生产者只关心本地集群
-  >
-  > Replication 是单向的
-
-- 缺点：不可跨区读取
+#### **2. Hub-Spokes  (Aggregation)**
 
 ![image-20211017152713339](../img/kafka/multi-dc-aggregation.png)
 
+原理
+
+- 一个中央集群，从其他分支集群拉取数据、聚合；简化：两个集群，一个 Leader， 一个 Follower
+- `RPO > 0` `RTO >= 0`
+
+场景：
+
+- 各分支集群数据集完全隔离、没有依赖；例如银行的各个分行
+
+优点：
+
+- 简单，易于部署、配置、监控
+
+> 生产者只关心本地集群
+>
+> Replication 是单向的
+
+缺点：
+
+- 不可跨区读取
 
 
-**Active-Active 架构**
 
-- 原理
 
-  - 各数据中心 共享部分或全部数据；
-  - 互相异步复制： `RPO > 0` `RTO = 0` 
-  - 生产者往 Local DC写入；
-  - 消费者从 Local DC读取；
 
-- 优点
-
-  - 便于就近服务
-  - 数据冗余、可靠
-
-- 缺点
-
-  - 数据异步读写，需要避免数据冲突
-
-    > 同步延迟问题： stick-session
-    >
-    > 数据冲突问题：多个集群同时写入同一个数据集
-
-  - Mirroring Process 过多
-
-    > 要避免“来回复制”；一般可引入“逻辑主题” / “namespace”：
-    >
-    > - 常规主题：user
-    > - 逻辑主题：clusterA-user, clusterB-user
+#### **3. Active-Active**
 
 ![image-20211015114236090](../img/kafka/dr-active-active.png)
 
+原理
+
+- 各数据中心 共享部分或全部数据；
+- 互相异步复制： `RPO > 0` `RTO = 0` 
+- 生产者往 Local DC写入；
+- 消费者从 Local DC读取；
+
+优点
+
+- 便于就近服务
+- 数据冗余、可靠
+
+缺点
+
+- 数据异步读写，需要避免数据冲突
+
+  > 同步延迟问题： stick-session
+  >
+  > 数据冲突问题：多个集群同时写入同一个数据集
+
+- Mirroring Process 过多
+
+  > 要避免“来回复制”；一般可引入“逻辑主题” / “namespace”：
+  >
+  > - 常规主题：user
+  > - 逻辑主题：clusterA-user, clusterB-user
 
 
-**Active-Passive 架构**
 
-- 原理
 
-  - 有一个数据中心专门用于 Inactive / Cold 复制，而不对外提供写入服务；
-  - 生产者只往 active DC 写入；
-  - 消费者可以从 local DC 读取；
-  - `RPO >0` `RTO > 0`
 
-- 优点：简单，无需考虑冲突
-
-- 缺点
-
-  - 数据丢失
-
-  - 资源浪费
-
-    > 优化：
-    >
-    > - DR 集群用较小规模 --> 有风险！
-    >
-    > - DR 集群服务部分只读请求
-
-  - Failover 困难
-
-    - 数据丢失、不一致
-
-    - Failover 之后的“起始偏移量”
-
-      > 1. Auto offset reset: 
-      >    earliset / latest
-      >
-      > 2. Replicate offset topic: 
-      >    对 `__consumer_offsets` 主题进行镜像；
-      >
-      >
-      > 3. Time-based failover:
-      >    每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
-      >
-      > 4. External offset mapping:
-      >    用外部存储保存两个数据中心的偏移量对应关系。
+#### **4. Active-Passive**
 
 ![image-20211015114124539](../img/kafka/dr-active-passive.png)
+
+原理
+
+- 有一个数据中心专门用于 Inactive / Cold 复制，而不对外提供写入服务；
+- 生产者只往 active DC 写入；
+- 消费者可以从 local DC 读取；
+- `RPO >0` `RTO > 0`
+
+优点：
+
+- 简单，无需考虑冲突
+
+缺点
+
+- 数据丢失
+
+- 资源浪费
+
+  > 优化：
+  >
+  > - DR 集群用较小规模 --> 有风险！
+  >
+  > - DR 集群服务部分只读请求
+
+- Failover 困难
+
+  - 数据丢失、不一致
+
+  - Failover 之后的“起始偏移量”
+
+    > 1. Auto offset reset: 
+    >    earliset / latest
+    >
+    > 2. Replicate offset topic: 
+    >    对 `__consumer_offsets` 主题进行镜像；
+    >
+    >
+    > 3. Time-based failover:
+    >    每个消息包含一个 timestamp，表示何时被写入kafka；Broker 支持根据 timestamp  查找offset
+    >
+    > 4. External offset mapping:
+    >    用外部存储保存两个数据中心的偏移量对应关系。
+
+
+
+
+
+#### 5. Local Aggregation
+
+https://eng.uber.com/kafka/ 
+
+![image-20211217223219024](../img/kafka/dr-local-agg.png)
+
+原理
+
+- Producer写入local DC.
+- 异步复制到各个DC 的 Agg Kafka.
+
+消费模式
+
+- Active-active
+  - consumers consume the same topic in the aggregate clusters in each region independently.
+  - 会有重复消费？
+- Active-passive
+  - 消费者读取某一个agg
+
+**Offset 同步**
+
+- 为什么要同步offset：不同DC agg上的数据顺序会不一样，因为cross dc replicate会更耗时
+- offset mapping 存储：
+  ![image-20211217230312184](../img/kafka/dr-local-agg-offset-mapping.png)
+
+- Offset mapping 算法：找到每个DC topic对应的target agg offset，取最小值。
+- 
 
 
 
