@@ -2549,6 +2549,8 @@ Q: 什么情况下消息不丢失
 ### 多 DC 架构
 
 > 多 DC 架构 : https://docs.confluent.io/platform/current/multi-dc-deployments/multi-region-architectures.html
+>
+> ebay practice: https://ebaytech.berlin/resiliency-and-disaster-recovery-with-kafka-b683a88aea0 
 
 
 
@@ -2750,7 +2752,7 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 - Failover 后还是可能有重复消费，因为
   - 同步有延迟
-  - offset提交是周期性的
+  - offset 提交是周期性的
   - 同一ts 可能对应多个消息
 - Failover 后可能会丢消息
   - Replication Lag
