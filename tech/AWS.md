@@ -602,7 +602,7 @@ Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；�
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->                       
+>                         
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -1201,39 +1201,6 @@ NAT 是一种把内部私有地址（192.168.1.x，10.x.x.x等）转换为Intern
 
 
 
-### VPC 终端节点
-
-**VPC Endpoints** 能建立VPC和一些AWS服务之间的高速、私密的“专线”。这个专线叫做**PrivateLink**，你无需再使用Internet网关、NAT网关、VPN或AWS Direct Connect连接，仅通过内网就可以访问到一些AWS资源了！
-
-VPC Endpoints 是虚拟设备，它是以能够自动水平扩展、高度冗余、高度可用的VPC组件设计而成，你也不需要为它的带宽限制和故障而有任何担忧。
-
-![image-20211107222500117](../img/aws/vpc-endpoints.png)
-
-**类型**
-
-- **接口 Interface**；支持如下服务：
-  - CloudWatch Logs
-  - EC2 API
-  - Kinesis Data Streams
-  - SNS
-- **网关 Gateway**；自支持高可用。支持如下服务：
-  - S3
-  - DynamoDB
-
-> 实践：创建终端节点，让私有子网下的实例访问S3
->
-> - 服务端：VPC --> 终端节点服务
-> - 客户端：VPC --> 终端节点
->   - 服务名称：选择 s3-gateway
->   - VPC：
->   - 配置路由表：选择private子网下的路由表；
->     会自动创建一条路由：下一跳 vpc endpoints
-> - 私有子网 EC2 --> 
->   - 附加替换 IAM 角色：允许访问S3
->   - 通过跳板机登录 EC2 --> aws s3 ls
-
-
-
 ### Elastic IP
 
 通过申请弹性IP地址，你可以将一个固定的公网IP分配给一个EC2实例。在这个实例无论重启，关闭，甚至终止之后，你都可以回收这个弹性IP地址并且在需要的时候分配给一个新的EC2实例。
@@ -1244,24 +1211,28 @@ VPC Endpoints 是虚拟设备，它是以能够自动水平扩展、高度冗余
 
 ### VPC Peering
 
-- VPC Peering 是两个VPC之间的网络连接，通过此连接，你可以使用IPv4地址在两个VPC之间传输流量。这两个VPC内的实例会和**如同一个网络**一样彼此通信。
+作用：
 
-- 如果两个VPC出现了地址覆盖/重复，那么这两个VPC不能做Peering
-
-
-
-### Direct Connect 线路
-
-- 用于连接公司内网与AWS 网络
-
-VS. VPN 连接
-
-- VPN连接可以在数分钟之内就搭建成功。如果有紧急的业务需求，可以使用VPN连接。VPN连接是基于互联网线路的，因此带宽不高，稳定性也不好，但价格便宜
-- AWS Direct Connect使用的是专线，你的数据不会跑在互联网上，是私有的、安全的网络
+- 连接两个 VPC，让两个 VPC 中的实例之间的通信就像在同一个网络中一样。流量一直处于 aws 内部网络，不会经过 Internet。
 
 
 
-![image-20211107225245612](../img/aws/direct-connect.png)
+特点：
+
+- 一对一连接：
+  - VPC Peering 是两个VPC之间的网络连接，通过此连接，你可以使用IPv4地址在两个VPC之间传输流量。这两个VPC内的实例会和**如同一个网络**一样彼此通信。
+- 地址不能冲突：
+  - 如果两个VPC出现了地址覆盖/重复，那么这两个VPC不能做Peering
+
+
+
+条件：
+
+- 两个 VPC 不能有重叠的 CIDR 块；
+- 不支持传递；
+- 不支持边界到边界的路由：Site-to-Site VPN connection，aws Direct Connect，Internet Gateway，NAT 网关，网关终端节点；
+- 支持 跨区域、跨账户；
+- 安全组配置：如果是同一区域，则可引用另一端对等 VPC 中的安全组，作为规则中的入向源或出向目标；
 
 
 
@@ -1303,6 +1274,237 @@ VS. VPN 连接
 
 
 
+
+
+
+
+### VPC Endpoints
+
+VPC Endpoints 能建立 **VPC和AWS服务**之间的高速、私密的“专线”。这个专线叫做**PrivateLink**，你无需再使用Internet网关、NAT网关、VPN或AWS Direct Connect连接，仅通过内网就可以访问到一些AWS资源了！
+
+VPC Endpoints 是虚拟设备，它是以能够自动水平扩展、高度冗余、高度可用的VPC组件设计而成，你也不需要为它的带宽限制和故障而有任何担忧。
+
+![image-20211107222500117](../img/aws/vpc-endpoints.png)
+
+**类型**
+
+- **接口 Interface**；支持如下服务：
+  - CloudWatch Logs
+  - EC2 API
+  - Kinesis Data Streams
+  - SNS
+- **网关 Gateway**；自支持高可用。支持如下服务：
+  - S3
+  - DynamoDB
+
+
+
+> 实践：创建终端节点，让私有子网下的实例访问S3
+>
+> - 服务端：VPC --> 终端节点服务
+> - 客户端：VPC --> 终端节点
+>   - 服务名称：选择 s3-gateway
+>   - VPC：
+>   - 配置路由表：选择private子网下的路由表；
+>     会自动创建一条路由：下一跳 vpc endpoints
+> - 私有子网 EC2 --> 
+>   - 附加替换 IAM 角色：允许访问S3
+>   - 通过跳板机登录 EC2 --> aws s3 ls
+
+
+
+作用：使您能够将 VPC 通过 AWS 的私有网络连接到支持的 AWS 服务，而不需要通过Internet。否则需要通过 Internet 网关经过 Internet 访问，无法保证安全和品质。
+
+<img src="../img/aws/vpc-endpoint.png" alt="image-20210410114923424" style="zoom:50%;" />
+
+
+
+问题排查：
+
+- 检查 DNS 解析配置
+- 检查路由表
+
+
+
+**网关方式：Gateway VPC Endpoints**
+
+- 网关终端节点只支持 **S3** 和 **DynamoDB**；必须为每个 VPC 创建一个网关。
+- 需要更新**路由表**，创建到 AWS 服务的路由；
+- 在 VPC 级别定义，VPC 要启用 **DNS 解析**。
+- 无法扩展到 VPC 之外，例如 VPN连接、VPC对等连接、Transit Gateway、AWS Direct Connect、ClassicLink (?)
+
+<img src="../img/aws/vpc-endpoint-gateway.png" alt="image-20210410114809634" style="zoom:67%;" />
+
+> 实践：
+>
+> - 检查 EC2 配置：EC --> 
+>
+>   - 描述：没有共有 IP 和公有 DNS
+>   - 子网 - 查看 --> 路由表：只有指向local的路由，没有指向网关或NAT网关/实例的路由 --> 所以无法访问 Internet，就无法访问 S3；
+>   - 登录该 EC2 （通过另一台可访问 Internet 的 EC2 作为跳板机） --> `aws s3 ls`，无法访问
+>
+> - 创建 Endpoint：EC2 --> 终端节点 --> 创建
+>
+>   - 服务类别：AWS 服务 | 按名称查找 | 您的 AWS Marketplace 服务
+>
+>   - 服务名称：选择S3 - gateway
+>
+>   - VPC：
+>
+>   - 配置路由表：EC2 所在**子网的路由表**
+>
+>     > 会在该路由表中增加一条规则：目的地为S3，目标为endpint id。
+>
+>   - 策略：完全访问
+>
+> - 测试 `aws s3 ls` 可正常访问
+
+
+
+
+
+**接口方式 Interface VPC Interface** 
+
+接口终端节点支持更多的AWS服务。
+
+<img src="../img/aws/vpc-endpoint-interface.png" alt="image-20210410170556114" style="zoom:67%;" />
+
+- 接口终端节点提供一个**弹性网络接口 ENI**，被分配一个所属子网的私有IP地址 10.0.1.6。
+
+- 还会生成几个特定的终端节点 **DNS 名称**，可用这些DNS名称与AWS服务通信。
+
+  > 如果勾选”启动私有DNS名称“，那么对应的公有DNS名称就不再解析成*aws服务的公有IP地址*，而是会解析成*接口终端节点的私有IP地址*。
+  >
+  > 如果未勾选呢？--> 则原来的公有DNS会失效？
+
+- 需要指定与接口终端节点关联的安全组，控制从VPC中的资源发送到接口终端节点的通信。
+
+- 本地数据中心可以通过AWS Direct Connect 或AWS站点到站点VPN访问接口终端节点。
+
+> 实践：
+>
+> - 创建 Endpoint：EC2 --> 终端节点 --> 创建
+>   - 服务类别：AWS 服务
+>   - 服务名称：选择 ec2 - interface
+>   - VPC：
+>   - 子网：选择 subnet2
+>   - 启用私有 DNS 名称
+>   - 安全组：控制从VPC中资源发往该终端节点网络接口的通信。
+> - 测试 
+>   - VPC --> 终端节点 
+>     --> 子网 - 找到**网络接口** --> 安全组规则：放行所有
+>     --> 详细信息 --> 查看分配的 **DNS 名称** 
+>   - 登录 EC2 --> 执行 `aws ec2 describe-instances`，正常返回；
+
+
+
+
+
+**终端节点策略**
+
+控制只允许 `特定的IAM用户` 通过这个终端节点 访问 `特定的资源`，且只可 `指定特定的动作`。示例：
+
+```json
+{
+  "Statement": [{
+    "Action": ["sqs:SendMessage"], 
+    "Effect": "Allow",
+    "Resource": "arn:aws:sqs:us-east-xx:MyQueue",
+    "Principal": {
+      "AWS": "arn:aws:iam:123333:user/MyUser"
+    }
+  }]
+}
+```
+
+- 不会覆盖或取代 IAM 用户策略、服务特定策略，只是多加一层控制、提供VPC终端节点级别的访问控制。
+
+
+
+**S3 存储桶策略 - 只允许从特定终端节点、或特定VPC 访问存储桶**
+
+- 允许特定终端节点 - `Condition: "aws:sourceVpce": "xxx"` 
+
+  > 注意 aws:sourceIp 对终端节点无法生效，因为它只能限制公有IP访问。
+
+  ```json
+  {
+    "Statement": [{
+      "Principal": "*",
+      "Action": ["s3:GetOject", "s3:PutObject", "s3:List*"], 
+      "Effect": "Deny",
+      "Resource": ["arn:aws:s3:::my_secure_bucket"],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpce": "vpce-1234"
+        }
+      }
+    }]
+  }
+  ```
+
+  
+
+- 允许特定VPC - `Condition: "aws:sourceVpc": "xxx"`
+
+  ```json
+  {
+    "Statement": [{
+      "Principal": "*",
+      "Action": "s3:*", 
+      "Effect": "Deny",
+      "Resource": ["arn:aws:s3:::my_secure_bucket"],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:sourceVpc": "vpc-5678"
+        }
+      }
+    }]
+  }
+  ```
+
+  
+
+**访问S3故障排查**
+
+- 检查实例的**安全组**：出站规则要有允许相应的访问出站；
+- 检查 VPC 终端节点上的**终端节点策略**：是否允许EC2访问S3
+- 检查**路由表**：要有通过网关终端节点访问S3的规则
+- 检查 VPC **DNS设置**：需要启用 DNS 解析；
+- 检查 **S3 存储桶策略**
+- 检查 **IAM 权限**：确认EC2附加的角色是否允许访问 S3；
+
+
+
+
+
+## || 混合网络
+
+### Direct Connect 
+
+- DX 用于连接公司内网与 AWS 网络
+
+
+
+VS. VPN 连接
+
+- VPN连接可以在数分钟之内就搭建成功。如果有紧急的业务需求，可以使用VPN连接。VPN连接是基于互联网线路的，因此带宽不高，稳定性也不好，但价格便宜
+- AWS Direct Connect使用的是专线，你的数据不会跑在互联网上，是私有的、安全的网络
+
+
+
+![image-20211107225245612](../img/aws/direct-connect.png)
+
+
+
+### VPN CloudHub
+
+实现分公司直接的VNP通信。
+
+![image-20211218215355302](../img/aws/network-vpn-cloudhub.png)
+
+
+
 ### Global Accelerator
 
 AGA 提供静态IP地址，充当应用程序终端节点的固定入口；用于提高可用性和性能。
@@ -1330,7 +1532,7 @@ Vs. CloudFront
 
 
 
-## || Router53
+## || DNS服务: Router53
 
 Router53 是 aws DNS 服务。不属于某一个zone。
 
@@ -1398,7 +1600,7 @@ Router53 是 aws DNS 服务。不属于某一个zone。
 
 
 
-## || CloudFront CDN
+## || CDN服务: CloudFront
 
 利用CDN访问的是位于全球各地的分发网络（边缘站点），从而达到更快的访问速度和减少源服务器的负载。
 
@@ -3285,186 +3487,6 @@ S3 访问策略
 
 
 
-### VPC Endpoints - 终端节点
-
-作用：使您能够将 VPC 通过 AWS 的私有网络连接到支持的 AWS 服务，而不需要通过internet。
-
-否则需要通过 Internet 网关经过 Internet 访问，无法保证安全和品质。
-
-<img src="../img/aws/vpc-endpoint.png" alt="image-20210410114923424" style="zoom:50%;" />
-
-
-
-问题排查：
-
-- 检查 DNS 解析配置
-- 检查路由表
-
-
-
-#### Gateway VPC Endpoints
-
-- 网关终端节点只支持 S3 和 DynamoDB；必须为每个 VPC 创建一个网关。
-- 需要更新**路由表**，创建到 AWS 服务的路由；
-- 在 VPC 级别定义，VPC 要启用 **DNS 解析**。
-- 无法扩展到 VPC 之外，例如 VPN连接、VPC对等连接、Transit Gateway、AWS Direct Connect、ClassicLink (?)
-
-<img src="../img/aws/vpc-endpoint-gateway.png" alt="image-20210410114809634" style="zoom:67%;" />
-
-
-
-实践：
-
-- 检查 EC2 配置：EC --> 
-
-  - 描述：没有共有 IP 和公有 DNS
-  - 子网 - 查看 --> 路由表：只有指向local的路由，没有指向网关或NAT网关/实例的路由 --> 所以无法访问 Internet，就无法访问 S3；
-  - 登录该 EC2 （通过另一台可访问 Internet 的 EC2 作为跳板机） --> `aws s3 ls`，无法访问
-
-- 创建 Endpoint：EC2 --> 终端节点 --> 创建
-
-  - 服务类别：AWS 服务 | 按名称查找 | 您的 AWS Marketplace 服务
-
-  - 服务名称：选择S3 - gateway
-
-  - VPC：
-
-  - 配置路由表：EC2 所在**子网的路由表**
-
-    > 会在该路由表中增加一条规则：目的地为S3，目标为endpint id。
-
-  - 策略：完全访问
-
-- 测试 `aws s3 ls` 可正常访问
-
-
-
-#### Interface VPC Interface 
-
-接口终端节点支持更多的AWS服务。
-
-<img src="../img/aws/vpc-endpoint-interface.png" alt="image-20210410170556114" style="zoom:67%;" />
-
-- 接口终端节点提供一个**弹性网络接口 ENI**，被分配一个所属子网的私有IP地址 10.0.1.6。
-
-- 还会生成几个特定的终端节点 **DNS 名称**，可用这些DNS名称与AWS服务通信。
-
-  > 如果勾选”启动私有DNS名称“，那么对应的公有DNS名称就不再解析成*aws服务的公有IP地址*，而是会解析成*接口终端节点的私有IP地址*。
-  >
-  > 如果未勾选呢？--> 则原来的公有DNS会失效？
-
-- 需要指定与接口终端节点关联的安全组，控制从VPC中的资源发送到接口终端节点的通信。
-- 本地数据中心可以通过AWS Direct Connect 或AWS站点到站点VPN访问接口终端节点。
-
-
-
-实践：
-
-- 创建 Endpoint：EC2 --> 终端节点 --> 创建
-  - 服务类别：AWS 服务
-  - 服务名称：选择 ec2 - interface
-  - VPC：
-  - 子网：选择 subnet2
-  - 启用私有 DNS 名称
-  - 安全组：控制从VPC中资源发往该终端节点网络接口的通信。
-- 测试 
-  - VPC --> 终端节点 
-    --> 子网 - 找到**网络接口** --> 安全组规则：放行所有
-    --> 详细信息 --> 查看分配的 **DNS 名称** 
-  - 登录 EC2 --> 执行 `aws ec2 describe-instances`，正常返回；
-
-
-
-#### 终端节点策略
-
-控制只允许 `特定的IAM用户` 通过这个终端节点 访问 `特定的资源`，且只可 `指定特定的动作`。示例：
-
-```json
-{
-  "Statement": [{
-    "Action": ["sqs:SendMessage"], 
-    "Effect": "Allow",
-    "Resource": "arn:aws:sqs:us-east-xx:MyQueue",
-    "Principal": {
-      "AWS": "arn:aws:iam:123333:user/MyUser"
-    }
-  }]
-}
-```
-
-- 不会覆盖或取代 IAM 用户策略、服务特定策略，只是多加一层控制、提供VPC终端节点级别的访问控制。
-
-
-
-**S3 存储桶策略 - 只允许从特定终端节点、或特定VPC 访问存储桶**
-
-- 允许特定终端节点 - `Condition: "aws:sourceVpce": "xxx"` 
-
-  > 注意 aws:sourceIp 对终端节点无法生效，因为它只能限制公有IP访问。
-
-  ```json
-  {
-    "Statement": [{
-      "Principal": "*",
-      "Action": ["s3:GetOject", "s3:PutObject", "s3:List*"], 
-      "Effect": "Deny",
-      "Resource": ["arn:aws:s3:::my_secure_bucket"],
-      "Condition": {
-        "StringNotEquals": {
-          "aws:sourceVpce": "vpce-1234"
-        }
-      }
-    }]
-  }
-  ```
-
-  
-
-- 允许特定VPC - `Condition: "aws:sourceVpc": "xxx"`
-
-  ```json
-  {
-    "Statement": [{
-      "Principal": "*",
-      "Action": "s3:*", 
-      "Effect": "Deny",
-      "Resource": ["arn:aws:s3:::my_secure_bucket"],
-      "Condition": {
-        "StringNotEquals": {
-          "aws:sourceVpc": "vpc-5678"
-        }
-      }
-    }]
-  }
-  ```
-
-  
-
-**访问S3故障排查**
-
-- 检查实例的**安全组**：出站规则要有允许相应的访问出站；
-- 检查 VPC 终端节点上的**终端节点策略**：是否允许EC2访问S3
-- 检查**路由表**：要有通过网关终端节点访问S3的规则
-- 检查 VPC **DNS设置**：需要启用 DNS 解析；
-- 检查 **S3 存储桶策略**
-- 检查 **IAM 权限**：确认EC2附加的角色是否允许访问 S3；
-
-
-
-### VPC 对等连接
-
-作用：
-
-- 连接两个 VPC，让两个 VPC 中的实例之间的通信就像在同一个网络中一样。流量一直处于 aws 内部网络，不会经过 Internet。
-
-条件：
-
-- 两个 VPC 不能有重叠的 CIDR 块；
-- 不支持传递；
-- 不支持边界到边界的路由：Site-to-Site VPN connection，aws Direct Connect，Internet Gateway，NAT 网关，网关终端节点；
-- 支持 跨区域、跨账户；
-- 安全组配置：如果是同一区域，则可引用另一端对等 VPC 中的安全组，作为规则中的入向源或出向目标；
-
 
 
 ### VPC Site-to-Site VPN
@@ -3508,38 +3530,6 @@ VPN 虚拟专用网络
 **VPN CloudHub**
 
 将多个 Site-to-Site VPN `客户网关`连接到一起。星型拓扑连接模型：可连接多个 本地数据中心。
-
-
-
-
-
-
-
-
-
-
-
-# | Migration Planning
-
-
-
-
-
-
-
-# | Cost Control
-
-
-
-
-
-
-
-
-
-# | Continuous Improvement for Existing Solutions
-
-
 
 
 
