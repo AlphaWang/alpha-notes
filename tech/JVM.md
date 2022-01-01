@@ -181,8 +181,8 @@ https://www.baeldung.com/native-memory-tracking-in-jvm
 - 纵向异常：无法分配新的栈桢：**StackOverflowError**
 
 - 横向异常：无法建立新的线程：**OutOfMemoryError: unable to create new native thread**
-
-
+  - http://www.mastertheboss.com/jbossas/monitoring/how-to-solve-javalangoutofmemoryerror-unable-to-create-new-native-thread/ 
+  - https://www.baeldung.com/java-outofmemoryerror-unable-to-create-new-native-thread 
 
 ### Metaspace
 
