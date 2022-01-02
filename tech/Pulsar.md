@@ -96,7 +96,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-### Ledger 状态
+**Ledger 状态**
 
 ![image-20220101225318769](../img/pulsar/bookkeeper-ledger-status.png)
 
@@ -107,12 +107,18 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ### 写入 ledger
 
-参数
+**参数**
 
-- `Write Quorum (WQ)`：每份 entry 数据需要写入多少个 bookie，类似 replicas；
-- `Ack Quorum (AQ)`：需要多少个 bookie 确认，entry 才被认为提交成功，类似 min-ISR；
+- `Write Quorum (WQ)`：每份 entry 数据需要写入多少个 bookie，类似 *replicas*；
+
+- `Ack Quorum (AQ)`：需要多少个 bookie 确认，entry 才被认为提交成功，类似 *min-ISR*；
+
 - `Ensemble Size (E)`：可用于存储 ledger 数据的 bookie 数量；
+
 - `Last Add Confirmed (LAC)`：水位线，达到 AQ 的最大 entry id. 
+
+  > Bookie 本身并不存储 LAC，而是请求数据中包含最新 LAC
+
   - 高于此值：entry 未被提交；
   - 低于或等于此值：entry 已提交；
 
@@ -120,23 +126,105 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 **Ledger Fragment**
 
-
+- Leger 本身可以分成一个或多个 Fragment。
+- 创建 Ledger 时，包含一个 Fragment，由一组bookie存储（it consists of a single fragment with an ensemble of bookies）
+- 当写入某个 bookie 失败时，客户端用一个新的 bookie 来替代，创建新 Fragment（with a new ensemble）、重新发送未提交 entry 以及后续 entry
+- Fragments 又称为 Ensembles ?
 
 
 
 ### 读取 ledger
 
+四种读取类型
+
+- **Regular entry read**
+  - 从任意 bookie 节点读取；如果读取失败，从 ensemble 中换个bookie 继续读取。
+- **Long poll LAC read**
+  - 读取到 LAC 位置后，即停止读取、并发起 long pool LAC read，等待有新的 entry 被提交。
+- **Quorum LAC read**
+  - 用于恢复
+- **Recovery read**
+  - 用于恢复
 
 
 
 
 
+使用的 Quorum：
+
+- **Ack Quorum (AQ)**
+  - 主要用于写入
+- **Write Quorum (WQ)**
+  - 主要用于写入
+- **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
+  - 主要用于恢复过程
+  - QC cohort 是单个 entry 的写入集合，QC 当需要保证单个 entry 时有用。
+- **Ensemble Coverage (EC)** = `(E - AQ) + 1`
+  - 主要用于恢复过程
+  - EC cohort 是当前fragment的bookie集合，EC 当需要保证整个 fragment 时有用。
+
+Q: QC/EC 如何用于恢复过程？
+
+
+
+### 恢复 ledger
+
+**何时触发  recovery?** 
+
+- 每个 ledger 都有一个客户端作为 owner；如果这个客户端不可用，则另一个客户端会接入执行恢复、并关闭该 ledger。
+- Pulsar：topic owner broker 不可用，则另一个broker接管该topic的所有权。
 
 
 
 
 
+**防止脑裂**
 
+- 恢复过程可能出现脑裂：客户端A (pulsar broker) 与zk断开连接，被认为宕机；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。
+- **Fencing**: 客户端B 尝试恢复时，先将 ledger 设为 fence 状态，让 ledger 拒绝所有新的写入请求（则原客户端A写入新数据时，无法达到 AQ 设定的副本数）。一旦足够多的 bookie fence了原客户端A，恢复过程即可继续。
+
+
+
+**恢复过程**
+
+- **第一步：Fencing**
+
+  > 将 Ledger 设为 fence 状态，并找到 LAC。
+
+  - 新客户端发送Fencing 请求：Ensemble Coverage 的LAC 读取请求，请求中带有 fencing 标志位。
+
+  - Bookie 收到这个 fencing 请求后，将 ledger 状态设为 fenced，并返回当前 bookie 上对应 ledger 的 LAC。
+
+  - 一旦新客户端收到足够多的响应，则执行下一步。
+
+    - 无需等待所有 bookie 响应，只需保证剩下的未返回 bookie 数 < AQ 即可。这样原客户端一定无法写入 AQ 个节点、亦即无法写入成功。
+    -  即，收到的响应数目达到 **Ensemble Coverage** 即可：`EC = (E - AQ) + 1`
+
+    
+
+- **第二步：Recovery reads & writes**
+
+  > 确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
+
+  - 客户端从 LAC + 1 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
+  - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定entry是否已提交：
+    - 已提交 = Ack Quorum 返回存在响应
+    - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1`
+    - 如果所有响应都已收到，但以上两个阈值都未达到，则无法判断是否已提交；这时会重复执行恢复过程，直至明确状态。
+
+  ![image-20220102184102357](../img/pulsar/bookkeeper-recovery-readwrite.png)
+
+
+
+- **第三步：关闭 Ledger**
+
+  > 一旦所有已提交 entry 都被识别并被修复，客户端会关闭 ledger；
+
+  - 更新 zk 上的 ledger 元数据，将状态设为 CLOSED、将Last Entry Id 设为最高的已提交 entry id。
+
+  - 在 bookie ensemble 中找到一起交的最高 entry id，确保每个 entry 已被复制到 Write Quorum。
+
+  - 新客户端关闭 ledger，将状态置为 CLOSED，将 Last Entry ID 设置为最高的已提交 entry。
 
 
 
