@@ -71,6 +71,34 @@ https://pulsar.apache.org/docs/zh-CN/concepts-architecture-overview/
 
 
 
+## || 概念
+
+> https://bookkeeper.apache.org/docs/latest/getting-started/concepts/ 
+
+- `entry`：一条日志记录。each unit of a log is an *entry*; Each entry has the following fields:
+  - Ledger Id
+  - Entry Id
+  - LC, Last Confirmed：上次记录的 entry id
+  - Data
+  - Authentication code
+- `ledger`：一组日志记录。streams of log entries are called *ledgers*
+- `bookie`：存储 ledger的服务器。individual servers storing ledgers of entries are called *bookies*
+  - 每个 bookie 存储部分 ledger *fragment*, 而非完整ledger
+
+
+
+**三种文件类型**
+
+- `Journal`
+  - 事务日志。在修改 ledger 之前，先记录事务日志。
+- `Entry log`
+  - An entry log file manages the written entries received from BookKeeper clients. 
+  - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
+- `Index file`
+  - 每个 ledger 有一个 index 文件
+
+
+
 ## || Ledger
 
 > https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
@@ -91,8 +119,17 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ![image-20220101224253890](../img/pulsar/bookkeeper-ledger-lifecycle.png)
 
-- 创建 ledger 的客户端（Pulsar broker）即为这个 ledger 的 owner；只有owner 可以往 ledger 写入数据。
+- 创建 ledger 的客户端（Pulsar broker）即为这个 ledger 的 owner；**只有owner 可以往 ledger 写入数据**。
 - 如果 owner 故障，则另一个客户端会接入并接管。修复 under-replicated entry、关闭 ledger. —— open ledger 会被关闭，并重新创建新 ledger
+
+
+
+> 对于 Pulsar，
+>
+> - 每个 topic 有一个 broker 作为 owner（注册于 zk）。该 broker 调用 BookKeeper 客户端来创建、写入、关闭 broker 所拥有的 topic 的 ledger。
+> - 如果该 owner broker 故障，则ownership 转移给其他 broker；新 broker 负责关闭该topic最后一个ledger、创建新 ledger、负责写入该topic。
+>
+> ![image-20220102204423380](../img/pulsar/broker-failure-ledger-segment.png)
 
 
 
@@ -115,7 +152,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - `Ensemble Size (E)`：可用于存储 ledger 数据的 bookie 数量；
 
-- `Last Add Confirmed (LAC)`：水位线，达到 AQ 的最大 entry id. 
+- `Last Add Confirmed (LAC)`：水位线，达到 AQ 的最大 entry id.  --> 类似 Kafka 高水位。
 
   > Bookie 本身并不存储 LAC，而是请求数据中包含最新 LAC
 
@@ -153,21 +190,37 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 使用的 Quorum：
 
 - **Ack Quorum (AQ)**
+
   - 主要用于写入
+
 - **Write Quorum (WQ)**
+
   - 主要用于写入
+
 - **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
+
   - 主要用于恢复过程
   - QC cohort 是单个 entry 的写入集合，QC 当需要保证单个 entry 时有用。
+  - A given property is satisfied by at least one bookie from every possible ack quorum within the cohort.
+  - There exists no ack quorum of bookies that do not satisfy the property within the cohort. 
+    
+
 - **Ensemble Coverage (EC)** = `(E - AQ) + 1`
+
   - 主要用于恢复过程
   - EC cohort 是当前fragment的bookie集合，EC 当需要保证整个 fragment 时有用。
 
-Q: QC/EC 如何用于恢复过程？
+  
+
+> *Bookies that satisfy property = (Cohort size — Ack quorum) + 1*
 
 
 
 ### 恢复 ledger
+
+> https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 
+
+
 
 **何时触发  recovery?** 
 
@@ -176,11 +229,9 @@ Q: QC/EC 如何用于恢复过程？
 
 
 
-
-
 **防止脑裂**
 
-- 恢复过程可能出现脑裂：客户端A (pulsar broker) 与zk断开连接，被认为宕机；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。
+- 恢复过程可能出现脑裂：客户端A (pulsar broker) 与zk断开连接，被认为宕机；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。--> 可能导致数据丢失！
 - **Fencing**: 客户端B 尝试恢复时，先将 ledger 设为 fence 状态，让 ledger 拒绝所有新的写入请求（则原客户端A写入新数据时，无法达到 AQ 设定的副本数）。一旦足够多的 bookie fence了原客户端A，恢复过程即可继续。
 
 
@@ -191,26 +242,40 @@ Q: QC/EC 如何用于恢复过程？
 
   > 将 Ledger 设为 fence 状态，并找到 LAC。
 
-  - 新客户端发送Fencing 请求：Ensemble Coverage 的LAC 读取请求，请求中带有 fencing 标志位。
-
+  - 新客户端发送 Fencing 请求：Ensemble Coverage 的 LAC 读取请求，请求中带有 fencing 标志位。
   - Bookie 收到这个 fencing 请求后，将 ledger 状态设为 fenced，并返回当前 bookie 上对应 ledger 的 LAC。
-
   - 一旦新客户端收到足够多的响应，则执行下一步。
-
     - 无需等待所有 bookie 响应，只需保证剩下的未返回 bookie 数 < AQ 即可。这样原客户端一定无法写入 AQ 个节点、亦即无法写入成功。
     -  即，收到的响应数目达到 **Ensemble Coverage** 即可：`EC = (E - AQ) + 1`
 
-    
+> 为什么要找到 LAC？
+>
+> The LAC stored in each entry is generally trailing the real LAC and so finding out the highest LAC among all the bookies is the starting point of recovery.
+
+
 
 - **第二步：Recovery reads & writes**
 
+  > Learning the highest LAC is only the first step, now the client must find out if there are more entries that exist beyond this point.
+  >
   > 确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
 
   - 客户端从 LAC + 1 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
-  - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定entry是否已提交：
+  - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定 entry 是否已提交、是否可恢复：
     - 已提交 = Ack Quorum 返回存在响应
     - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1`
     - 如果所有响应都已收到，但以上两个阈值都未达到，则无法判断是否已提交；这时会重复执行恢复过程，直至明确状态。
+
+  > 1. 可否完全不等待 bookie 响应？
+  >
+  > NO，否则会导致 ledger truncation：Last Entry Id 设置得过低，导致已提交的 entry 无法被读取。
+  >
+  > 2. AQ = 1 带来的问题
+  >
+  > - 存储 entry 时没有冗余；
+  > - 导致 recovery 过程卡住：必须等待所有 bookie 返回
+
+  
 
   ![image-20220102184102357](../img/pulsar/bookkeeper-recovery-readwrite.png)
 
@@ -220,11 +285,11 @@ Q: QC/EC 如何用于恢复过程？
 
   > 一旦所有已提交 entry 都被识别并被修复，客户端会关闭 ledger；
 
-  - 更新 zk 上的 ledger 元数据，将状态设为 CLOSED、将Last Entry Id 设为最高的已提交 entry id。
+  - 更新 zk 上的 ledger 元数据，将状态设为 CLOSED、将 `Last Entry Id` 设为最高的已提交 entry id。
 
   - 在 bookie ensemble 中找到一起交的最高 entry id，确保每个 entry 已被复制到 Write Quorum。
 
-  - 新客户端关闭 ledger，将状态置为 CLOSED，将 Last Entry ID 设置为最高的已提交 entry。
+  - 新客户端关闭 ledger，将状态置为 CLOSED，将 Last Entry ID 设置为最高的已提交 entry（即 `LAC，Last Added Confirmed`）；`Last Entry ID` 表示ledger的结尾，其他客户端来读取时，永远不会超过此 Last Entry Id。
 
 
 
