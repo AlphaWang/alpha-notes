@@ -602,7 +602,7 @@ Elastic File System 可以简单地理解为是 "共享盘" 或 "NAS存储"；�
 >   ```
 >   mkdir efs
 >   mount mount -t nfs4 -o ... efs
->                             
+>                               
 >   # 此时在一个 EC2实例 efs目录下创建文件，其他实例也可看到。
 >   ```
 >
@@ -892,6 +892,16 @@ OLAP常用的流行工具是**AWS Redshift**, Greenplum, Hive等。
 ## || Elasticache
 
 支持 Memcached 和 Redis。
+
+- Redis
+  - Multi-AZ，自动故障转移
+  - 可创建只读副本，扩展读取性能
+  - 支持数据持久化，AOF
+- Memcached
+  - 多节点是为了分区和数据分片
+  - 不是持久化
+  - 没有备份和还原
+  - 多线程
 
 
 
@@ -1718,13 +1728,17 @@ Web Application Firewall，保护常见web漏洞攻击，例如SQL注入、跨�
 
 ## || 身份安全
 
-组
+**组**
 
 ![image-20210524233545918](/Users/zhongxwang/Library/Application Support/typora-user-images/image-20210524233545918.png)
 
 
 
-IAM角色 vs. Policy 
+### IAM 
+
+**IAM 角色 **
+
+vs. Policy
 
 - IAM 角色可附加多个策略。
 
@@ -1733,8 +1747,6 @@ IAM角色 vs. Policy
 原则
 
 - 最小权限原则 Principle of Least Privilage
-
-
 
 
 
@@ -1768,21 +1780,36 @@ IAM角色 vs. Policy
 
 
 
+**IAM 策略**
+
+- PARC 原则
+  - Principal - 主体
+  - Action - 行为
+  - Resource - 资源
+  - Condition - 条件
+    ![image-20220105223840044](../img/aws/iam-policy-parc.png)
 
 
-**IAM 策略评估模型**
 
-IAM Policy Evaluation Logic
+IAM 策略评估模型 - IAM Policy Evaluation Logic
 
 ![image-20210320161945826](../img/aws/iam-policy.png)
 
-- **Deny Evaluation**：是否有显示拒绝策略？-
+- `Deny Evaluation`：是否有显示拒绝策略？-
   - 隐式拒绝。
-- **Organizations SCPs**：组织是否有可应用的 SCP?
-- **Resource-based Policies**：被请求的资源是否有policy?
-- **IAM Permissions Boundaries**：当前 principal 是否有 permission boundary?
-- **Session Policies**：当前 principal 是否是使用 policy 的session?
-- **Identity-based Policies**：当前 principal 是否有基于identity的策略？
+- `Organizations SCPs`：组织是否有可应用的 SCP?
+- `Resource-based Policies`：被请求的资源是否有policy?
+- `IAM Permissions Boundaries`：当前 principal 是否有 permission boundary?
+- `Session Policies`：当前 principal 是否是使用 policy 的session?
+- `Identity-based Policies`：当前 principal 是否有基于identity的策略？
+
+
+
+**角色**
+
+- TODO
+
+
 
 
 
