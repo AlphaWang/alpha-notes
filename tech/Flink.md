@@ -45,7 +45,9 @@
 
 ## || 分布式流处理模型
 
-Google 论文：https://research.google/pubs/pub43864/ 
+- Google 论文：https://research.google/pubs/pub43864/ 
+
+- Flink doc: https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/overview/ 
 
 ![image-20220116233209988](../img/flink/stream-dataflow.png)
 
@@ -63,10 +65,34 @@ Google 论文：https://research.google/pubs/pub43864/
 - 统一数据处理组件栈：Batch, Stream, ML, Graph；
 - 支持事件时间 - `Event Time`、接入时间 - `Ingestion Time`、处理时间 - `Processing Time`；
 - 容错：基于轻量级分布式快照；
+
+  > Flink is able to provide fault-tolerant, exactly-once semantics through a combination of state snapshots and stream replay.  
 - 支持有状态计算；
+
+  > The set of parallel instances of a stateful operator is effectively a sharded key-value store. Each parallel instance is responsible for handling events for a specific group of keys, and the state for those keys is kept **locally** (heap, or disk).
+  >
+  > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/fault-tolerance/queryable_state/ 
 - 支持高度灵活的窗口操作；
 - 带 “反压” 的连续流模型；
 - 基于 JVM 实现独立的内存管理；
+
+
+
+
+
+
+
+### Fault Tolerance
+
+https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
+
+
+
+### Stateful
+
+
+
+
 
 
 
@@ -87,7 +113,7 @@ Google 论文：https://research.google/pubs/pub43864/
 
 ![image-20220116233910154](../img/flink/flink-components.png)
 
-
+![image-20220117115327190](../img/flink/flink-components2.png)
 
 
 
@@ -167,6 +193,8 @@ StreamGraph --> JobGraph
 
 - StreamGraph 只描述转换的大概逻辑：Source - Map() - keyby() - Sink
 - JobGraph 根据算子并行度拆解、形成 DAG 
+
+
 
 ![image-20220116124719160](../img/flink/flink-components-jobgraph2.png)
 
@@ -305,15 +333,6 @@ https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries
 
 
 
-分类
-
-- Session Window
-- Tumbling Count Window
-- Sliding Time Window
-- Tumbling Time Window
-
-![image-20220116233806080](../img/flink/time-window.png)
-
 
 
 ```sql
@@ -349,7 +368,7 @@ INSERT INTO ConsoleSink
 
 # | DataStream API
 
-## || 操作
+## || Execution Env
 
 StreamExecutionEnvironment 功能
 
@@ -369,6 +388,8 @@ StreamExecutionEnvironment 功能
   - Custom DataSource
 
 
+
+## || 操作
 
 DataStream 转换操作
 
@@ -476,6 +497,7 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 迟到事件
 
 - “迟到事件”：比当前 Watermark 更小的时间戳 会被忽略、不会触发统计操作。
+- watermark defines when to stop waiting for earlier events.
 
 
 
@@ -507,13 +529,116 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 
 
+**Watermark 选择：Latency vs. Completeness**
 
 
 
+## || Window
 
 
 
+- **Window Assigners**: assign events to windows (creating new window objects as necessary),  
+- **Window Functions**:  applied to the events assigned to a window.
+- **Triggers**: determine when to call the window function.
+- **Evictors**: remove elements collected in a window.
 
+
+
+### **Window Assigner**
+
+- **Session Window**
+  - page views per session. 
+
+- **Tumbling Count Window**
+- **Sliding Time Window**
+  - page views per minute computed every 10 seconds.
+
+- **Tumbling Time Window**
+  - page views per minute.
+
+
+![image-20220116233806080](../img/flink/time-window.png)
+
+
+
+### Window Function
+
+3 种：
+
+1. as a batch, using a `ProcessWindowFunction` that will be passed an `Iterable` with the window’s contents;
+2. incrementally, with a `ReduceFunction` or an `AggregateFunction` that is called as each event is assigned to the window;
+3. or with a combination of the two, wherein the pre-aggregated results of a `ReduceFunction` or an `AggregateFunction` are supplied to a `ProcessWindowFunction` when the window is triggered.
+
+
+
+ProcessWindowFunction
+
+```java
+DataStream<SensorReading> input = ...
+
+input
+    .keyBy(x -> x.key)
+    .window(TumblingEventTimeWindows.of(Time.minutes(1)))
+    .process(new MyWastefulMax());
+
+public static class MyWastefulMax extends ProcessWindowFunction<
+        SensorReading,                  // input type
+        Tuple3<String, Long, Integer>,  // output type
+        String,                         // key type
+        TimeWindow> {                   // window type
+    
+    @Override
+    public void process(
+            String key,
+            Context context, // window(), windowState(), globalState(), currentWatermark(), currentProcessingTime()
+            Iterable<SensorReading> events,
+            Collector<Tuple3<String, Long, Integer>> out) {
+
+        int max = 0;
+        for (SensorReading event : events) {
+            max = Math.max(event.value, max);
+        }
+        out.collect(Tuple3.of(key, context.window().getEnd(), max));
+    }
+}
+```
+
+
+
+**如何处理 Late Events:**
+
+- 默认忽略
+
+- **Side Output**：发送到另一个stream 
+  https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/event_driven/#side-outputs 
+
+  ```java
+  OutputTag<Event> lateTag = new OutputTag<Event>("late"){};
+  
+  SingleOutputStreamOperator<Event> result = stream.
+      .keyBy(...)
+      .window(...)
+      .sideOutputLateData(lateTag)
+      .process(...);
+    
+  DataStream<Event> lateStream = result.getSideOutput(lateTag);
+  ```
+
+  
+
+- **allowedLateness**：specify an interval of *allowed lateness* during which the late events will continue to be assigned to the appropriate window(s)
+
+  ```java
+  stream.
+      .keyBy(...)
+      .window(...)
+      .allowedLateness(Time.seconds(10)) //为何不把watermark设长10s？
+      .process(...);
+  ```
+
+  
+
+- 
 
 
 
