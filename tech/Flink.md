@@ -2,7 +2,7 @@
 
 # | 流式计算
 
-大数据计算模式
+## || 大数据计算模式
 
 - **批量计算 Batch Computing**
   - MapReduce
@@ -43,6 +43,19 @@
 
 
 
+## || 分布式流处理模型
+
+Google 论文：https://research.google/pubs/pub43864/ 
+
+![image-20220116233209988](../img/flink/stream-dataflow.png)
+
+- 数据从上一个 Operation 节点直接 push 到下一个 Operation 节点；
+- 各节点可以分布在不同的 task 线程中运行；
+
+
+
+
+
 # | Flink 架构
 
 ## || 核心特性
@@ -72,7 +85,11 @@
 - **Client**
   - 本地执行 main，解析 JobGraph 对象、提交到 JobManager 运行
 
-![image-20220114233809148](../img/flink/flink-components.png)
+![image-20220116233910154](../img/flink/flink-components.png)
+
+
+
+
 
 
 
@@ -85,7 +102,7 @@
 - 集群资源管理（Resource Manager）
 - TaskManager 注册与管理
 
-![image-20220114234355688](../img/flink/flink-components-jobmanager.png)
+![image-20220116234001575](../img/flink/flink-components-jobmanager.png)
 
 
 
@@ -115,9 +132,7 @@
 
 - Offer Slots to JobManager
 
-
-
-![image-20220114234900267](../img/flink/flink-components-taskmanager.png)
+![image-20220116234053630](../img/flink/flink-components-taskmanager.png)
 
 
 
@@ -157,15 +172,56 @@ StreamGraph --> JobGraph
 
 
 
+## || 集群部署模式
 
 
 
+**Session Mode**
+
+- 定义	
+  - 共享 JobManager 和 TaskManager；
+  - 所有提交的 Job 都在一个 Runtime 中运行；
+  - JobManager 生命周期不受 Job 影响，会长期运行；
+- 优点
+  - 资源充分共享、提高资源利用率
+  - Job 在 Flink Session 集群中管理，运维简单；
+- 缺点
+  - 资源隔离相对较差；
+  - 非 Native 类型部署：TM 不易扩展，Slot 计算资源伸缩性较差；
+
+![image-20220116160637955](../img/flink/flink-deploy-session.png)
 
 
 
+**Per-Job Mode**
+
+- 定义
+  - 单个 Job 独占 JobManager 和 TaskManager；
+  - 每个 Job 单独启动一个 Runtime；TM 中的 slot 资源根据 Job 指定；
+  - JobManager 生命周期与 Job 生命周期绑定；
+- 优点
+  - Job 直接资源隔离充分；
+  - 资源根据 Job 需要进行申请，TM Slot 数量可以不同；
+- 缺点
+  - 资源相对浪费，JobManager 需要消耗资源；
+  - Job 管理完全交给 ClusterManagement，管理复杂；
+
+![image-20220116161706250](../img/flink/flink-deploy-perjob.png)
 
 
 
+**Application Mode**
+
+- 定义
+  - Application的 main() 运行在 Cluster 上，而不是客户端；客户端无需上传dependency，释放客户端压力。
+  - 每个 Application 对应一个 Runtime，Application 中可以包含多个 Job；
+- 优点
+  - 降低带宽消耗和客户端负载；
+  - Application 之间资源隔离；Application 中实现资源共享；
+- 缺点
+  - 仅支持 Yarn / K8S；
+
+![image-20220116162916232](../img/flink/flink-deploy-application.png)
 
 
 
@@ -239,16 +295,6 @@ CREATE TABLE FileSource (
 
 
 
-## || Watermark
-
-https://nightlies.apache.org/flink/flink-docs-release-1.9/dev/event_time.html#event-time-and-watermarks 
-
-In order to handle out-of-order events and distinguish between on-time and late events in streaming, we need to extract timestamps from events and make some kind of progress in time (so-called watermarks).
-
-When we receive a watermark, we think the event before the watermark should all be processed.
-
-
-
 
 
 ## || Time Window
@@ -266,9 +312,7 @@ https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries
 - Sliding Time Window
 - Tumbling Time Window
 
-
-
-![image-20220114231037460](../img/flink/time-window.png)
+![image-20220116233806080](../img/flink/time-window.png)
 
 
 
@@ -303,9 +347,183 @@ INSERT INTO ConsoleSink
         userId, TUMBLE(wk, INTERVAL '5' SECOND)
 ```
 
+# | DataStream API
+
+## || 操作
+
+StreamExecutionEnvironment 功能
+
+- TimeCharacteristic 管理
+- Transformation 存储与管理
+- StreamGraph 创建和获取
+- CacheFile 注册于管理
+- 任务提交与运行
+- 重启策略管理
+- StateBackend 管理
+- Checkpoint 管理
+- 序列化器管理
+- 类型和序列化注册
+- DataStream 数据源创建
+  - 基本数据源接口 - 集合、Socket、File
+  - 数据源连接器 - Kafka, ES
+  - Custom DataSource
 
 
-# | Table Operation
+
+DataStream 转换操作
+
+- 基于单条记录：
+  - `filter`, `map`, `flatmap`
+- 基于窗口：
+  - NonKeyed: `timeWindowAll`, `countWindowAll`, `windowAll`
+  - Keyed: `timeWindow`, `countWindow`,  `window`
+- 合并多条流：
+  - NonKeyed: `union`, `join`, `connect`
+  - Keyed: `Interval join`
+- 拆分单条流：`split`
+
+![image-20220116233344476](../img/flink/flink-datastream-operators.png)
+
+Sample: 
+
+```java
+public class WindowWordCount {
+
+    public static void main(String[] args) throws Exception {
+        // 1. 设置运行环境
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        // 2. 读取源数据、执行转换操作
+        DataStream<Tuple2<String, Integer>> dataStream = env
+                .socketTextStream("localhost", 9999)
+                .flatMap(new Splitter())
+                .keyBy(value -> value.f0)
+                .window(TumblingProcessingTimeWindows.of(Time.seconds(5)))
+                .sum(1);
+        // 3. 默认 sink 操作
+        dataStream.print();
+        // 4. 执行 Flink 应用程序
+        env.execute("Window WordCount");
+    }
+
+    public static class Splitter implements FlatMapFunction<String, Tuple2<String, Integer>> {
+        @Override
+        public void flatMap(String sentence, Collector<Tuple2<String, Integer>> out) throws Exception {
+            for (String word: sentence.split(" ")) {
+                out.collect(new Tuple2<String, Integer>(word, 1));
+            }
+        }
+    }
+
+}
+```
+
+
+
+## || 时间
+
+时间设置：
+
+```java
+StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+```
+
+![image-20220116233422906](../img/flink/flink-time.png)
+
+**Event Time**
+
+- 事件发生的时间
+- 可以处理乱序数据
+
+**Storage Time**
+
+- 
+
+**Ingestion Time**
+
+- 
+
+**Processing Time**
+
+- 处理时的机器本地时间
+- 处理过程最小延迟
+
+
+
+## || Watermark
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.9/dev/event_time.html#event-time-and-watermarks 
+>
+> In order to handle out-of-order events and distinguish between on-time and late events in streaming, we need to extract timestamps from events and make some kind of progress in time (so-called watermarks).
+>
+> When we receive a watermark, we think the event before the watermark should all be processed.
+
+
+
+概念
+
+- Watermark 用于标记 Event-Time 的前进过程；
+- Watermark 跟随 DataStream Event-Time 变动，并自身携带 TimeStamp；
+- Watermark 用于表明所有较早的时间已经（可能）达到；
+- Watermark 本身也属于特殊的事件；
+
+
+
+更新时机
+
+- 每当有新的最大时间戳事件出现时，则产生新的 Watermark；
+
+迟到事件
+
+- “迟到事件”：比当前 Watermark 更小的时间戳 会被忽略、不会触发统计操作。
+
+
+
+并行中的 Watermark 
+
+- Source Operator 产生 watermark，下发给下游 Operator
+- 每个 Operator 根据 watermark 对 “自己的时钟” 进行更新、并将 watermark 发送给下游算子
+
+
+
+![image-20220116233510102](../img/flink/flink-watermark-flow.png)
+
+**Watermark & Window**
+
+- Watermark = Max EventTime - Late Threashold；
+- Late Threashold 越高，数据处理延时越高；
+- 启发式更新；
+- 解决一定范围内的乱序事件；
+- 窗口触发条件：`Current Watermark > Window EndTime`
+- Watermark 的主要目的是告诉窗口不再会有比当前 Watermark 更晚的数据达到。
+
+
+
+![image-20220116234955591](../img/flink/flink-watermark-window.png)
+
+
+
+**Watermark 生成**
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+·
+
+
+
+# | Table API
 
 ## || Join
 
@@ -364,6 +582,19 @@ INSERT INTO
 ```
 
 
+
+### 基于时间的查询
+
+条件
+
+- 必须是 append-only
+- 查询条件中包含时间关联条件和算子
+  - GROUP BY window aggregation
+  - OVER window aggregation
+  - Time-windowed JOIN
+  - JOIN with a teamporal table (enrichment join)
+  - Pattern matching (MATCH_RECOGNIZE)
+- 查询结果也是 append-only 类型
 
 
 
