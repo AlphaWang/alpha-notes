@@ -82,13 +82,47 @@
 
 
 
+
+
+### Stateful
+
+keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。另外，Operator state 也保存在机器节点本地。
+
+Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对于 `ValueState`，更建议使用 `MapState` 和 `ListState`，因为使用 RocksDBStateBackend 的情况下， `MapState` 和 `ListState` 比 `ValueState` 性能更好。 
+
+**State backend**
+
+- EmbeddedRocksDBStateBackend
+  - 本地磁盘
+  - 慢10倍
+- HashMapStateBackend：Jvm heap.
+  - 更快
+
+
+
 ### Fault Tolerance
 
 https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
 
+**Checkpoint Storage**
+
+Flink 定期获取所有状态的快照，并将这些快照复制到持久化的位置，例如分布式文件系统。
+
+- FileSystemCheckpointStorage：分布式文件系统
+- JobManagerCheckpointStorage：测试用
 
 
-### Stateful
+
+**概念**
+
+- **Snapshot**
+  - 包括指向每个数据源的指针（例如，到文件或 Kafka 分区的偏移量）、以及每个作业的有状态运算符的状态副本
+- **Checkpoint**
+  - Flink 自动生成的 snapshot。可全量可增量。
+- **Externalized Checkpoint**
+  - 可保留生成的 snapshot，以便手工恢复。
+- **Savepoint**
+  - 手工触发的 snapshot
 
 
 
@@ -257,115 +291,6 @@ StreamGraph --> JobGraph
 
 
 
-# | Flink Concepts
-
-- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/concepts/overview/ 
-
-## || Dynamic Table
-
-- https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
-
-
-
-Table 定义，分两部分：
-
-- logical schema conf
-- connector conf
-
-
-
-示例
-
-```sql
-CREATE TABLE FileSource (
-    pageId INT,
-    url VARCHAR,
-    userId VARCHAR,
-    `timestamp` BIGINT,
-    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`,1000)
-) WITH (
-    'connector.type'='File',
-    'connector.path'='/tmp/test/test.txt'
-);
-```
-
-
-
-类型
-
-- **Source tables** are data sources. 
-
-  - Flink SQL 必须至少有一个 source table.
-
-- **Side tables** are lookup tables. 
-
-  - 创建时指定 dimension identifier `PERIOD FOR SYSTEM_TIME` 
-
-    ```sql
-    CREATE TABLE Behavior (
-        docId INT,
-        name VARCHAR,
-        price INT,
-        PERIOD FOR SYSTEM_TIME
-    ) WITH (
-        'connector.type'='couchbase',
-        'connector.default-values'='0,ANN,23'
-    )
-    ```
-
-  - 支持 cache
-
-  - Retry Handler: 查询 external data store 失败时会重试
-
-- **Sink tables** are data sinks.
-
-  - 输出
-
-
-
-
-
-## || Time Window
-
-https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries.html#group-windows 
-
-- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/windows/ 
-
-
-
-
-
-```sql
-CREATE TABLE FileSource (
-    pageId INT,
-    url VARCHAR,
-    userId VARCHAR,
-    `timestamp` BIGINT,
-    # generate the watermark based on the timestamp in event and give 1000ms offset
-    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`, 1000)
-) WITH (
-    'connector.type'='File',
-    'connector.path'='/tmp/test/test.txt'
-);
-
-CREATE TABLE ConsoleSink (
-    userId VARCHAR,
-    windowStartTime TIMESTAMP,
-    distinctPageCount BIGINT
-) WITH (
-    'connector.type'='console'
-);
-
-INSERT INTO ConsoleSink
-    SELECT
-        userId,
-        TUMBLE_START(wk, INTERVAL '5' SECOND),
-        COUNT(DISTINCT pageId)
-    FROM FileSource
-    GROUP BY
-        userId, TUMBLE(wk, INTERVAL '5' SECOND)
-```
-
 # | DataStream API
 
 ## || Execution Env
@@ -527,6 +452,84 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 **Watermark 生成**
 
+API：同时指定 timestamp & watermark 
+
+- assignTimestampsAndWatermarks
+
+![image-20220117235238031](../img/flink/flink-watermark-timestamp-sample.png)
+
+- Connector 指定
+
+  ```java
+  FlinkKafkaConsumer<MyType> kafkaSource = new FlinkKafkaConsumer<>("myTopic", schema, props);
+  
+  kafkaSource.assignTimestampsAndWatermarks(
+     WatermarkStrategy.forBoundedOutOfOrderness(Duration.ofSeconds(20))); 
+  
+  DataStream<MyType> stream = env.addSource(kafkaSource);
+  
+  ```
+
+  
+
+  
+
+
+
+两种类型
+
+- Periodic Watermark
+
+  - 常用。基于事件时间。
+
+  - 原理：
+
+    ```java
+    public class BoundedOutOfOrdernessGenerator implements WatermarkGenerator<MyEvent> {
+      private final long maxOutOfOrderness = 3500; // 3.5 seconds
+      private long currentMaxTimestamp;
+      
+      @Override
+      public void onEvent(MyEvent event, long eventTimestamp, WatermarkOutput output) {
+        currentMaxTimestamp = Math.max(currentMaxTimestamp, eventTimestamp); 
+      }
+      
+    	@Override
+    	public void onPeriodicEmit(WatermarkOutput output) {
+    		// emit the watermark as current highest timestamp minus the out-of-orderness bound
+    		output.emitWatermark(new Watermark(currentMaxTimestamp - maxOutOfOrderness - 1)); 
+      }
+    }
+    ```
+
+    
+
+- Punctuated Watermark
+
+  - Based on something in the event stream.
+
+  - 原理：
+
+    ```java
+    public class PunctuatedAssigner implements WatermarkGenerator<MyEvent> {
+    	@Override
+    	public void onEvent(MyEvent event, long eventTimestamp, WatermarkOutput output) {
+    		if (event.hasWatermarkMarker()) {
+    			output.emitWatermark(new Watermark(event.getWatermarkTimestamp())); 
+        }
+    	}
+      
+    	@Override
+    	public void onPeriodicEmit(WatermarkOutput output) {
+    		// don't need to do anything because we emit in reaction to events above
+    	} 
+    }
+    ```
+
+    
+
+
+
 
 
 **Watermark 选择：Latency vs. Completeness**
@@ -535,7 +538,17 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 ## || Window
 
+- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/windows/ 
 
+
+
+作用：
+
+- 无界 --> 有界
+
+流程：
+
+![image-20220118000234100](../img/flink/flink-window-flow.png)
 
 - **Window Assigners**: assign events to windows (creating new window objects as necessary),  
 - **Window Functions**:  applied to the events assigned to a window.
@@ -546,24 +559,67 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 ### **Window Assigner**
 
-- **Session Window**
+- **Session Window 会话窗口** 
+
   - page views per session. 
 
-- **Tumbling Count Window**
-- **Sliding Time Window**
+- **Sliding Time Window 滑动窗口**
+
   - page views per minute computed every 10 seconds.
 
-- **Tumbling Time Window**
-  - page views per minute.
+- **Tumbling Time Window 滚动窗口**
 
+  - page views per minute. 
+  - 是特殊的滑动窗口：Window size == Window slide
+
+- **Tumbling Count Window**
+
+- **Global Window**
+
+  - 用户自己指定window策略
+
+  
 
 ![image-20220116233806080](../img/flink/time-window.png)
 
 
 
+### Window Trigger
+
+决定何时启动 Window Function 来处理窗口中的数据、何时将窗口内的数据清理。
+
+| Window Trigger                  | 触发频率 | 功能                                                         |
+| ------------------------------- | -------- | ------------------------------------------------------------ |
+| ProcessingTimeTrigger           | 一次触发 | 基于 ProcessingTime，当机器时间大于窗口结束时间时触发        |
+| EventTimeTrigger                | 一次触发 | 基于 EventTime，当 Watermark 大于窗口结束时间时触发          |
+| ContinuousProcessingTimeTrigger | 多次触发 | 基于 ProcessingTime，固定时间间隔触发                        |
+| ContinuousEventTimeTrigger      | 多次触发 | 基于 EventTime，固定时间间隔触发                             |
+| CountTrigger                    | 多次触发 | 基于元素固定条数触发                                         |
+| DeltaTrigger                    | 多次触发 | 基于当前元素与上次触发的元素做delta计算，超过指定threshold触发 |
+| PuringTrigger                   |          | 对 Trigger的封装，用于触发后额外清理中间状态数据             |
+
+
+
+### Window Evictor
+
+作用：
+
+- 剔除 window 中不需要的数据。
+- 可用于 Window Function 之前，或之后。
+
+| Window Evictor | 作用                                                         |
+| -------------- | ------------------------------------------------------------ |
+| CountEvictor   | 保留一定数目的元素，多余的元素按照从前到后顺序清理           |
+| TimeEvictor    | 保留一个时间段的元素，早于该时间段的元素会被清理             |
+| DeltaEvictor   | 窗口计算时，最近一条元素和其他元素做 Delta 计算，仅保留 Delta 在指定Threshold 内的元素 |
+
+
+
+
+
 ### Window Function
 
-3 种：
+3 种：reduce, aggregate, process
 
 1. as a batch, using a `ProcessWindowFunction` that will be passed an `Iterable` with the window’s contents;
 2. incrementally, with a `ReduceFunction` or an `AggregateFunction` that is called as each event is assigned to the window;
@@ -571,37 +627,122 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 
 
-ProcessWindowFunction
+- **全量元素 Function** 
 
-```java
-DataStream<SensorReading> input = ...
+  - `ProcessWindowFunction`：性能较差
 
-input
-    .keyBy(x -> x.key)
-    .window(TumblingEventTimeWindows.of(Time.minutes(1)))
-    .process(new MyWastefulMax());
-
-public static class MyWastefulMax extends ProcessWindowFunction<
-        SensorReading,                  // input type
-        Tuple3<String, Long, Integer>,  // output type
-        String,                         // key type
-        TimeWindow> {                   // window type
+    ```java
+    //ProcessWindowFunction: 计算传感器的最大值
+    DataStream<SensorReading> input = ...
+    input
+        .keyBy(x -> x.key)
+        .window(TumblingEventTimeWindows.of(Time.minutes(1)))
+        .process(new MyWastefulMax());
     
-    @Override
-    public void process(
-            String key,
-            Context context, // window(), windowState(), globalState(), currentWatermark(), currentProcessingTime()
-            Iterable<SensorReading> events,
-            Collector<Tuple3<String, Long, Integer>> out) {
-
-        int max = 0;
-        for (SensorReading event : events) {
-            max = Math.max(event.value, max);
+    public static class MyWastefulMax extends ProcessWindowFunction<
+            SensorReading,                  // input type
+            Tuple3<String, Long, Integer>,  // output type
+            String,                         // key type
+            TimeWindow> {                   // window type
+        
+        @Override
+        public void process(
+                String key,
+                Context context, //包含信息： window(), windowState(), globalState(), currentWatermark(), currentProcessingTime()
+                Iterable<SensorReading> events,
+                Collector<Tuple3<String, Long, Integer>> out) {
+    
+            int max = 0;
+            for (SensorReading event : events) {
+                max = Math.max(event.value, max);
+            }
+            out.collect(Tuple3.of(key, context.window().getEnd(), max));
         }
-        out.collect(Tuple3.of(key, context.window().getEnd(), max));
     }
-}
-```
+    ```
+
+
+
+- **增量元素 Function**
+
+  - `ReduceFunction`：类似 map reduce，累积
+
+    ```java
+    // ReduceFunction：累加
+    DataStream<Tuple2<String, Long>> input = ...; 
+    input
+      .keyBy(<key selector>)
+      .window(<window assigner>)
+      .reduce(new ReduceFunction<Tuple2<String, Long>> {
+        public Tuple2<String, Long> reduce(Tuple2<String, Long> v1, Tuple2<String, Long> v2) {
+          return new Tuple2<>(v1.f0, v1.f1 + v2.f1); 
+        } 
+      });
+    ```
+
+    
+
+  - `AggregateFunction`：
+
+    ```java
+    // AggregateFunction: 统计平均数
+    DataStream<Tuple2<String, Long>> input = ...; 
+    input
+      .keyBy(<key selector>) 
+      .window(<window assigner>) 
+      .aggregate(new AverageAggregate());
+    
+    private static class AverageAggregate implements AggregateFunction<Tuple2<String, Long>, Tuple2<Long, Long>, Double> {
+      // createAccumulator: 创建累积器，sum & count
+      @Override
+      public Tuple2<Long, Long> createAccumulator() { 
+        return new Tuple2<>(0L, 0L);
+    	}
+      // 累加时：增加 sum & count
+    	@Override
+    	public Tuple2<Long, Long> add(Tuple2<String, Long> value, Tuple2<Long, Long> accumulator) {
+    		return new Tuple2<>(accumulator.f0 + value.f1, accumulator.f1 + 1L); 
+      }
+      // 结果：sum/count
+    	@Override
+    	public Double getResult(Tuple2<Long, Long> accumulator) { 
+        return ((double) accumulator.f0) / accumulator.f1;
+    	}
+      // 非核心：用于并发合并
+      @Override
+      public Tuple2<Long, Long> merge(Tuple2<Long, Long> a, Tuple2<Long, Long> b) { 
+        return new Tuple2<>(a.f0 + b.f0, a.f1 + b.f1);
+      } 
+    }
+    ```
+
+    
+
+  - `FoldFunction`
+
+
+
+- 内置 aggregations
+
+  - sum(key)
+
+  - min(key)
+
+  - max(key)
+
+    ```java
+    DataStream<Tuple2<String, Integer>> counts = tokenized 
+      .keyBy(value -> value.f0) 
+      .window(TumblingEventTimeWindows.of(Time.seconds(5))) 
+      // group by the tuple field "0" and sum up tuple field "1" 
+      .sum(1); // 基于第二个字段
+    ```
+
+
+
+Q: 能否集成全量+增量的优点？
+
+
 
 
 
@@ -636,19 +777,154 @@ public static class MyWastefulMax extends ProcessWindowFunction<
       .process(...);
   ```
 
+
+
+## || 多流合并
+
+e.g. 每个用户的点击 **JOIN** 该用户最近十分钟的浏览
+
+
+
+两种合并类型：
+
+- **Window Join**
+
+  ![image-20220118111953470](../img/flink/flink-stream-join-windowjoin.png)
+
+  ```java
+  DataStream<Integer> orangeStream = ...
+  DataStream<Integer> greenStream = ...
+  orangeStream.join(greenStream)
+    .where(<KeySelector>)
+    .equalTo(<KeySelector>) 
+    .window(TumblingEventTimeWindows.of(Time.milliseconds(2))) 
+    .apply(new JoinFunction<Integer, Integer, String> () {
+      @Override
+      public String join(Integer first, Integer second) {
+        return first + "," + second; 
+      }
+  });
+  ```
+
   
 
-- 
+- **Interval Join**
+  `orangeElem.ts + lowerBound <= greenElem.ts <= orangeElem.ts + upperBound`
+  ![image-20220118113025447](../img/flink/flink-stream-join-intervaljoin.png)
+
+  ```java
+  KeyedStream<Tuple2<String, Integer>, String> streamOne = ...
+    .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor()) 
+    .keyBy(new Tuple2KeyExtractor());
+  KeyedStream<Tuple2<String, Integer>, String> streamTwo = ... 
+    .assignTimestampsAndWatermarks(new AscendingTuple2TimestampExtractor()) 
+    .keyBy(new Tuple2KeyExtractor());
+  
+  streamOne.intervalJoin(streamTwo)
+    .between(Time.milliseconds(0), Time.milliseconds(10)) // 定义上下界
+    .process(new ProcessJoinFunction<Tuple2<String, Integer>, Tuple2<String, Integer>, String>() {
+      
+      @Override
+      public void processElement(
+        Tuple2<String, Integer> left,
+        Tuple2<String, Integer> right, 
+        Context ctx, 
+        Collector<String> out) throws Exception { 
+        
+        out.collect(left + ":" + right);
+      }
+    }).addSink(new ResultSink());
+  ```
 
 
 
 
 
-·
+Q: Join 操作中的watermark 如何更新？对于不同输入流中的 watermark 如何选择？
+
+
+
+# | Stateful Stream Processing
+
+底层 API，灵活性更大。
+
+## || ProcessFunction
+
+ProcessFunction 可以访问：
+
+- 时间
+- 状态
+- 定时器
 
 
 
 # | Table API
+
+
+
+## || Dynamic Table
+
+- https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
+
+
+
+Table 定义，分两部分：
+
+- logical schema conf
+- connector conf
+
+
+
+示例
+
+```sql
+CREATE TABLE FileSource (
+    pageId INT,
+    url VARCHAR,
+    userId VARCHAR,
+    `timestamp` BIGINT,
+    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`,1000)
+) WITH (
+    'connector.type'='File',
+    'connector.path'='/tmp/test/test.txt'
+);
+```
+
+
+
+类型
+
+- **Source tables** are data sources. 
+
+  - Flink SQL 必须至少有一个 source table.
+
+- **Side tables** are lookup tables. 
+
+  - 创建时指定 dimension identifier `PERIOD FOR SYSTEM_TIME` 
+
+    ```sql
+    CREATE TABLE Behavior (
+        docId INT,
+        name VARCHAR,
+        price INT,
+        PERIOD FOR SYSTEM_TIME
+    ) WITH (
+        'connector.type'='couchbase',
+        'connector.default-values'='0,ANN,23'
+    )
+    ```
+
+  - 支持 cache
+
+  - Retry Handler: 查询 external data store 失败时会重试
+
+- **Sink tables** are data sinks.
+
+  - 输出
+
+
+
+
 
 ## || Join
 
@@ -720,6 +996,49 @@ INSERT INTO
   - JOIN with a teamporal table (enrichment join)
   - Pattern matching (MATCH_RECOGNIZE)
 - 查询结果也是 append-only 类型
+
+
+
+
+
+### Window
+
+https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries.html#group-windows 
+
+
+
+```sql
+CREATE TABLE FileSource (
+    pageId INT,
+    url VARCHAR,
+    userId VARCHAR,
+    `timestamp` BIGINT,
+    # generate the watermark based on the timestamp in event and give 1000ms offset
+    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`, 1000)
+) WITH (
+    'connector.type'='File',
+    'connector.path'='/tmp/test/test.txt'
+);
+
+CREATE TABLE ConsoleSink (
+    userId VARCHAR,
+    windowStartTime TIMESTAMP,
+    distinctPageCount BIGINT
+) WITH (
+    'connector.type'='console'
+);
+
+INSERT INTO ConsoleSink
+    SELECT
+        userId,
+        TUMBLE_START(wk, INTERVAL '5' SECOND),
+        COUNT(DISTINCT pageId)
+    FROM FileSource
+    GROUP BY
+        userId, TUMBLE(wk, INTERVAL '5' SECOND)
+```
+
+
 
 
 
