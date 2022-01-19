@@ -293,6 +293,51 @@ StreamGraph --> JobGraph
 
 # | DataStream API
 
+流程
+
+- 获取一个 Execution Env
+- 加载、创建初始数据
+- 转换
+- 指定结果存储位置
+- 触发 execution
+
+Sample: 
+
+```java
+public class WindowWordCount {
+
+    public static void main(String[] args) throws Exception {
+        // 1. 设置运行环境
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+        // 2. 读取源数据、执行转换操作
+        DataStream<Tuple2<String, Integer>> dataStream = env
+                .socketTextStream("localhost", 9999)
+                .flatMap(new Splitter())
+                .keyBy(value -> value.f0)
+                .window(TumblingProcessingTimeWindows.of(Time.seconds(5)))
+                .sum(1);
+        // 3. 默认 sink 操作
+        dataStream.print();
+        // 4. 执行 Flink 应用程序
+        env.execute("Window WordCount");
+    }
+
+    public static class Splitter implements FlatMapFunction<String, Tuple2<String, Integer>> {
+        @Override
+        public void flatMap(String sentence, Collector<Tuple2<String, Integer>> out) throws Exception {
+            for (String word: sentence.split(" ")) {
+                out.collect(new Tuple2<String, Integer>(word, 1));
+            }
+        }
+    }
+
+}
+```
+
+
+
+
+
 ## || Execution Env
 
 StreamExecutionEnvironment 功能
@@ -329,39 +374,6 @@ DataStream 转换操作
 - 拆分单条流：`split`
 
 ![image-20220116233344476](../img/flink/flink-datastream-operators.png)
-
-Sample: 
-
-```java
-public class WindowWordCount {
-
-    public static void main(String[] args) throws Exception {
-        // 1. 设置运行环境
-        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-        // 2. 读取源数据、执行转换操作
-        DataStream<Tuple2<String, Integer>> dataStream = env
-                .socketTextStream("localhost", 9999)
-                .flatMap(new Splitter())
-                .keyBy(value -> value.f0)
-                .window(TumblingProcessingTimeWindows.of(Time.seconds(5)))
-                .sum(1);
-        // 3. 默认 sink 操作
-        dataStream.print();
-        // 4. 执行 Flink 应用程序
-        env.execute("Window WordCount");
-    }
-
-    public static class Splitter implements FlatMapFunction<String, Tuple2<String, Integer>> {
-        @Override
-        public void flatMap(String sentence, Collector<Tuple2<String, Integer>> out) throws Exception {
-            for (String word: sentence.split(" ")) {
-                out.collect(new Tuple2<String, Integer>(word, 1));
-            }
-        }
-    }
-
-}
-```
 
 
 
@@ -860,20 +872,99 @@ ProcessFunction 可以访问：
 
 # | Table API
 
+程序结构
+
+- 构造 TableEnvironment
+- Connect() 创建 Temporary Table
+- tableEnv.from().select()  /  tableEnv.sqlQuery()
+- 输出 tableEnv.executeInsert()
+- 调用 tableEnv.execute()
+
+
+
+## || Table 创建
+
+**DataStream 转为 Table**
+
+```java
+// Convert the DataStream into a Table with default fields "f0", "f1" 
+Table table1 = tableEnv.fromDataStream(stream);
+// Convert the DataStream into a Table with fields "myLong", "myString" 
+Table table2 = tableEnv.fromDataStream(stream, $("myLong"), $("myString"));
+
+// 逻辑表 register the DataStream as View "myTable" with fields "f0", "f1" 
+tableEnv.createTemporaryView("myTable", stream);
+// register the DataStream as View "myTable2" with fields "myLong", "myString" 
+tableEnv.createTemporaryView("myTable2", stream, $("myLong"), $("myString"));
+```
+
+
+
+**Table 转为 DataStream**
+
+- Append mode
+- Retract mode
+
+```java
+// convert the Table into an append DataStream of Row by specifying the class 
+DataStream<Row> dsRow = tableEnv.toAppendStream(table, Row.class);
+
+// convert the Table into an append DataStream of Tuple2<String, Integer> 
+TupleTypeInfo<Tuple2<String, Integer>> tupleType = new TupleTypeInfo<>( Types.STRING(), Types.INT()); DataStream<Tuple2<String, Integer>> dsTuple = tableEnv.toAppendStream(table, tupleType);
+
+// convert the Table into a retract DataStream of Row.
+// A retract stream of type X is a DataStream<Tuple2<Boolean, X>>.
+// The boolean field indicates the type of the change.
+// True is INSERT, false is DELETE.
+DataStream<Tuple2<Boolean, Row>> retractStream = tableEnv.toRetractStream(table, Row.class);
+```
+
+
+
+**Table Connector**
+
+```java
+tableEnvironment
+  .connect(...) // Table Connector Eg:Kafka 
+  .withFormat(...) // Format Type Eg:JSON
+  .withSchema(...) // Table Schem
+  .inAppendMode() // update mode 
+  .createTemporaryTable(“MyTable”) // Register Table
+```
+
+
+
+
+
+
+
 
 
 ## || Dynamic Table
 
 - https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
 
+动态表：基于无界序列
 
+
+
+**原理**
+
+- 物化视图 Materialized View：缓存查询结果；基表修改时，物化视图将过期。
+- 基于动态表查询
+  - 查询动态表将生成一个连续查询 ;
+  - 一个连续查询永远不会终止，结果会生成一个动态表；查询不断更新其(动态)结果表，以反映其(动态)输入表上的更改;
+  - 动态表上的连续查询非常类似于定义物化视图的查询;
+  - 连续查询的结果在语义上总是等价于以批处理模式在输入表快照上执行的相同查询的结果;
+
+
+
+**创建**
 
 Table 定义，分两部分：
 
 - logical schema conf
 - connector conf
-
-
 
 示例
 
@@ -892,7 +983,7 @@ CREATE TABLE FileSource (
 
 
 
-类型
+**类型**
 
 - **Source tables** are data sources. 
 
@@ -921,6 +1012,29 @@ CREATE TABLE FileSource (
 - **Sink tables** are data sinks.
 
   - 输出
+
+
+
+**Dynamic Table --> Stream**
+
+- INSERT：转换为 **append-only 流**
+  ![image-20220119204144268](../img/flink/flink-dynamictable-stream-insert.png)
+- INSERT + DELETE：转换为 **Retract 流**
+  - 先 delete 再 insert，实现 update 效果
+    ![image-20220119204247811](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-insertdelete.png)
+
+- UPSERT + DELETE：转换为 **Upsert 流**
+
+  - 包含两种类型的 msg: upsert messages 和delete messages；
+  - 根据 key 进行 update 和 delete
+
+  - Q: 与 retract 流的区别？
+
+  ![image-20220119204343500](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-upsertdelete.png)
+
+
+
+
 
 
 
@@ -981,6 +1095,31 @@ INSERT INTO
   ON a.p=c.p
   WHERE c.p <> NULL;
 ```
+
+
+
+- **常规查询**
+  - 全表计算，结果集不断被更新；
+  - key 很多时会占用内存资源；
+
+![image-20220119115612375](../img/flink/flink-table-query-continuous.png)
+
+- **窗口查询**
+  - 不会出现资源不足
+  
+  - 使用场景：
+  
+    - 状态大小查询限制 - 连续运行数周或数月
+  
+    - Updating Results 查询限制 -  有些查询需要重新计算和更新大量已输出的结果行，即使只添加或更新一条输入记录。
+  
+      ```sql
+      SELECT user, RANK() -- rank() 需要更新大量数据
+      OVER (ORDER BY lastLogin) 
+      FROM (
+        SELECT user, MAX(cTime) AS lastAction FROM clicks GROUP BY user );
+
+![image-20220119115734094](../img/flink/flink-table-query-window.png)
 
 
 
