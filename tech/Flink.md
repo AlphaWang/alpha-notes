@@ -1034,6 +1034,89 @@ CREATE TABLE FileSource (
 
 
 
+## || TimeStamp & Watermark 定义
+
+**Processing Time 定义**
+
+- 建表 DDL 中定义
+
+  ```sql
+  CREATE TABLE user_actions (
+    user_name STRING,
+    data STRING,
+    user_action_time AS PROCTIME() -- 声明一个额外的列作为处理时间属性
+  ) WITH ( 
+    ...
+  );
+  
+  SELECT TUMBLE_START(user_action_time, INTERVAL '10' MINUTE), COUNT(DISTINCT user_name) 
+  FROM user_actions
+  GROUP BY TUMBLE(user_action_time, INTERVAL '10' MINUTE);
+  ```
+
+- DataStream 转 table 时定义
+
+  ```java
+  DataStream<Tuple2<String, String>> stream = ...;
+  // 声明一个额外的字段作为时间属性字段
+  Table table = tEnv.fromDataStream(stream, $("user_name"), $("data"),
+                                    $("user_action_time").proctime());
+  
+  WindowedTable windowedTable = table.window( 
+    Tumble.over(lit(10).minutes())
+    .on($("user_action_time")) 
+    .as("userActionWindow"));
+  ```
+
+- 自定义 StreamTableSource
+
+
+
+**EventTime 定义**
+
+- 建表 DDL 中定义 (与watermark一起定义)
+
+  ```sql
+  CREATE TABLE user_actions (
+    user_name STRING,
+    data STRING,
+    user_action_time TIMESTAMP(3),
+    -- 声明 user_action_time 是事件时间属性，并且用 延迟 5 秒的策略来生成 
+    watermark WATERMARK FOR user_action_time AS user_action_time - INTERVAL '5' SECOND
+  ) WITH ( 
+    ...
+  );
+  
+  SELECT TUMBLE_START(user_action_time, INTERVAL '10' MINUTE), COUNT(DISTINCT user_name) 
+  FROM user_actions
+  GROUP BY TUMBLE(user_action_time, INTERVAL '10' MINUTE);
+  ```
+
+  
+
+- DataStream 转 table 时定义
+
+  ```java
+  //方式一:基于 stream 中的事件产生时间戳和 watermark
+  DataStream<Tuple2<String, String>> stream = inputStream.assignTimestampsAndWatermarks(...);
+  // 声明一个额外的逻辑字段作为事件时间属性
+  Table table = tEnv.fromDataStream(stream, $("user_name"), $("data"),
+  $("user_action_time").rowtime()");
+                                    
+  // 方式二:从第一个字段获取事件时间，并且产生 watermark
+  DataStream<Tuple3<Long, String, String>> stream = inputStream.assignTimestampsAndWatermarks(...);
+  // 第一个字段已经用作事件时间抽取了，不用再用一个新字段来表示事件时间了
+  Table table = tEnv.fromDataStream(stream, $("user_action_time").rowtime(), $("user_name"), $("data"));
+                                    
+  // Usage:
+  WindowedTable windowedTable = table.window(Tumble
+                                             .over(lit(10).minutes()) 
+                                             .on($("user_action_time")) 
+                                             .as("userActionWindow"))
+  ```
+
+- 自定义 StreamTableSource
+
 
 
 
