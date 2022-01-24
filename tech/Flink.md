@@ -936,10 +936,6 @@ tableEnvironment
 
 
 
-
-
-
-
 ## || Dynamic Table
 
 - https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
@@ -950,36 +946,12 @@ tableEnvironment
 
 **原理**
 
-- 物化视图 Materialized View：缓存查询结果；基表修改时，物化视图将过期。
+- `物化视图 Materialized View`：缓存查询结果；基表修改时，物化视图将过期。
 - 基于动态表查询
   - 查询动态表将生成一个连续查询 ;
   - 一个连续查询永远不会终止，结果会生成一个动态表；查询不断更新其(动态)结果表，以反映其(动态)输入表上的更改;
   - 动态表上的连续查询非常类似于定义物化视图的查询;
   - 连续查询的结果在语义上总是等价于以批处理模式在输入表快照上执行的相同查询的结果;
-
-
-
-**创建**
-
-Table 定义，分两部分：
-
-- logical schema conf
-- connector conf
-
-示例
-
-```sql
-CREATE TABLE FileSource (
-    pageId INT,
-    url VARCHAR,
-    userId VARCHAR,
-    `timestamp` BIGINT,
-    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`,1000)
-) WITH (
-    'connector.type'='File',
-    'connector.path'='/tmp/test/test.txt'
-);
-```
 
 
 
@@ -1015,7 +987,7 @@ CREATE TABLE FileSource (
 
 
 
-**Dynamic Table --> Stream**
+### Dynamic Table --> Stream
 
 - INSERT：转换为 **append-only 流**
   ![image-20220119204144268](../img/flink/flink-dynamictable-stream-insert.png)
@@ -1034,11 +1006,36 @@ CREATE TABLE FileSource (
 
 
 
-## || TimeStamp & Watermark 定义
+### TimeStamp & Watermark 定义
+
+**创建**
+
+Table 定义，分两部分：
+
+- logical schema conf
+- connector conf
+
+示例
+
+```sql
+CREATE TABLE FileSource (
+    pageId INT,
+    url VARCHAR,
+    userId VARCHAR,
+    `timestamp` BIGINT,
+    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`,1000)
+) WITH (
+    'connector.type'='File',
+    'connector.path'='/tmp/test/test.txt'
+);
+```
+
+
 
 **Processing Time 定义**
 
 - 建表 DDL 中定义
+  -- AS PROCTIME()
 
   ```sql
   CREATE TABLE user_actions (
@@ -1074,7 +1071,8 @@ CREATE TABLE FileSource (
 
 **EventTime 定义**
 
-- 建表 DDL 中定义 (与watermark一起定义)
+- 建表 DDL 中定义 
+  -- 与watermark一起定义
 
   ```sql
   CREATE TABLE user_actions (
@@ -1119,12 +1117,82 @@ CREATE TABLE FileSource (
 
 
 
+注意：
+
+- 如果原始字段是 字符串，建议定义为 TIMESTAMP 类型
+- 如果原始字段是 Long，建议定义为 TIMESTAMP_LTZ 类型
+
+
+
+### Versioned Table
+
+Flink SQL operates over dynamic tables that evolve, which may either be append-only or updating. Versioned tables represent a special type of updating table that remembers the past values for each key.
+
+定义：PRIMARY KEY + Time attribute
+
+- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/versioned_tables/
+
+
+
+
+
+### Temporal Table
+
+示例：关联汇率表
+
+- 原始数据
+
+  ```
+  SELECT * FROM currency_rates;
+  
+  update_time   currency   rate
+  ============= =========  ====
+  09:00:00      Yen        102
+  09:00:00      Euro       114
+  09:00:00      USD        1
+  11:15:00      Euro       119
+  11:49:00      Pounds     108
+  ```
+
+- 注册 Temporal Table Function
+
+  ```java
+  TemporalTableFunction rates = tEnv
+      .from("currency_rates").
+      .createTemporalTableFunction("update_time", "currency");
+   
+  tEnv.registerFunction("rates", rates);  
+  ```
+
+- 关联
+
+  ```sql
+  SELECT
+    SUM(amount * rate) AS amount
+  FROM
+    orders,
+    LATERAL TABLE (rates(order_time))
+  WHERE
+    rates.currency = orders.currency
+  ```
+
+  
+
+
+
 
 
 ## || Query
 
 - https://nightlies.apache.org/flink/flink-docs-release-1.10/dev/table/sql/queries.html 
 - https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/overview/ 
+
+
+
+Querying dynamic tables yields a *Continuous Query*：
+
+- 永不停止
+- 产生动态结果、不断更新
 
 
 
