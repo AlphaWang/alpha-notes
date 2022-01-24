@@ -1342,6 +1342,260 @@ INSERT INTO ConsoleSink
 
 
 
+## || UDF
+
+**内置函数**
+
+- 比较函数：`>`, `value IN`
+- 逻辑函数：`AND`, `NOT`
+- 算术函数：`ABS()`, `EXP()`
+- 字符串函数：`UPPER()`, `CONCAT()`
+- 时间函数：`WEEK()`
+- 条件函数：`CASE value WHEN THEN END`, `NULLIF`
+- 类型转换函数：`CAST()`
+- JSON 函数：`JSON_EXISTS()`, `JSON_VALUE()`
+- 聚合函数：`count()`, `avg()`
+
+
+
+**Flink 函数类别**
+
+- **Scalar functions 标量函数** map scalar values to a new scalar value.
+- **Table functions 表值函数** map scalar values to new rows.
+- **Aggregate functions 聚合函数** map scalar values of multiple rows to a new scalar value.
+- **Table aggregate functions 表值聚合函数** map scalar values of multiple rows to new rows.
+- **Async table functions 异步表值函数** are special functions for table sources that perform a lookup.
+
+
+
+**UDF 定义**
+
+- 标量函数：ScalarFunction
+
+  ```java
+  // 定义函数逻辑
+  public static class SubstringFunction extends ScalarFunction {
+    public String eval(String s, Integer begin, Integer end) {
+      return s.substring(begin, end);
+    }
+  }
+  
+  
+  
+  TableEnvironment env = TableEnvironment.create(...);
+  
+  // 在 Table API 里不经注册直接“内联”调用函数
+  env.from("MyTable").select(call(SubstringFunction.class, $("myField"), 5, 12));
+  
+  // 注册函数
+  env.createTemporarySystemFunction("SubstringFunction", SubstringFunction.class);
+  
+  // 在 Table API 里调用注册好的函数
+  env.from("MyTable").select(call("SubstringFunction", $("myField"), 5, 12));
+  
+  // 在 SQL 里调用注册好的函数
+  env.sqlQuery("SELECT SubstringFunction(myField, 5, 12) FROM MyTable");
+  
+  
+  ```
+
+  
+
+- 表值函数：`TableFunction`
+  -- 表值函数的求值方法本身不包含返回类型，而是通过 `collect(T)` 方法来发送要输出的行。
+
+  ```java
+  @FunctionHint(output = @DataTypeHint("ROW<word STRING, length INT>"))
+  public static class SplitFunction extends TableFunction<Row> {
+  
+    public void eval(String str) {
+      for (String s : str.split(" ")) {
+        // use collect(...) to emit a row
+        collect(Row.of(s, s.length()));
+      }
+    }
+  }
+  
+  TableEnvironment env = TableEnvironment.create(...);
+  
+  // 在 Table API 里不经注册直接“内联”调用函数
+  env
+    .from("MyTable")
+    .joinLateral(call(SplitFunction.class, $("myField")))
+    .select($("myField"), $("word"), $("length"));
+  env
+    .from("MyTable")
+    .leftOuterJoinLateral(call(SplitFunction.class, $("myField")))
+    .select($("myField"), $("word"), $("length"));
+  
+  // 在 Table API 里重命名函数字段
+  env
+    .from("MyTable")
+    .leftOuterJoinLateral(call(SplitFunction.class, $("myField")).as("newWord", "newLength"))
+    .select($("myField"), $("newWord"), $("newLength"));
+  
+  // 注册函数
+  env.createTemporarySystemFunction("SplitFunction", SplitFunction.class);
+  
+  // 在 Table API 里调用注册好的函数
+  env
+    .from("MyTable")
+    .joinLateral(call("SplitFunction", $("myField")))
+    .select($("myField"), $("word"), $("length"));
+  env
+    .from("MyTable")
+    .leftOuterJoinLateral(call("SplitFunction", $("myField")))
+    .select($("myField"), $("word"), $("length"));
+  
+  // 在 SQL 里调用注册好的函数
+  env.sqlQuery(
+    "SELECT myField, word, length " +
+    "FROM MyTable, LATERAL TABLE(SplitFunction(myField))");
+  env.sqlQuery(
+    "SELECT myField, word, length " +
+    "FROM MyTable " +
+    "LEFT JOIN LATERAL TABLE(SplitFunction(myField)) ON TRUE");
+  
+  ```
+
+  
+
+- 聚合函数 `AggregateFunction`
+
+  ```java
+  // 聚合某一列的加权平均
+  
+  //Accumulator for WeightedAvg.
+  public static class WeightedAvgAccum {
+      public long sum = 0;
+      public int count = 0;
+  }
+  
+  public static class WeightedAvg extends AggregateFunction<Long, WeightedAvgAccum> {
+  
+      //必选：创建 Accumulator，用于存储聚合的中间结果
+      public WeightedAvgAccum createAccumulator() {
+          return new WeightedAvgAccum();
+      }
+  
+      //必选：计算和返回最终结果
+      public Long getValue(WeightedAvgAccum acc) {
+          if (acc.count == 0) {
+              return null;
+          } else {
+              return acc.sum / acc.count;
+          }
+      }
+  
+      //必选：对于每一行数据，会调用 accumulate() 方法来更新 accumulator
+      public void accumulate(WeightedAvgAccum acc, long iValue, int iWeight) {
+          acc.sum += iValue * iWeight;
+          acc.count += iWeight;
+      }
+  
+      //可选：在 bounded OVER 窗口中是必须实现的
+      public void retract(WeightedAvgAccum acc, long iValue, int iWeight) {
+          acc.sum -= iValue * iWeight;
+          acc.count -= iWeight;
+      }
+  
+      //可选：在许多批式聚合和会话以及滚动窗口聚合中是必须实现的
+      public void merge(WeightedAvgAccum acc, Iterable<WeightedAvgAccum> it) {
+          Iterator<WeightedAvgAccum> iter = it.iterator();
+          while (iter.hasNext()) {
+              WeightedAvgAccum a = iter.next();
+              acc.count += a.count;
+              acc.sum += a.sum;
+          }
+      }
+  
+      public void resetAccumulator(WeightedAvgAccum acc) {
+          acc.count = 0;
+          acc.sum = 0L;
+      }
+  }
+  
+  // 注册函数
+  StreamTableEnvironment tEnv = ...
+  tEnv.registerFunction("wAvg", new WeightedAvg());
+  
+  // 使用函数
+  tEnv.sqlQuery("SELECT user, wAvg(points, level) AS avgPoints FROM userScores GROUP BY user");
+  
+  ```
+
+  
+
+- 表值聚合函数 `TableAggregateFunction` 
+  -- 把一个表聚合成另一张表，结果中可以有多行多列
+
+  ```java
+  // 聚合 TOP-2
+  
+  public class Top2Accum {
+      public Integer first;
+      public Integer second;
+  }
+  
+  public static class Top2 extends TableAggregateFunction<Tuple2<Integer, Integer>, Top2Accum> {
+  
+      @Override
+      public Top2Accum createAccumulator() {
+          Top2Accum acc = new Top2Accum();
+          acc.first = Integer.MIN_VALUE;
+          acc.second = Integer.MIN_VALUE;
+          return acc;
+      }
+  
+  
+      public void accumulate(Top2Accum acc, Integer v) {
+          if (v > acc.first) {
+              acc.second = acc.first;
+              acc.first = v;
+          } else if (v > acc.second) {
+              acc.second = v;
+          }
+      }
+  
+      public void merge(Top2Accum acc, java.lang.Iterable<Top2Accum> iterable) {
+          for (Top2Accum otherAcc : iterable) {
+              accumulate(acc, otherAcc.first);
+              accumulate(acc, otherAcc.second);
+          }
+      }
+  
+      public void emitValue(Top2Accum acc, Collector<Tuple2<Integer, Integer>> out) {
+          // emit the value and rank
+          if (acc.first != Integer.MIN_VALUE) {
+              out.collect(Tuple2.of(acc.first, 1));
+          }
+          if (acc.second != Integer.MIN_VALUE) {
+              out.collect(Tuple2.of(acc.second, 2));
+          }
+      }
+  }
+  
+  // 注册函数
+  StreamTableEnvironment tEnv = ...
+  tEnv.registerFunction("top2", new Top2());
+  
+  // 初始化表
+  Table tab = ...;
+  
+  // 使用函数
+  tab.groupBy("key")
+      .flatAggregate("top2(a) as (v, rank)")
+      .select("key, v, rank");
+  
+  
+  ```
+
+  
+
+
+
+
+
 ## || JOIN
 
 - https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/
@@ -1435,12 +1689,6 @@ Join 动态表
   - DataStream 支持，但 Flink sql 不支持
 
 
-
-
-
-## || UDF
-
-https://nightlies.apache.org/flink/flink-docs-release-1.10/dev/table/functions/udfs.html 
 
 
 
