@@ -1121,42 +1121,10 @@ CREATE TABLE FileSource (
 
 
 
-
-
-## || Join
-
-https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries.html#joins 
-
-| Join type                    | Description                                                  | Left table type    | Right table type       | Scenario                                                     |
-| ---------------------------- | ------------------------------------------------------------ | ------------------ | ---------------------- | ------------------------------------------------------------ |
-| Side join                    | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`. | Dynamic fact table | Static dimension table | your business logic is that consuming the kafka topic and enrich every event with the dimension table in Cassandra/Couchbase/Mongo/Mysql/NuKV/Oracle/Restful |
-| Regular join                 | A dynamic table join another dynamic table. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
-| Interval join                | A dynamic table join another dynamic table within **time interval**. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
-| Temporal table function join | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`.  --> 与 Side Join 的区别？ | Dynamic fact table | Static dimension table | write your user defined side table then use side join or write a temporal table function then use it with Temporal table function join |
-
-
-
-
-
-- Side join vs. Temporal table function join
-  - side join support async query and have cache function. It will take more effect to develop side join user defined table. 
-
-
-
-| Table type         | Operating constraints      |
-| :----------------- | :------------------------- |
-| source table       | Only support `FROM`        |
-| side table         | Only support `JOIN`        |
-| result(sink) table | Only support `INSERT INTO` |
-| view table         | Only support `FROM`        |
-
-
-
 ## || Query
 
-https://nightlies.apache.org/flink/flink-docs-release-1.10/dev/table/sql/queries.html 
-
-https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/overview/ 
+- https://nightlies.apache.org/flink/flink-docs-release-1.10/dev/table/sql/queries.html 
+- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/overview/ 
 
 
 
@@ -1208,18 +1176,60 @@ INSERT INTO
 
 ### 基于时间的查询
 
-条件
+例子
 
-- 必须是 append-only
-- 查询条件中包含时间关联条件和算子
-  - GROUP BY window aggregation
-  - OVER window aggregation
-  - Time-windowed JOIN
-  - JOIN with a teamporal table (enrichment join)
-  - Pattern matching (MATCH_RECOGNIZE)
+- 计算最近一分钟平均值
+- 关联最近汇率变化表
+- 五分钟内如果三次失败则触发报警
+
+
+
+特征
+
+- 输入表是 append-only
+- 查询条件中包含时间相关条件和算子
 - 查询结果也是 append-only 类型
 
 
+
+操作
+
+- JOIN
+
+  - Time-windowed JOIN
+  - JOIN with a teamporal table (enrichment join)
+
+- Pattern matching (MATCH_RECOGNIZE)
+
+- 聚合
+
+  - **GROUP BY window aggregation**
+
+    ```sql
+    -- 计算每个小时中，每个用户的点击次数
+    SELECT user,
+      TUMBLE_END(cTime, INTERVAL '1' HOURS) AS endT, 
+      COUNT(url) AS cnt
+    FROM clicks
+      GROUP BY TUMBLE(cTime, INTERVAL '1' HOURS), user
+    ```
+
+    
+
+  - **OVER window aggregation**
+
+    ```sql
+    -- 计算每次点击之前两个小时内的点击总数
+    SELECT user, url,
+      COUNT(*) OVER w
+    FROM clicks 
+      WINDOW w AS (
+        PARTITION BY url
+        ORDER BY cTime
+        RANGE BETWEEN INTERVAL ’2’ HOUR PRECEDING AND CURRENT ROW)
+    ```
+
+    
 
 
 
@@ -1259,6 +1269,102 @@ INSERT INTO ConsoleSink
     GROUP BY
         userId, TUMBLE(wk, INTERVAL '5' SECOND)
 ```
+
+
+
+
+
+## || JOIN
+
+- https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/
+
+| Join type                    | Description                                                  | Left table type    | Right table type       | Scenario                                                     |
+| ---------------------------- | ------------------------------------------------------------ | ------------------ | ---------------------- | ------------------------------------------------------------ |
+| Side join                    | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`. | Dynamic fact table | Static dimension table | your business logic is that consuming the kafka topic and enrich every event with the dimension table in Cassandra/Couchbase/Mongo/Mysql/NuKV/Oracle/Restful |
+| Regular join                 | A dynamic table join another dynamic table. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
+| Interval join                | A dynamic table join another dynamic table within **time interval**. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
+| Temporal table function join | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`.  --> 与 Side Join 的区别？ | Dynamic fact table | Static dimension table | write your user defined side table then use side join or write a temporal table function then use it with Temporal table function join |
+
+
+
+
+
+- Side join vs. Temporal table function join
+  - side join support async query and have cache function. It will take more effect to develop side join user defined table. 
+
+
+
+| Table type         | Operating constraints      |
+| :----------------- | :------------------------- |
+| source table       | Only support `FROM`        |
+| side table         | Only support `JOIN`        |
+| result(sink) table | Only support `INSERT INTO` |
+| view table         | Only support `FROM`        |
+
+
+
+Join 静态表
+
+- JOIN 时数据完整可用
+
+Join 动态表
+
+- 一定要有时间条件
+
+**Join 时态表（Temporal Table）**
+
+- 概念
+
+  - Temporal Table 是随时间变化而变化的表；相当于一个快照
+  - 主要用于维表关联
+  - 例如：查询之前某个指定时间的最新汇率
+
+- vs. Temporal table function 时态表函数：使用 UDTF + LATERAL TABLE 语法 转换成一张表
+
+- 应用
+
+  
+
+
+
+
+
+**Inner JOIN**
+
+- Join 顺序没有进行优化
+- 状态可能无限增长，需要配置 TTL 
+
+**Outer JOIN**
+
+- 同上
+
+
+
+**Interval JOIN**
+
+- 至少需要一个限制时间的 join 条件；
+
+- 只支持 INNER JOIN.
+
+  - Q: 无法发出未匹配成功的事件？
+
+- 示例：
+
+  ```sql
+  SELECT * 
+  FROM Orders o, Shipments s
+  WHERE o.id = s.orderId
+    AND o.ordertime BETWEEN s.shiptime - INTERVAL'4'HOUR AND s.shiptime
+  ```
+
+![](../img/flink/flink-sql-interval-join1.png)
+
+![image-20220119222504551](../img/flink/flink-sql-interval-join2.png)
+
+
+
+- **Window JOIN**
+  - DataStream 支持，但 Flink sql 不支持
 
 
 
