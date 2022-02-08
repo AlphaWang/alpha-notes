@@ -100,6 +100,12 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
 
 
 
+**状态保存时间**
+
+- [`table.exec.state.ttl`](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/config/#table-exec-state-ttl) defines for how long the state of a key is retained without being updated before it is removed.
+
+
+
 ### Fault Tolerance
 
 https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
@@ -938,9 +944,7 @@ tableEnvironment
 
 ## || Dynamic Table
 
-- https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
-
-动态表：基于无界序列
+动态表：基于无界序列，dynamic tables change over time. 
 
 
 
@@ -987,21 +991,28 @@ tableEnvironment
 
 
 
-### Dynamic Table --> Stream
+### Table --> Stream
 
-- INSERT：转换为 **append-only 流**
+https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
+
+-  **append-only 流**：INSERT
   ![image-20220119204144268](../img/flink/flink-dynamictable-stream-insert.png)
-- INSERT + DELETE：转换为 **Retract 流**
+  
+- **Retract 流**：INSERT + DELETE
+  
   - 先 delete 再 insert，实现 update 效果
     ![image-20220119204247811](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-insertdelete.png)
-
-- UPSERT + DELETE：转换为 **Upsert 流**
+  
+- **Upsert 流**：UPSERT + DELETE
 
   - 包含两种类型的 msg: upsert messages 和delete messages；
+  
   - 根据 key 进行 update 和 delete
-
+  
   - Q: 与 retract 流的区别？
-
+  
+    The main difference to a retract stream is that `UPDATE` changes are encoded with a single message and hence more efficient.
+  
   ![image-20220119204343500](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-upsertdelete.png)
 
 
@@ -1015,7 +1026,11 @@ Table 定义，分两部分：
 - logical schema conf
 - connector conf
 
-示例
+语法：
+
+- 建表：https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/create/#create-table 
+
+- Watermark https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/create/#watermark
 
 ```sql
 CREATE TABLE FileSource (
@@ -1119,24 +1134,40 @@ CREATE TABLE FileSource (
 
 注意：
 
-- 如果原始字段是 字符串，建议定义为 TIMESTAMP 类型
+- 如果原始字段是 字符串，例如 `2020-04-15 20:13:40.564`，建议定义为 TIMESTAMP 类型
 - 如果原始字段是 Long，建议定义为 TIMESTAMP_LTZ 类型
 
 
 
 ### Versioned Table
 
-Flink SQL operates over dynamic tables that evolve, which may either be append-only or updating. Versioned tables represent a special type of updating table that remembers the past values for each key.
+Flink SQL operates over dynamic tables that evolve, which may either be append-only or updating. Versioned tables represent a special type of updating table that remembers *the past values for each key*.
 
 定义：PRIMARY KEY + Time attribute
 
 - https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/versioned_tables/
+
+  ```sql
+  CREATE TABLE products (
+  	product_id    STRING,
+  	product_name  STRING,
+  	price         DECIMAL(32, 2),
+  	update_time   TIMESTAMP(3) METADATA FROM 'value.source.timestamp' VIRTUAL,
+  	PRIMARY KEY (product_id) NOT ENFORCED,
+  	WATERMARK FOR update_time AS update_time
+  ) WITH (...);
+
+场景：
+
+- 产品价格历史表，在不同时间点计算价格
 
 
 
 
 
 ### Temporal Table
+
+A Temporal table function provides access to the version of a temporal table at a specific point in time.
 
 示例：关联汇率表
 
@@ -1219,12 +1250,15 @@ INSERT INTO
 
 - **常规查询**
   - 全表计算，结果集不断被更新；
-  - key 很多时会占用内存资源；
+  - 需要维护更多 state，key 很多时会占用内存资源；
 
 ![image-20220119115612375](../img/flink/flink-table-query-continuous.png)
 
-- **窗口查询**
-  - 不会出现资源不足
+- **窗口查询** - tumbling window
+  
+  - 结果集不会被更新，而是 append-only
+  
+  - 不会出现资源不足；
   
   - 使用场景：
   
@@ -1242,7 +1276,7 @@ INSERT INTO
 
 
 
-### 基于时间的查询
+**基于时间的查询**
 
 例子
 
@@ -1301,44 +1335,71 @@ INSERT INTO
 
 
 
-### Window
+## || Window
 
 https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/sql/queries.html#group-windows 
 
+https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/ 
 
+Windows are at the heart of processing infinite streams. Windows split the stream into “buckets” of finite size, over which we can apply computations.
+
+
+
+### Windowing TVF
+
+> Windowing table-valued functions
+>
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-tvf/
+
+
+
+**TUMBLE**
+
+- 将每条记录分配到特定的时间窗口；
+- 时间窗口大小固定、不重叠；
 
 ```sql
-CREATE TABLE FileSource (
-    pageId INT,
-    url VARCHAR,
-    userId VARCHAR,
-    `timestamp` BIGINT,
-    # generate the watermark based on the timestamp in event and give 1000ms offset
-    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`, 1000)
-) WITH (
-    'connector.type'='File',
-    'connector.path'='/tmp/test/test.txt'
-);
-
-CREATE TABLE ConsoleSink (
-    userId VARCHAR,
-    windowStartTime TIMESTAMP,
-    distinctPageCount BIGINT
-) WITH (
-    'connector.type'='console'
-);
-
 INSERT INTO ConsoleSink
     SELECT
         userId,
-        TUMBLE_START(wk, INTERVAL '5' SECOND),
+        TUMBLE_START(wk, INTERVAL '5' SECOND), --
         COUNT(DISTINCT pageId)
     FROM FileSource
     GROUP BY
         userId, TUMBLE(wk, INTERVAL '5' SECOND)
 ```
 
+![flink-windows-tumbling](../img/flink/flink-windows-tumbling.svg)
 
+
+
+**HOP**
+
+- 时间窗口大小固定、可以重叠；
+
+![flink-windows-sliding](../img/flink/flink-windows-sliding.svg)
+
+
+
+**CUMULATE**
+
+- 时间窗口大小**不固定**、可以重叠
+- The `CUMULATE` function assigns elements to windows that cover rows within an initial interval of step size and expand to one more step size (keep window start fixed) every step until the max window size. 
+- For example, you could have a cumulating window for 1 hour **step** and 1 day **max size**, and you will get windows: `[00:00, 01:00)`, `[00:00, 02:00)`, `[00:00, 03:00)`, …, `[00:00, 24:00)` for every day.
+
+![flink-windows-cumulating](../img/flink/flink-windows-cumulating.png)
+
+
+
+### Window Aggregation
+
+
+
+### Window TopN
+
+
+
+### Window Join
 
 
 
@@ -1370,7 +1431,7 @@ INSERT INTO ConsoleSink
 
 **UDF 定义**
 
-- 标量函数：ScalarFunction
+- **标量函数：ScalarFunction**
 
   ```java
   // 定义函数逻辑
@@ -1401,7 +1462,7 @@ INSERT INTO ConsoleSink
 
   
 
-- 表值函数：`TableFunction`
+- **表值函数：`TableFunction`**
   -- 表值函数的求值方法本身不包含返回类型，而是通过 `collect(T)` 方法来发送要输出的行。
 
   ```java
@@ -1460,7 +1521,7 @@ INSERT INTO ConsoleSink
 
   
 
-- 聚合函数 `AggregateFunction`
+- **聚合函数 `AggregateFunction`**
 
   ```java
   // 聚合某一列的加权平均
@@ -1526,7 +1587,7 @@ INSERT INTO ConsoleSink
 
   
 
-- 表值聚合函数 `TableAggregateFunction` 
+- **表值聚合函数 `TableAggregateFunction`** 
   -- 把一个表聚合成另一张表，结果中可以有多行多列
 
   ```java
@@ -1682,6 +1743,25 @@ Join 动态表
 ![](../img/flink/flink-sql-interval-join1.png)
 
 ![image-20220119222504551](../img/flink/flink-sql-interval-join2.png)
+
+> https://stackoverflow.com/questions/66537833/compare-2-data-streams-in-flink-to-retrieve-missing-data
+>
+> Q: 使用 Interval Join 找出两个topic中不匹配的event：
+>
+> You may try to use the `IN` clause on interval join. So, You basically select all elements from T1 that are also in T2 to create T3 and then only select elements from T1 that are not in T3 using `NOT IN` clause as described in the [documentation](https://ci.apache.org/projects/flink/flink-docs-stable/dev/stream/operators/joining.html). Note that this will only work if the elements are UNIQUE.
+>
+> 
+>
+> The other thing You may try is to handle this Yourself by using `CoProcessFunction`, so You do something like:
+>
+> ```java
+> dataStream1.keyBy(_).connect(datastream2.keyBy(_))
+> .process(new MyProcessFunction())
+> ```
+>
+> Inside the function You would simply have a state that would keep every element from `dataStream1` and whenever anything from `dataStream2` arrives You would check if You can join, if it has the timestamp in given boundaries, if so You would delete the data from state as it's not going to be emitted. You could also have a registered timer, that would emit all elements that were not joined.
+
+
 
 
 
