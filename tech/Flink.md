@@ -1031,6 +1031,7 @@ Table 定义，分两部分：
 - 建表：https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/create/#create-table 
 
 - Watermark https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/create/#watermark
+- Time Attribute https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/
 
 ```sql
 CREATE TABLE FileSource (
@@ -1320,17 +1321,33 @@ INSERT INTO
 
   - **OVER window aggregation**
 
+    > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/
+    >
+    > `OVER` aggregates compute an aggregated value for **every input row** over a range of ordered rows. 
+    >
+    > In contrast to `GROUP BY` aggregates, `OVER` aggregates do not reduce the number of result rows to a single row for every group. Instead `OVER` aggregates produce an aggregated value for every input row.
+    
     ```sql
-    -- 计算每次点击之前两个小时内的点击总数
-    SELECT user, url,
-      COUNT(*) OVER w
-    FROM clicks 
-      WINDOW w AS (
-        PARTITION BY url
-        ORDER BY cTime
-        RANGE BETWEEN INTERVAL ’2’ HOUR PRECEDING AND CURRENT ROW)
+    -- 每个order发生时，统计前一小时相同 product order 的总数
+    SELECT order_id, order_time, amount,
+      SUM(amount) OVER (
+        PARTITION BY product
+        ORDER BY order_time
+        RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW
+      ) AS one_hour_prod_amount_sum
+    FROM Orders
+    
+    -- 还可以在SELECT之外定义 Over Window，可读性更强
+    SELECT order_id, order_time, amount,
+      SUM(amount) OVER w AS sum_amount,
+      AVG(amount) OVER w AS avg_amount
+    FROM Orders
+    WINDOW w AS (
+      PARTITION BY product
+      ORDER BY order_time
+      RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW)
     ```
-
+    
     
 
 
@@ -1358,17 +1375,6 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 - 将每条记录分配到特定的时间窗口；
 - 时间窗口大小固定、不重叠；
 
-```sql
-INSERT INTO ConsoleSink
-    SELECT
-        userId,
-        TUMBLE_START(wk, INTERVAL '5' SECOND), --
-        COUNT(DISTINCT pageId)
-    FROM FileSource
-    GROUP BY
-        userId, TUMBLE(wk, INTERVAL '5' SECOND)
-```
-
 ![flink-windows-tumbling](../img/flink/flink-windows-tumbling.svg)
 
 
@@ -1389,17 +1395,89 @@ INSERT INTO ConsoleSink
 
 ![flink-windows-cumulating](../img/flink/flink-windows-cumulating.png)
 
+**SESSION**
+
+- will be supported soon
+
 
 
 ### Window Aggregation
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/#group-window-aggregation
+>
+> Group Window Aggregation 不推荐使用，更推荐 Window TVF Aggregation. 
+
+**Group Window Function**
+
+| Group Window Function                | Description                                                  |
+| :----------------------------------- | :----------------------------------------------------------- |
+| `TUMBLE(time_attr, interval)`        | Defines a tumbling time window. A tumbling time window assigns rows to non-overlapping, continuous windows with a fixed duration (`interval`). For example, a tumbling window of 5 minutes groups rows in 5 minutes intervals. Tumbling windows can be defined on event-time (stream + batch) or processing-time (stream). |
+| `HOP(time_attr, interval, interval)` | Defines a hopping time window (called sliding window in the Table API). A hopping time window has a fixed duration (second `interval` parameter) and hops by a specified hop interval (first `interval` parameter). If the hop interval is smaller than the window size, hopping windows are overlapping. Thus, rows can be assigned to multiple windows. For example, a hopping window of 15 minutes size and 5 minute hop interval assigns each row to 3 different windows of 15 minute size, which are evaluated in an interval of 5 minutes. Hopping windows can be defined on event-time (stream + batch) or processing-time (stream). |
+| `SESSION(time_attr, interval)`       | Defines a session time window. Session time windows do not have a fixed duration but their bounds are defined by a time `interval` of inactivity, i.e., a session window is closed if no event appears for a defined gap period. For example a session window with a 30 minute gap starts when a row is observed after 30 minutes inactivity (otherwise the row would be added to an existing window) and is closed if no row is added within 30 minutes. Session windows can work on event-time (stream + batch) or processing-time (stream). |
+
+
+
+**Auxiliary Function**
+
+| Auxiliary Function                                           | Description                                                  |
+| :----------------------------------------------------------- | :----------------------------------------------------------- |
+| ***_START**<br /> `TUMBLE_START(time_attr, interval)` | `HOP_START(time_attr, interval, interval)` | `SESSION_START(time_attr, interval)` | Returns the timestamp of the inclusive lower bound of the corresponding tumbling, hopping, or session window. |
+| ***_END**<br />`TUMBLE_END(time_attr, interval)` | `HOP_END(time_attr, interval, interval)` | `SESSION_END(time_attr, interval)` | Returns the timestamp of the *exclusive* upper bound of the corresponding tumbling, hopping, or session window.**Note:** The exclusive upper bound timestamp *cannot* be used as a [rowtime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/) in subsequent time-based operations, such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
+| ***_ROWTIME**<br />`TUMBLE_ROWTIME(time_attr, interval)` | `HOP_ROWTIME(time_attr, interval, interval)` | `SESSION_ROWTIME(time_attr, interval)` | Returns the timestamp of the *inclusive* upper bound of the corresponding tumbling, hopping, or session window.The resulting attribute is a [rowtime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/) that can be used in subsequent time-based operations such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
+| ***_PROCTIME**<br />`TUMBLE_PROCTIME(time_attr, interval)`  | `HOP_PROCTIME(time_attr, interval, interval)`  | `SESSION_PROCTIME(time_attr, interval)` | Returns a [proctime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/#processing-time) that can be used in subsequent time-based operations such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
+
+
+
+```sql
+INSERT INTO ConsoleSink
+    SELECT
+        userId,
+        TUMBLE_START(wk, INTERVAL '5' SECOND), --
+        COUNT(DISTINCT pageId)
+    FROM FileSource
+    GROUP BY
+        userId, TUMBLE(wk, INTERVAL '5' SECOND)
+```
+
+
 
 
 
 ### Window TopN
 
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/topn/
+>
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-topn/
+
+
+
+```sql
+SELECT *
+FROM (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY category ORDER BY sales DESC) AS row_num
+  FROM ShopSales)
+WHERE row_num <= 5
+
+SELECT *
+  FROM (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY window_start, window_end ORDER BY price DESC) as rownum
+    FROM (
+      SELECT window_start, window_end, supplier_id, SUM(price) as price, COUNT(*) as cnt
+      FROM TABLE(
+        TUMBLE(TABLE Bid, DESCRIPTOR(bidtime), INTERVAL '10' MINUTES))
+      GROUP BY window_start, window_end, supplier_id
+    )
+  ) WHERE rownum <= 3;
+```
+
 
 
 ### Window Join
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-join/
+
+- the window join joins the elements of two streams that share a common key and lie in the same window.
 
 
 
@@ -1429,229 +1507,237 @@ INSERT INTO ConsoleSink
 
 
 
-**UDF 定义**
 
-- **标量函数：ScalarFunction**
 
-  ```java
-  // 定义函数逻辑
-  public static class SubstringFunction extends ScalarFunction {
-    public String eval(String s, Integer begin, Integer end) {
-      return s.substring(begin, end);
+**标量函数：ScalarFunction**
+
+```java
+// 定义函数逻辑
+public static class SubstringFunction extends ScalarFunction {
+  public String eval(String s, Integer begin, Integer end) {
+    return s.substring(begin, end);
+  }
+}
+
+TableEnvironment env = TableEnvironment.create(...);
+
+// 在 Table API 里不经注册直接“内联”调用函数
+env.from("MyTable").select(call(SubstringFunction.class, $("myField"), 5, 12));
+
+// 注册函数
+env.createTemporarySystemFunction("SubstringFunction", SubstringFunction.class);
+
+// 在 Table API 里调用注册好的函数
+env.from("MyTable").select(call("SubstringFunction", $("myField"), 5, 12));
+
+// 在 SQL 里调用注册好的函数
+env.sqlQuery("SELECT SubstringFunction(myField, 5, 12) FROM MyTable");
+
+
+```
+
+
+
+**聚合函数 AggregateFunction**
+
+```java
+// 聚合某一列的加权平均
+
+//Accumulator for WeightedAvg.
+public static class WeightedAvgAccum {
+    public long sum = 0;
+    public int count = 0;
+}
+
+public static class WeightedAvg extends AggregateFunction<Long, WeightedAvgAccum> {
+
+    //必选：创建 Accumulator，用于存储聚合的中间结果
+    public WeightedAvgAccum createAccumulator() {
+        return new WeightedAvgAccum();
+    }
+
+    //必选：计算和返回最终结果
+    public Long getValue(WeightedAvgAccum acc) {
+        if (acc.count == 0) {
+            return null;
+        } else {
+            return acc.sum / acc.count;
+        }
+    }
+
+    //必选：对于每一行数据，会调用 accumulate() 方法来更新 accumulator
+    public void accumulate(WeightedAvgAccum acc, long iValue, int iWeight) {
+        acc.sum += iValue * iWeight;
+        acc.count += iWeight;
+    }
+
+    //可选：在 bounded OVER 窗口中是必须实现的
+    public void retract(WeightedAvgAccum acc, long iValue, int iWeight) {
+        acc.sum -= iValue * iWeight;
+        acc.count -= iWeight;
+    }
+
+    //可选：在许多批式聚合和会话以及滚动窗口聚合中是必须实现的
+    public void merge(WeightedAvgAccum acc, Iterable<WeightedAvgAccum> it) {
+        Iterator<WeightedAvgAccum> iter = it.iterator();
+        while (iter.hasNext()) {
+            WeightedAvgAccum a = iter.next();
+            acc.count += a.count;
+            acc.sum += a.sum;
+        }
+    }
+
+    public void resetAccumulator(WeightedAvgAccum acc) {
+        acc.count = 0;
+        acc.sum = 0L;
+    }
+}
+
+// 注册函数
+StreamTableEnvironment tEnv = ...
+tEnv.registerFunction("wAvg", new WeightedAvg());
+
+// 使用函数
+tEnv.sqlQuery("SELECT user, wAvg(points, level) AS avgPoints FROM userScores GROUP BY user");
+
+```
+
+
+
+**Table Function** 
+
+> A user-defined table function (*UDTF*) takes zero, one, or multiple scalar values as input arguments. However, it can return an arbitrary number of rows (or structured types) as output instead of a single value.
+
+
+
+
+
+**表值函数：TableFunction**
+
+-- 表值函数的求值方法本身不包含返回类型，而是通过 `collect(T)` 方法来发送要输出的行。
+
+```java
+@FunctionHint(output = @DataTypeHint("ROW<word STRING, length INT>"))
+public static class SplitFunction extends TableFunction<Row> {
+
+  public void eval(String str) {
+    for (String s : str.split(" ")) {
+      // eval()无返回值，use collect(...) to emit a row
+      collect(Row.of(s, s.length()));
     }
   }
-  
-  
-  
-  TableEnvironment env = TableEnvironment.create(...);
-  
-  // 在 Table API 里不经注册直接“内联”调用函数
-  env.from("MyTable").select(call(SubstringFunction.class, $("myField"), 5, 12));
-  
-  // 注册函数
-  env.createTemporarySystemFunction("SubstringFunction", SubstringFunction.class);
-  
-  // 在 Table API 里调用注册好的函数
-  env.from("MyTable").select(call("SubstringFunction", $("myField"), 5, 12));
-  
-  // 在 SQL 里调用注册好的函数
-  env.sqlQuery("SELECT SubstringFunction(myField, 5, 12) FROM MyTable");
-  
-  
-  ```
+}
 
-  
+TableEnvironment env = TableEnvironment.create(...);
 
-- **表值函数：`TableFunction`**
-  -- 表值函数的求值方法本身不包含返回类型，而是通过 `collect(T)` 方法来发送要输出的行。
+// 在 Table API 里不经注册直接“内联”调用函数
+env
+  .from("MyTable")
+  .joinLateral(call(SplitFunction.class, $("myField")))
+  .select($("myField"), $("word"), $("length"));
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call(SplitFunction.class, $("myField")))
+  .select($("myField"), $("word"), $("length"));
 
-  ```java
-  @FunctionHint(output = @DataTypeHint("ROW<word STRING, length INT>"))
-  public static class SplitFunction extends TableFunction<Row> {
-  
-    public void eval(String str) {
-      for (String s : str.split(" ")) {
-        // use collect(...) to emit a row
-        collect(Row.of(s, s.length()));
-      }
+// 在 Table API 里重命名函数字段
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call(SplitFunction.class, $("myField")).as("newWord", "newLength"))
+  .select($("myField"), $("newWord"), $("newLength"));
+
+// 注册函数
+env.createTemporarySystemFunction("SplitFunction", SplitFunction.class);
+
+// 在 Table API 里调用注册好的函数
+env
+  .from("MyTable")
+  .joinLateral(call("SplitFunction", $("myField")))
+  .select($("myField"), $("word"), $("length"));
+env
+  .from("MyTable")
+  .leftOuterJoinLateral(call("SplitFunction", $("myField")))
+  .select($("myField"), $("word"), $("length"));
+
+// 在 SQL 里调用注册好的函数
+env.sqlQuery(
+  "SELECT myField, word, length " +
+  "FROM MyTable, LATERAL TABLE(SplitFunction(myField))");
+env.sqlQuery(
+  "SELECT myField, word, length " +
+  "FROM MyTable " +
+  "LEFT JOIN LATERAL TABLE(SplitFunction(myField)) ON TRUE");
+
+```
+
+
+
+**表值聚合函数 TableAggregateFunction** 
+
+-- 把一个表聚合成另一张表，结果中可以有多行多列
+
+```java
+// 聚合 TOP-2
+
+public class Top2Accum {
+    public Integer first;
+    public Integer second;
+}
+
+public static class Top2 extends TableAggregateFunction<Tuple2<Integer, Integer>, Top2Accum> {
+
+    @Override
+    public Top2Accum createAccumulator() {
+        Top2Accum acc = new Top2Accum();
+        acc.first = Integer.MIN_VALUE;
+        acc.second = Integer.MIN_VALUE;
+        return acc;
     }
-  }
-  
-  TableEnvironment env = TableEnvironment.create(...);
-  
-  // 在 Table API 里不经注册直接“内联”调用函数
-  env
-    .from("MyTable")
-    .joinLateral(call(SplitFunction.class, $("myField")))
-    .select($("myField"), $("word"), $("length"));
-  env
-    .from("MyTable")
-    .leftOuterJoinLateral(call(SplitFunction.class, $("myField")))
-    .select($("myField"), $("word"), $("length"));
-  
-  // 在 Table API 里重命名函数字段
-  env
-    .from("MyTable")
-    .leftOuterJoinLateral(call(SplitFunction.class, $("myField")).as("newWord", "newLength"))
-    .select($("myField"), $("newWord"), $("newLength"));
-  
-  // 注册函数
-  env.createTemporarySystemFunction("SplitFunction", SplitFunction.class);
-  
-  // 在 Table API 里调用注册好的函数
-  env
-    .from("MyTable")
-    .joinLateral(call("SplitFunction", $("myField")))
-    .select($("myField"), $("word"), $("length"));
-  env
-    .from("MyTable")
-    .leftOuterJoinLateral(call("SplitFunction", $("myField")))
-    .select($("myField"), $("word"), $("length"));
-  
-  // 在 SQL 里调用注册好的函数
-  env.sqlQuery(
-    "SELECT myField, word, length " +
-    "FROM MyTable, LATERAL TABLE(SplitFunction(myField))");
-  env.sqlQuery(
-    "SELECT myField, word, length " +
-    "FROM MyTable " +
-    "LEFT JOIN LATERAL TABLE(SplitFunction(myField)) ON TRUE");
-  
-  ```
 
-  
 
-- **聚合函数 `AggregateFunction`**
+    public void accumulate(Top2Accum acc, Integer v) {
+        if (v > acc.first) {
+            acc.second = acc.first;
+            acc.first = v;
+        } else if (v > acc.second) {
+            acc.second = v;
+        }
+    }
 
-  ```java
-  // 聚合某一列的加权平均
-  
-  //Accumulator for WeightedAvg.
-  public static class WeightedAvgAccum {
-      public long sum = 0;
-      public int count = 0;
-  }
-  
-  public static class WeightedAvg extends AggregateFunction<Long, WeightedAvgAccum> {
-  
-      //必选：创建 Accumulator，用于存储聚合的中间结果
-      public WeightedAvgAccum createAccumulator() {
-          return new WeightedAvgAccum();
-      }
-  
-      //必选：计算和返回最终结果
-      public Long getValue(WeightedAvgAccum acc) {
-          if (acc.count == 0) {
-              return null;
-          } else {
-              return acc.sum / acc.count;
-          }
-      }
-  
-      //必选：对于每一行数据，会调用 accumulate() 方法来更新 accumulator
-      public void accumulate(WeightedAvgAccum acc, long iValue, int iWeight) {
-          acc.sum += iValue * iWeight;
-          acc.count += iWeight;
-      }
-  
-      //可选：在 bounded OVER 窗口中是必须实现的
-      public void retract(WeightedAvgAccum acc, long iValue, int iWeight) {
-          acc.sum -= iValue * iWeight;
-          acc.count -= iWeight;
-      }
-  
-      //可选：在许多批式聚合和会话以及滚动窗口聚合中是必须实现的
-      public void merge(WeightedAvgAccum acc, Iterable<WeightedAvgAccum> it) {
-          Iterator<WeightedAvgAccum> iter = it.iterator();
-          while (iter.hasNext()) {
-              WeightedAvgAccum a = iter.next();
-              acc.count += a.count;
-              acc.sum += a.sum;
-          }
-      }
-  
-      public void resetAccumulator(WeightedAvgAccum acc) {
-          acc.count = 0;
-          acc.sum = 0L;
-      }
-  }
-  
-  // 注册函数
-  StreamTableEnvironment tEnv = ...
-  tEnv.registerFunction("wAvg", new WeightedAvg());
-  
-  // 使用函数
-  tEnv.sqlQuery("SELECT user, wAvg(points, level) AS avgPoints FROM userScores GROUP BY user");
-  
-  ```
+    public void merge(Top2Accum acc, java.lang.Iterable<Top2Accum> iterable) {
+        for (Top2Accum otherAcc : iterable) {
+            accumulate(acc, otherAcc.first);
+            accumulate(acc, otherAcc.second);
+        }
+    }
 
-  
+    public void emitValue(Top2Accum acc, Collector<Tuple2<Integer, Integer>> out) {
+        // emit the value and rank
+        if (acc.first != Integer.MIN_VALUE) {
+            out.collect(Tuple2.of(acc.first, 1));
+        }
+        if (acc.second != Integer.MIN_VALUE) {
+            out.collect(Tuple2.of(acc.second, 2));
+        }
+    }
+}
 
-- **表值聚合函数 `TableAggregateFunction`** 
-  -- 把一个表聚合成另一张表，结果中可以有多行多列
+// 注册函数
+StreamTableEnvironment tEnv = ...
+tEnv.registerFunction("top2", new Top2());
 
-  ```java
-  // 聚合 TOP-2
-  
-  public class Top2Accum {
-      public Integer first;
-      public Integer second;
-  }
-  
-  public static class Top2 extends TableAggregateFunction<Tuple2<Integer, Integer>, Top2Accum> {
-  
-      @Override
-      public Top2Accum createAccumulator() {
-          Top2Accum acc = new Top2Accum();
-          acc.first = Integer.MIN_VALUE;
-          acc.second = Integer.MIN_VALUE;
-          return acc;
-      }
-  
-  
-      public void accumulate(Top2Accum acc, Integer v) {
-          if (v > acc.first) {
-              acc.second = acc.first;
-              acc.first = v;
-          } else if (v > acc.second) {
-              acc.second = v;
-          }
-      }
-  
-      public void merge(Top2Accum acc, java.lang.Iterable<Top2Accum> iterable) {
-          for (Top2Accum otherAcc : iterable) {
-              accumulate(acc, otherAcc.first);
-              accumulate(acc, otherAcc.second);
-          }
-      }
-  
-      public void emitValue(Top2Accum acc, Collector<Tuple2<Integer, Integer>> out) {
-          // emit the value and rank
-          if (acc.first != Integer.MIN_VALUE) {
-              out.collect(Tuple2.of(acc.first, 1));
-          }
-          if (acc.second != Integer.MIN_VALUE) {
-              out.collect(Tuple2.of(acc.second, 2));
-          }
-      }
-  }
-  
-  // 注册函数
-  StreamTableEnvironment tEnv = ...
-  tEnv.registerFunction("top2", new Top2());
-  
-  // 初始化表
-  Table tab = ...;
-  
-  // 使用函数
-  tab.groupBy("key")
-      .flatAggregate("top2(a) as (v, rank)")
-      .select("key, v, rank");
-  
-  
-  ```
+// 初始化表
+Table tab = ...;
 
-  
+// 使用函数
+tab.groupBy("key")
+    .flatAggregate("top2(a) as (v, rank)")
+    .select("key, v, rank");
+
+
+```
+
+
 
 
 
@@ -1710,7 +1796,7 @@ Join 动态表
 
 
 
-
+### Regular JOIN
 
 **Inner JOIN**
 
@@ -1723,7 +1809,7 @@ Join 动态表
 
 
 
-**Interval JOIN**
+### Interval JOIN
 
 - 至少需要一个限制时间的 join 条件；
 
@@ -1765,8 +1851,61 @@ Join 动态表
 
 
 
-- **Window JOIN**
-  - DataStream 支持，但 Flink sql 不支持
+### Temporal JOIN
+
+A Temporal table is a table that evolves over time (dynamic table)
+
+- Event Time temporal joins allow joining against a [versioned table](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/versioned_tables/). This means a table can be **enriched** with changing metadata and retrieve its value at a certain point in time.
+- Temporal joins take an arbitrary table (left input/**probe side**) and correlate each row to the corresponding row’s relevant version in the versioned table (right input/**build side**). 
+- Flink uses the SQL syntax of `FOR SYSTEM_TIME AS OF` to perform this operation from the SQL:2011 standard.
+
+```sql
+SELECT 
+     order_id,
+     price,
+     currency,
+     conversion_rate,
+     order_time
+-- orders 表：append only dynamic table     
+FROM orders 
+-- currency_rates 表：versioned table, CDC, compacted topic
+LEFT JOIN currency_rates FOR SYSTEM_TIME AS OF orders.order_time
+ON orders.currency = currency_rates.currency;
+```
+
+
+
+对比
+
+- VS. [regular joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#regular-joins), temporal table results will not be affected despite the changes on the build side. 
+- VS. [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins), temporal table joins do not define a time window within which the records will be joined. Records from the **probe side** are always joined with the **build side**’s version at the time specified by the time attribute. Thus, rows on the build side might be arbitrarily old. As time passes, no longer needed versions of the record (for the given primary key) will be removed from the state.
+
+
+
+### Lookup JOIN
+
+- A lookup join is typically used to enrich a table with data that is queried from an external system. 
+
+
+
+```sql
+-- enrich each order with customer information
+SELECT o.order_id, o.total, c.country, c.zip
+  -- orders 表：append only dynamic table  
+FROM Orders AS o
+  -- Customers 表：静态
+  JOIN Customers FOR SYSTEM_TIME AS OF o.proc_time AS c
+    ON o.customer_id = c.id;
+```
+
+
+
+
+
+### Window JOIN
+
+- DataStream 支持，但 Flink sql 不支持
+- 
 
 
 
