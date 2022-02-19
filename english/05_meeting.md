@@ -137,3 +137,17 @@
 
 
 
+
+
+## || Start meeting
+
+![image-20220217160217486](../img/english/english-meeting-start.png)
+
+Idiom
+
+- Let's get the ball rolling.  -- start doing sth.
+- After getting off to a flying start, -- start off well, good, fast. 
+- This project really started off with a bang. -- good
+- Our team members got off on the wrong foot; -- bad. first or initial part didn't go well
+- Start from scratch. -- 
+
