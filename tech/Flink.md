@@ -1830,6 +1830,10 @@ Join 动态表
 
 ![image-20220119222504551](../img/flink/flink-sql-interval-join2.png)
 
+
+
+![image-20220213200623048](../img/flink/flink-interval-join.png)
+
 > https://stackoverflow.com/questions/66537833/compare-2-data-streams-in-flink-to-retrieve-missing-data
 >
 > Q: 使用 Interval Join 找出两个topic中不匹配的event：
@@ -1852,6 +1856,8 @@ Join 动态表
 
 
 ### Temporal JOIN
+
+
 
 A Temporal table is a table that evolves over time (dynamic table)
 
