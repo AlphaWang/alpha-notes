@@ -1776,8 +1776,9 @@ https://time.geekbang.org/column/article/110482
 - **SocketServer** - 接收请求
 
 - **Acceptor 线程** - 请求分发
-  - 轮询，将入站请求公平地分发到所有网络线程
-
+  
+- 轮询，将入站请求公平地分发到所有网络线程
+  
 - **Processor Thread 网络线程池**
 
   - `num.network.threads = 3`
@@ -1797,8 +1798,9 @@ https://time.geekbang.org/column/article/110482
   - 从 Request Queue 共享请求队列中取出请求，进行处理；包括写入磁盘、读取页缓存等
 
 - **Response Queue** 请求响应队列
-  - 每个网络线程专属，不共享；因为没必要共享了！！！
-
+  
+- 每个网络线程专属，不共享；因为没必要共享了！！！
+  
 - **Purgatory** 炼狱
   - 用来缓存延时请求
 
@@ -2109,9 +2111,18 @@ A：Broker返回应答时 网络抖动，Producer此时选择重试
 
 
 
+实现 Exactly-Once 的两种思路
+
+https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html 
+
+- Distributed snapshot/state checkpointing
+- At-least-once event delivery plus message deduplication
+
+
+
 #### 生产者幂等性 
 
-Idempotence 保证生产的消息即便重试也不会有重复。
+**Duduplication**：幂等性保证生产的消息即便重试也不会有重复。
 
 **配置：**
 
