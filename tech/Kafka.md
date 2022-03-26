@@ -4,11 +4,8 @@
 
 **作用**
 
-
-
-- **异步处理**
-
-  - 提升总体性能：
+- **异步处理** Asynchronous Processing
+- 提升总体性能：
 
 
   - 更快返回结果；
@@ -17,8 +14,8 @@
   - 减少等待，各步骤实现并发
 
 
-- **削峰填谷**
-  - 消息堆积，消费端按自己的能力处理
+- **削峰填谷** Peak Shaving 
+  - 消息堆积，消费端按自己的能力处理 (buffer the data)
   - 代价
     - 增加调用链，总体时延变长
     - 上下游都要改成异步消息，增加复杂度
@@ -26,13 +23,13 @@
 
 
 
-- **服务解耦**
+- **服务解耦 ** Decoupling
 
 
 
 **消息模型**
 
-- 队列
+- 点对点
 
 - 发布订阅
 
@@ -91,6 +88,20 @@
   - 可设置为log-compacted，为每个key只保留一个变更数据
 
 - Stream processing - 实时 Map Reduce
+
+
+
+**对比**
+
+|              | Components                                                   | Pros                                                         | Cons                                                         |
+| ------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| **Kafka**    | **- Peer-to-Peer**.<br />**- ZK**: coordinate broker & consumers.<br />**- HA**: replication | - **Fast**: zero copy, disk sequential read/write, batching produce, data compression. | - Leader serves read/write                                   |
+| **RabbitMQ** | - Exchange (forwarding agent),  Queue.<br />**- Disk node vs. Memory node**: disk node - configuration information and meta-information are stored<br/>**- HA**: queue mirroring. | - Operations firstly applied on master then propagated to mirrors.<br />- Supports **priority queuing, delay queuing**. | - **Poor scalability**: complete replication design.<br />- **Not fast**: sync mechanism.<br />- **No ordering.** |
+| **RocketMQ** | - **Master-slave** mode. Slave read only<br />- **NameServers**: topic routing registration center.<br />-  **queue** in each topic, like partition. | - Supports **delay queuing**, batch processing, msg filtering<br />- **Low latency**: gc, lock, page cache |                                                              |
+| **ActiveMQ** | - **Master-slave** mode. <br /><br />- ZK: master election   | - Supports both point-to-point (Queue) & pub sub (Topic) mode. <br /> - Supports **priority queuing**. | - No sharding.                                               |
+| **Pulsar**   | - **Broker**: compute; <br />- BookKeeper / **Bookie**: storage.<br /> - **Segment**: 物理存储单元，存储在不同 Bookie；每个分区有多个Segment | - **Scalability**: seprate compution & storage. Broker 宕机可以快速被替换。<br /> - 支持所有三种消息保证，支持 **Priority queuing、delay queuing**. | -                                                            |
+
+
 
 
 
