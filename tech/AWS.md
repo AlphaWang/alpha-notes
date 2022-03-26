@@ -2103,9 +2103,27 @@ AssumeRole: https://docs.aws.amazon.com/cli/latest/reference/sts/assume-role.htm
 
 
 
-## || Cognito
+## || 联合身份验证 & Cognito
 
-两个主要组件：
+**联合身份验证**
+
+- 思想：通过 aws 信任的第三方用户系统，来执行所有的用户管理行为。无需为这些用户创建 IAM 用户。
+- 手段：aws 外部用户通过代入角色的临时安全凭证，访问aws资源
+
+
+
+**形式**
+
+- SAML 2.0
+- 用户自定义身份代理
+- WEB 身份验证（使用 Cognito）
+- WEB 身份验证（不使用 Cognito）
+- SSO
+- AWS 托管的 microsoft AD
+
+
+
+**Cognito 两个主要组件：**
 
 - 用户池 User Pool
   - 认证：提供注册、登录。

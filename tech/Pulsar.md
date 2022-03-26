@@ -59,11 +59,297 @@ https://pulsar.apache.org/docs/zh-CN/concepts-architecture-overview/
 
 # | 客户端
 
+## || Producer
+
+https://pulsar.apache.org/docs/en/concepts-messaging/
+
+配置
+
+- **Synd Mode**
+  - **sync send**: waits for an acknowledgement from the broker after sending every message.
+  - **async send**: puts a message in a blocking queue and returns immediately.
+
+- **Access Mode**
+
+  - **Shared**: Multiple producers can publish on a topic.
+
+  - **Exclusive**: Only one producer can publish on a topic.
+
+  - **WaitForExclusive**: If there is already a producer connected, the producer creation is pending (rather than timing out) until the producer gets the `Exclusive` access. 
+
+    > 类似选主。if you want to implement the leader election scheme for your application, you can use this access mode.
+
+
+
+功能
+
+- **Batching**
+
+  - 最大消息个数
+
+  - 最大发送延迟
+
+  - batch是个整体
+
+    - batches are tracked and *stored* as single units rather than as individual messages.
+    - Consumer unbundles a batch into individual messages. In general, a batch is acknowledged when all of its messages are acknowledged by a consumer. 
+    - 一个消息ack失败，会导致整个batch重发。2.6.0 之后引入 batch index acknowledgement 解决重复发送问题：消费者发送 batch index ack request. 
+
+    
+
+- **Chunking**
+
+  - 作用：生产者将大payload拆分、消费者组装
+
+  - 1. The producer splits the original message into chunked messages and publishes them with chunked metadata to the broker separately and in order.
+    2. The broker stores the chunked messages in one managed-ledger in the same way as that of ordinary messages, and it uses the `chunkedMessageRate` parameter to record chunked message rate on the topic.
+
+    3. The consumer buffers the chunked messages and aggregates them into the receiver queue when it receives all the chunks of a message.
+
+    4. The client consumes the aggregated message from the receiver queue.
+
+  - 限制
+
+    - Chunking is only available for persisted topics.  
+    - Chunking is only available for the exclusive and failover subscription types. 
+    - Chunking cannot be enabled simultaneously with batching.
+
+
+
+- **Deduplication**
+
+  - 生产者多次发送同样的消息，只会被保存一次到bookie。
+
+  - 配置：https://pulsar.apache.org/docs/en/cookbooks-deduplication/ 
+
+  - 可用于 effectively-once  语义
+
+    > https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html 
+
+  
+
+- **Deleyed Message Delivery**
+
+  - 作用：在一段时间之后消费消息，而不是立即消费
+
+    ```java
+    // message to be delivered at the configured delay interval
+    producer.newMessage()
+      .deliverAfter(3L, TimeUnit.Minute)
+      .value("Hello Pulsar!")
+      .send();
+    ```
+
+    
+
+  - 原理：
+
+    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在内存中维护索引 (time -> messageId)
+    - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker`
+
+  - 注意：只能作用于 shared mode
+
+
+
+## || Consumer
+
+
+
+配置
+
+- **Receive Mode**
+  - **Sync Receive**: blocked until a message is available.
+  - **Async Receive**: returns immediately with a future value.
+
+
+
+功能
+
+- **Acknowledgement**
+
+  - Being acknowledged **individually**. With individual acknowledgement, the consumer acknowledges each message and sends an acknowledgement request to the broker.
+    `consumer.acknowledge(msg);`
+
+  - Being acknowledged **cumulatively**. With cumulative acknowledgement, the consumer only acknowledges the last message it received. All messages in the stream up to (and including) the provided message are not redelivered to that consumer.
+    `consumer.acknowledgeCumulative(msg);`
+
+  - **Negative Ack**: 表示处理失败、稍后重发。
+    `consumer.negativeAcknowledge(msg);`
+
+    > Q: 何时重新deliver、能否指定? 
+
+  - **Ack timeout**: 可配置对unack消息自动重发。the client tracks the unacknowledged messages within the entire `acktimeout` time range, and sends a `redeliver unacknowledged messages` request to the broker automatically when the acknowledgement timeout is specified.
+
+    > Q: 由消费者请求重发，而不是broker主动推送？
+
+    
+
+- **Dead Letter Topic**
+
+  - 将消费失败的消息存到 dead letter `<topicname>-<subscriptionname>-DLQ`，可以自定义如何处理死信消息。
+
+  - 配置处理策略：
+
+    ```java
+    Consumer<byte[]> consumer = pulsarClient.newConsumer(Schema.BYTES)
+                  .topic(topic)
+                  .subscriptionName("my-subscription")
+                  .subscriptionType(SubscriptionType.Shared)
+                  .deadLetterPolicy(DeadLetterPolicy.builder()
+                        .maxRedeliverCount(maxRedeliveryCount)
+                        .deadLetterTopic("your-topic-name")
+                        .build())
+                  .subscribe();      
+    ```
+
+  - 在 negative ack 和 ack timeout 时放入？
+
+
+
+- **Retry Letter Topic** 
+
+  - When **automatic retry** is enabled on the consumer, a message is stored in the retry letter topic if the messages are not consumed, and therefore the consumer automatically consumes the failed messages from the retry letter topic after a specified delay time.
+    `consumer.reconsumeLater(msg,3,TimeUnit.SECONDS);`
+
+  - 配置消费 retry letter:
+
+    ```java
+    Consumer<byte[]> consumer = pulsarClient.newConsumer(Schema.BYTES)
+                    .topic(topic)
+                    .subscriptionName("my-subscription")
+                    .subscriptionType(SubscriptionType.Shared)
+                    .enableRetry(true)
+                    .receiverQueueSize(100)
+                    .deadLetterPolicy(DeadLetterPolicy.builder()
+                            .maxRedeliverCount(maxRedeliveryCount)
+                            .retryLetterTopic("persistent://my-property/my-ns/my-subscription-custom-Retry")
+                            .build())
+                    .subscriptionInitialPosition(SubscriptionInitialPosition.Earliest)
+                    .subscribe();
+    ```
+
+  
+
+  
+
+- 
+
+  
+
+## || Topic
+
+命名：`{persistent|non-persistent}://tenant/namespace/topic`
+
+
+
+类型
+
+- Persistent
+- Non-persistent
+
+
+
+**Namespace**
+
+-  The administrative unit of the topic, which acts as a grouping mechanism for related topics. 
+- Most topic configuration is performed at the [namespace](https://pulsar.apache.org/docs/en/concepts-messaging/#namespaces) level. 
+- Each tenant has one or multiple namespaces.
+
+
+
+**Partitioned Topic**
+
+- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理；
+- 实现：N 个内部主题。
+- routing mode: 决定生产到哪个分区；
+  - RoundRobinPartition
+  - SinglePartition：随机
+  - CustomPartition
+- subscription mode: 决定从哪个分区读取；
+
+
+
+**Non-persistent Topic**
+
+- 普通 Topic 存储消息到 bookie，而non-persistent topic则只存到内存
+- 更快
+
+
+
+
+
+
+
+
+
+## || Subscription
+
+**订阅模式**
+
+![image-20220322112234641](../img/pulsar/subscription-modes.png)
+
+- **Exclusive**
+
+  - 只有一个消费者绑定到当前订阅。
+
+  - In *exclusive* mode, only a single consumer is allowed to attach to the subscription. If multiple consumers subscribe to a topic using the same subscription, an error occurs.
+
+  - > ![image-20220322112520553](../img/pulsar/subscription-modes-exclusive.png)
+
+- **Failover**
+
+  - 多个消费者可以绑定到当前订阅，但只有一个收到消息。
+
+  - In *failover* mode, multiple consumers can attach to the same subscription. A master consumer is picked for non-partitioned topic or each partition of partitioned topic and receives messages. 
+
+  - When the master consumer disconnects, all (non-acknowledged and subsequent) messages are delivered to the next consumer in line.
+
+    > ![image-20220322112744805](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-failover.png)
+
+- **Shared** 
+
+  - 多个消费者可以绑定到当前订阅，按 round-robin 模式接收消息。
+
+  - In *shared* or *round robin* mode, multiple consumers can attach to the same subscription. Messages are delivered in a round robin distribution across consumers, and any given message is delivered to only one consumer. 
+
+  - When a consumer disconnects, all the messages that were sent to it and not acknowledged will be rescheduled for sending to the remaining consumers.
+
+  - 限制：
+
+    - 不保序、
+    - 无法使用 cumulative ack. 
+
+  - > ![image-20220322113010001](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-shared.png)
+
+- **Key_Shared** 
+
+  - 多个消费者可以绑定到当前订阅，按相同key模式接收消息。
+
+  - In *Key_Shared* mode, multiple consumers can attach to the same subscription. Messages are delivered in a distribution across consumers and message with same key or same ordering key are delivered to only one consumer. 
+
+  - No matter how many times the message is re-delivered, it is delivered to the same consumer. When a consumer connected or disconnected will cause served consumer change for some key of message.
+
+  - 限制
+
+    - 必须指定 key，或orderingKey
+    - 无法使用 cumulative ack
+    - 必须禁用 batching，或者使用 *key-based batching*
+
+  - > ![image-20220322113231815](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-key-shared.png)
+
+
+
+
+
+
+
 
 
 
 
 # | Broker
+
+- 
 
 
 

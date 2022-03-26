@@ -1507,7 +1507,7 @@ SELECT *
 
 
 
-
+### ScalarFunction
 
 **标量函数：ScalarFunction**
 
@@ -1537,6 +1537,8 @@ env.sqlQuery("SELECT SubstringFunction(myField, 5, 12) FROM MyTable");
 ```
 
 
+
+### AggregateFunction
 
 **聚合函数 AggregateFunction**
 
@@ -1604,7 +1606,7 @@ tEnv.sqlQuery("SELECT user, wAvg(points, level) AS avgPoints FROM userScores GRO
 
 
 
-**Table Function** 
+### Table Function
 
 > A user-defined table function (*UDTF*) takes zero, one, or multiple scalar values as input arguments. However, it can return an arbitrary number of rows (or structured types) as output instead of a single value.
 
@@ -1736,6 +1738,148 @@ tab.groupBy("key")
 
 
 ```
+
+
+
+### Type Inference
+
+https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/functions/udfs/#type-inference
+
+**@DataTypeHint**
+
+support the automatic extraction *inline* for parameters and return types of a function
+
+```java
+// function with overloaded evaluation methods
+public static class OverloadedFunction extends ScalarFunction {
+
+  // no hint required
+  public Long eval(long a, long b) {
+    return a + b;
+  }
+
+  // define the precision and scale of a decimal
+  public @DataTypeHint("DECIMAL(12, 3)") BigDecimal eval(double a, double b) {
+    return BigDecimal.valueOf(a + b);
+  }
+
+  // define a nested data type
+  @DataTypeHint("ROW<s STRING, t TIMESTAMP_LTZ(3)>")
+  public Row eval(int i) {
+    return Row.of(String.valueOf(i), Instant.ofEpochSecond(i));
+  }
+
+  // allow wildcard input and customly serialized output
+  @DataTypeHint(value = "RAW", bridgedTo = ByteBuffer.class)
+  public ByteBuffer eval(@DataTypeHint(inputGroup = InputGroup.ANY) Object o) {
+    return MyUtils.serializeToByteBuffer(o);
+  }
+}
+
+```
+
+
+
+**@FunctionHint** 
+
+provide a mapping from argument data types to a result data type.
+
+```java
+// function with overloaded evaluation methods
+// but globally defined output type
+@FunctionHint(output = @DataTypeHint("ROW<s STRING, i INT>"))
+public static class OverloadedFunction extends TableFunction<Row> {
+
+  public void eval(int a, int b) {
+    collect(Row.of("Sum", a + b));
+  }
+
+  // overloading of arguments is still possible
+  public void eval() {
+    collect(Row.of("Empty args", -1));
+  }
+}
+```
+
+
+
+```java
+// decouples the type inference from evaluation methods,
+// the type inference is entirely determined by the function hints
+@FunctionHint(
+  input = {@DataTypeHint("INT"), @DataTypeHint("INT")},
+  output = @DataTypeHint("INT")
+)
+@FunctionHint(
+  input = {@DataTypeHint("BIGINT"), @DataTypeHint("BIGINT")},
+  output = @DataTypeHint("BIGINT")
+)
+@FunctionHint(
+  input = {},
+  output = @DataTypeHint("BOOLEAN")
+)
+public static class OverloadedFunction extends TableFunction<Object> {
+
+  // an implementer just needs to make sure that a method exists
+  // that can be called by the JVM
+  public void eval(Object... o) {
+    if (o.length == 0) {
+      collect(false);
+    }
+    collect(o[0]);
+  }
+}
+```
+
+
+
+**getTypeInference()**
+
+```java
+public static class LiteralFunction extends ScalarFunction {
+  public Object eval(String s, String type) {
+    switch (type) {
+      case "INT":
+        return Integer.valueOf(s);
+      case "DOUBLE":
+        return Double.valueOf(s);
+      case "STRING":
+      default:
+        return s;
+    }
+  }
+
+  // the automatic, reflection-based type inference is disabled and
+  // replaced by the following logic
+  @Override
+  public TypeInference getTypeInference(DataTypeFactory typeFactory) {
+    return TypeInference.newBuilder()
+      // specify typed arguments
+      // parameters will be casted implicitly to those types if necessary
+      .typedArguments(DataTypes.STRING(), DataTypes.STRING())
+      // specify a strategy for the result data type of the function
+      .outputTypeStrategy(callContext -> {
+        if (!callContext.isArgumentLiteral(1) || callContext.isArgumentNull(1)) {
+          throw callContext.newValidationError("Literal expected for second argument.");
+        }
+        // return a data type based on a literal
+        final String literal = callContext.getArgumentValue(1, String.class).orElse("STRING");
+        switch (literal) {
+          case "INT":
+            return Optional.of(DataTypes.INT().notNull());
+          case "DOUBLE":
+            return Optional.of(DataTypes.DOUBLE().notNull());
+          case "STRING":
+          default:
+            return Optional.of(DataTypes.STRING());
+        }
+      })
+      .build();
+  }
+}
+```
+
+
 
 
 
