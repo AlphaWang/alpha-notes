@@ -365,27 +365,101 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 > https://bookkeeper.apache.org/docs/latest/getting-started/concepts/ 
 
-- `entry`：一条日志记录。each unit of a log is an *entry*; Each entry has the following fields:
-  - Ledger Id
-  - Entry Id
-  - LC, Last Confirmed：上次记录的 entry id
-  - Data
+- **Entry**：一条日志记录。each unit of a log is an *entry*; 
+  - 包含内容包含 metadata 和 data
+    - Ledger Id
+    - Entry Id
+    - LC, Last Confirmed：上次记录的 entry id
+    - Digest：CRC32
+  - Data byte[]
   - Authentication code
-- `ledger`：一组日志记录。streams of log entries are called *ledgers*
-- `bookie`：存储 ledger的服务器。individual servers storing ledgers of entries are called *bookies*
+- **Ledger**：一组日志记录，类比一个文件。streams of log entries are called *ledgers*
+  - 打开/关闭 Leger 只是操作`元数据`：
+    - State: open/closed
+    - Last Entry Id: -1L
+    - Ensemble 
+    - WriteQuorum
+    - ReadQuorum Size
+- **Bookie**：存储 ledger的服务器。individual servers storing ledgers of entries are called *bookies*
   - 每个 bookie 存储部分 ledger *fragment*, 而非完整ledger
+
+
+
+### 组件
+
+**Metadata Store**
+
+- Zk / etcd
+- 存储 ledger 元数据
+- 服务发现
+
+
+
+**Client**
+
+- 胖客户端：外部共识；
+
+- 例如 EntryID 是由客户端生成 ，前提：一个 Ledger 只有一个 Writer
+
+- 对 Pulsar 来说，此 client 为 Broker.
+
+  
+
+
+
+**Bookie**
+
+- 而 Bookie 逻辑很轻量化
+- 可当做是一个 KV 存储
+  - `(Lid, Eid) --> Entry `
+- 操作：Add / Read
+
+![image-20220326130700495](../img/pulsar/bk-arch-rw-isolation.png)
+
+
+
+
+
+**Bookie 组件**
+
+- **Journal**
+  - 事务日志文件。在修改 ledger 之前，先记录事务日志。
+    - 所有写操作，先顺序写入追加到 Journal，*不管来自哪个 Ledger*。
+    - 写满后，打开一个新的 Journal 
+  - 作用：
+    - 写入速度快（顺序写入一个文件，没有随机访问）、读写存储隔离
+    - 相当于是个循环 Buffer.
+  - ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
+- **Write Cache**
+  - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并按 Ledger 进行**排序**（基于 Skiplist），方便读取。
+  - 缓存满后，会被 Flush 到磁盘：写入 Ledger Directory （类比 KV 存储）
+  - Flush 之后，Journal 即可被删除
+  - ![image-20220326234645526](../img/pulsar/bk-arch-comp-writecache.png)
+- **Ledger Directory**
+  - **Entry log**
+    - An entry log file manages the written entries received from BookKeeper clients. 
+    - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
+    - 其实就是 write cache的内容
+  - **Index file**
+    - 每个 ledger 有一个 index 文件
+    - entryId --> position 映射
+  - ![image-20220326235132492](../img/pulsar/bk-arch-comp-entrylog.png)
 
 
 
 **三种文件类型**
 
-- `Journal`
-  - 事务日志。在修改 ledger 之前，先记录事务日志。
-- `Entry log`
-  - An entry log file manages the written entries received from BookKeeper clients. 
-  - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
-- `Index file`
-  - 每个 ledger 有一个 index 文件
+- Journal
+
+- Entry log
+
+- Index file
+
+  
+
+
+
+
 
 
 
@@ -445,10 +519,6 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 ![image-20220326130610241](../img/pulsar/bk-arch-consistency-raft2.png)
 
 
-
-### 读写隔离
-
-![image-20220326130700495](../img/pulsar/bk-arch-rw-isolation.png)
 
 
 
