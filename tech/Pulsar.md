@@ -355,9 +355,13 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 # | BookKeeper
 
+> https://www.bilibili.com/video/BV1T741147B6?p=5 
 
 
-## || 概念
+
+## || 架构
+
+### **概念**
 
 > https://bookkeeper.apache.org/docs/latest/getting-started/concepts/ 
 
@@ -382,6 +386,73 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
 - `Index file`
   - 每个 ledger 有一个 index 文件
+
+
+
+### WQ/AQ
+
+**节点对等架构**
+
+![image-20220326124934997](../img/pulsar/bk-arch-openLedger.png)
+
+- openLedger(`Ensemble`, `Write Quorum`, `Ack Quorum`)
+
+  - Ensemble：组内节点数目，用于分散写入数据到多个节点；**控制一个 Ledger 的读写带宽**
+  - Write Quorum：数据备份数目；**控制一条记录的副本数量**；
+  - Ack Quorum：等待刷盘节点数目；**控制写入每条记录需要等待的 ACK 数量**；
+
+- 灵活性配置
+
+  - 增加 Emsemble：**增加读写带宽**
+  - WQ = AQ，等待所有Write Quorum的ack：**提供强一致性保障**
+  - 减少 QA：**减少长尾时延**
+
+  
+
+- 示例
+  ![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
+
+
+
+### 读写高可用
+
+- **读高可用：Speculative Reads**
+  - 对等副本都可以提供读
+  - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
+    Q：放大了读取请求数？
+- **写高可用：Ensemble Change**
+  - 最大化数据放置可能性
+
+![image-20220326130000834](../img/pulsar/bk-arch-rw-ha.png)
+
+
+
+### 一致性
+
+- LastAddPushed
+- LastAddConfirmed
+  - 并发写入，但顺序确认
+- Fencing 避免脑裂
+
+![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
+
+
+
+**类似 Raft 一致性协议**
+
+![image-20220326130523922](../img/pulsar/bk-arch-consistency-raft1.png)
+
+![image-20220326130610241](../img/pulsar/bk-arch-consistency-raft2.png)
+
+
+
+### 读写隔离
+
+![image-20220326130700495](../img/pulsar/bk-arch-rw-isolation.png)
+
+
+
+
 
 
 
