@@ -374,7 +374,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - Data byte[]
   - Authentication code
 - **Ledger**：一组日志记录，类比一个文件。streams of log entries are called *ledgers*
-  - 打开/关闭 Leger 只是操作`元数据`：
+  - 打开/关闭 Leger 只是操作`元数据`(元数据存储在zk)：
     - State: open/closed
     - Last Entry Id: -1L
     - Ensemble 
@@ -393,21 +393,11 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 - 存储 ledger 元数据
 - 服务发现
 
-
-
-**Client**
-
-- 胖客户端：外部共识；
-
-- 例如 EntryID 是由客户端生成 ，前提：一个 Ledger 只有一个 Writer
-
-- 对 Pulsar 来说，此 client 为 Broker.
-
-  
+> 可用性：如果zk挂了，已打开的Leger可以继续写，但create/delete ledger 会报错
 
 
 
-**Bookie**
+#### **Bookie**
 
 - 而 Bookie 逻辑很轻量化
 - 可当做是一个 KV 存储
@@ -416,7 +406,9 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 ![image-20220326130700495](../img/pulsar/bk-arch-rw-isolation.png)
 
-
+> Q: 先写Write Cache，再 flush 到 Journal，会不会导致读到脏数据？
+>
+> A: 不会，LAC 之后的都读不到
 
 
 
@@ -424,11 +416,13 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 - **Journal**
   - 事务日志文件。在修改 ledger 之前，先记录事务日志。
-    - 所有写操作，先顺序写入追加到 Journal，*不管来自哪个 Ledger*。
+    - 所有写操作，先**顺序写入**追加到 Journal，*不管来自哪个 Ledger*。
     - 写满后，打开一个新的 Journal 
   - 作用：
     - 写入速度快（顺序写入一个文件，没有随机访问）、读写存储隔离
-    - 相当于是个循环 Buffer.
+    - 相当于是个**循环 Buffer**. 
+  - 配置：
+    - JournalDirectories: 每个目录对应一个Thread，给多个Ledger开多个directory可提高写入SSD的吞吐。
   - ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
 - **Write Cache**
   - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并按 Ledger 进行**排序**（基于 Skiplist），方便读取。
@@ -449,13 +443,50 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 **三种文件类型**
 
-- Journal
+- Journal：建议用SSD
 
 - Entry log
 
 - Index file
 
-  
+
+
+
+#### **Client**
+
+> 对 Pulsar 来说，此 client 为 Broker.
+
+- 胖客户端：外部共识；
+
+  - 例如 EntryID 是由客户端生成 ，前提：一个 Ledger 只有一个 Writer
+
+- 功能
+
+  - 指定 WQ、AQ
+
+  - 保存 LAP：Last Add Push，发出的请求最大值
+
+  - 保存 LAC：Last Add Confirm，收到的应答最大值
+
+    - 客户端需要保证不跳跃，例如收到 3 的ack、但未收到 2 的ack
+
+      > 如果一直收不到2: timeout，执行 ensemble change、重发2 & 3
+
+    - LAC 之前的 entry 一定已被存储成功。
+
+    - LAC 保存未 entry 的元数据，而不必存到zk 
+
+  - Ensemble Change
+
+    - 处理当某个bookie宕机：
+      - 新的entry可能存到新的 bookie
+      - 对于已宕机bookie里存储的数据，如何修复：TBD
+
+
+
+> Q: 读取时如何找到entry存在哪个bookie?
+>
+> - 任何一台 bookie 都可以响应？
 
 
 
@@ -469,7 +500,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 ![image-20220326124934997](../img/pulsar/bk-arch-openLedger.png)
 
-- openLedger(`Ensemble`, `Write Quorum`, `Ack Quorum`)
+- 胖客户端决定：openLedger(`Ensemble`, `Write Quorum`, `Ack Quorum`)
 
   - Ensemble：组内节点数目，用于分散写入数据到多个节点；**控制一个 Ledger 的读写带宽**
   - Write Quorum：数据备份数目；**控制一条记录的副本数量**；
@@ -484,14 +515,17 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   
 
 - 示例
-  ![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
+  
+  - E = 5, WQ = 3
+  - 对于指定 entryId，对5取模，决定存到哪三个 bookie；效果是按 Round Robin选择
+  - ![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
 
 
 
 ### 读写高可用
 
 - **读高可用：Speculative Reads**
-  - 对等副本都可以提供读
+  - 原因：对等副本都可以提供读
   - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
     Q：放大了读取请求数？
 - **写高可用：Ensemble Change**
@@ -501,14 +535,56 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
-### 一致性
+### 外部共识 
+
+Consensus：一个ledger任何时候都不会有两个broker写入。
+
+
+
+**要点：**
 
 - LastAddPushed
 - LastAddConfirmed
-  - 并发写入，但顺序确认
 - Fencing 避免脑裂
 
 ![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
+
+**实现：**
+
+- 一个ledger只会由一个broker负责写入、写满即关闭；
+
+  - 当broker宕机，新的broker会写入新的ledger，而不会操作老ledger；
+  - 即：一个ledger任何时候都不会有两个broker写入。
+
+- **Fencing**
+
+  - 场景：broker1 与zk出现了网络分区，zk把broker2设为新的topic owner，新broker发现ledger处于open状态，则在接管前需要进行 recovery操作。
+
+  - **流程：**
+
+    - 1. Recover Ledger-X
+
+      - 1.1 Fence Ledger-X ==> Retrun LAC
+
+        > 新broker对原来的 ensembler 发起 fencing 操作：将bookie状态设为fenced，则往原ledger的新的写入会失败，发生 LedgerFencedException；-- 防止原来的broker1还在继续写。
+
+      - 1.2 Forward reading from LAC until no entry is found.
+
+        > 尝试找 LAC + 1 的entry，如果其已经写入部分 WQ 但尚未达到 AQ，则进行复制以便达到AQ，修复 LAC + 1。
+        >
+        > 直到达到 LAP。
+
+      - 1.3 Update the ledger metadata.
+
+        > 关闭原 Ledger-X
+
+    - 2. Open a new ledger to append. 
+
+  - **对比 Kafka ISR**
+
+    - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。
+    - 还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
+    - 而 Pulsar 的recovery 特别容易。
 
 
 
@@ -516,7 +592,13 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 ![image-20220326130523922](../img/pulsar/bk-arch-consistency-raft1.png)
 
+日志复制过程：
+
+- Q: Writer 相当于 Leader?
+
 ![image-20220326130610241](../img/pulsar/bk-arch-consistency-raft2.png)
+
+
 
 
 
