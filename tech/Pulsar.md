@@ -600,8 +600,6 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
       - 1.2 Forward reading from LAC until no entry is found.
 
         > 尝试找 LAC + 1 的entry，如果其已经写入部分 WQ 但尚未达到 AQ，则进行复制以便达到AQ，修复 LAC + 1。
-        >
-        > 直到达到 LAP。
 
       - 1.3 Update the ledger metadata.
 
@@ -645,9 +643,9 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 被称为 `Ledger`、并保存在 BookKeeper 服务器 `bookie` 上。
 
-- 每个 ledger 保存在多个 bookie 上，这组 bookie 被称为 ensemble (?)；
+- 每个 ledger 保存在多个 bookie 上，这组 bookie 被称为 ensemble；
 
-- Ledger - bookie 对应关系存储在 zk；
+- Ledger - Bookie 对应关系存储在 zk；
 
 
 
@@ -675,7 +673,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ![image-20220101225318769](../img/pulsar/bookkeeper-ledger-status.png)
 
-- Pulsar 一个主题只有一个 open 状态的 ledger；
+- **Pulsar 一个主题只有一个 open 状态的 ledger；**
 - 所有写操作都写入 open ledger；读操作可读取任意 ledger；
 
 
@@ -763,7 +761,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 **何时触发  recovery?** 
 
 - 每个 ledger 都有一个客户端作为 owner；如果这个客户端不可用，则另一个客户端会接入执行恢复、并关闭该 ledger。
-- Pulsar：topic owner broker 不可用，则另一个broker接管该topic的所有权。
+- Pulsar：topic owner **broker 不可用**，则另一个broker接管该topic的所有权。
 
 
 
@@ -831,7 +829,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-
+## || 读写流程
 
 读写概览：
 
@@ -839,7 +837,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-## || 写入
+### 写入
 
 ![image-20211231232945352](../img/pulsar/bookkeeper-write-overview.png)
 
@@ -861,7 +859,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - **Netty 线程**
   - 处理所有 TCP 连接、分发到 write thread pool
 - **Write ThreadPool**
-  - 写入 DbLedgerStorage 中的 `write cache`；成功之后再写入 Journal `内存队列`。
+  - 先写入 DbLedgerStorage 中的 `write cache`；成功之后再写入 Journal `内存队列`。
   - 默认线程数 = 1
 - **Ledger**
   - 实际上有两个 `write cache`，一个接受写入、一个准备flush，两者互切。
@@ -870,8 +868,8 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
     - 此时如果 swapped out cache 已经刷盘成功，则直接切换，write thread写入新的cache；
     - 否则 write thread 等待一段时间并拒绝写入请求。
 - **Journal**
-  - `Journal 线程`循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
-  - 定期向 `Force write queue` 中添加强制写入请求、触发 fsync；
+  - `Journal 线程` 循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
+  - 定期向 `Force Write Queue` 中添加强制写入请求、触发 fsync；
   - `Froce Write Thread` ：循环从 froce write queue 中拿取强制写入请求（其中包含entry callback）、在 journal 文件上执行 fsync；
   - `Journal Callback Thread` ：fsync 成功后，执行 callback，给客户端返回 reesponse
 
@@ -889,7 +887,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-## || 读取
+### 读取
 
 读请求由 DbLedgerStorage 处理，一般会从缓存读取。
 
@@ -919,9 +917,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 > **Backpressure 指的是在 Buffer 有上限的系统中，Buffer 溢出的现象；它的应对措施只有一个：丢弃新事件。**
 >
-> 在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，这种现象就叫做 Backpressure 出现。
+> - 在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，这种现象就叫做 Backpressure 出现。
 >
-> Backpressure 和 Buffer 是一对相生共存的概念，只有设置了 Buffer，才有 Backpressure 出现；只要设置了 Buffer，一定存在出现 Backpressure 的风险。
+> - Backpressure 和 Buffer 是一对相生共存的概念，只有设置了 Buffer，才有 Backpressure 出现；只要设置了 Buffer，一定存在出现 Backpressure 的风险。
 
 
 
@@ -974,6 +972,10 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - 而如果不配置，则仍然发送响应，这可能到时 OOM （如果通过channel发送的字节过大）
 
 
+
+# | 功能
+
+|| 
 
 
 
