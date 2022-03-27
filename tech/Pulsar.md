@@ -349,7 +349,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 # | Broker
 
-- 
+可以理解为 Bookie 的客户端。
 
 
 
@@ -522,7 +522,11 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
-### 读写高可用
+### 高可用
+
+
+
+**读写高可用**
 
 - **读高可用：Speculative Reads**
   - 原因：对等副本都可以提供读
@@ -532,6 +536,31 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - 最大化数据放置可能性
 
 ![image-20220326130000834](../img/pulsar/bk-arch-rw-ha.png)
+
+
+
+**Bookie 高可用**
+
+> 某个 Bookie 宕机后如何处理。--> Auto Recovery
+>
+> 注意：区别于broker宕机 --> Fencing
+
+
+
+- Auditor
+
+  - 审计集群里是否有 bookie宕机；(ping bookies)
+  - 审计某个Ledger是否有entry丢失；
+
+- 流程
+
+  - 如果 bookie1宕机， auditor 找出该bookie存储的所有 ledger；
+
+  - 新的 bookie 替换原有的 ensembler，复制原ledger entries；
+
+    
+
+
 
 
 
