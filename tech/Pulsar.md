@@ -130,24 +130,59 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 - **Deleyed Message Delivery**
 
-  - 作用：在一段时间之后消费消息，而不是立即消费
+  - 作用：发送时，可以给每个消息配置不同的延迟时间。在一段时间之后消费消息，而不是立即消费。
 
     ```java
     // message to be delivered at the configured delay interval
     producer.newMessage()
       .deliverAfter(3L, TimeUnit.Minute)
       .value("Hello Pulsar!")
-      .send();
+      .sendAsync();
+    
+    // message to be delivered at future timestamp
+    producer.newMessage()
+      .deliverAt(long timestamp)
+      .value("Hello Pulsar!")
+      .sendAsync();
     ```
 
     
 
-  - 原理：
+  - **原理：**
 
-    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在内存中维护索引 (time -> messageId)
-    - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker`
+    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在堆外内存优先级队列中维护索引 (time -> messageId)
+    - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker` 
+
+    ![image-20220327191641313](../img/pulsar/pulsar-delayed-msg.png)
 
   - 注意：只能作用于 shared mode
+
+  - **限制：**
+
+    - 内存占用：delayed index memory limitation.
+
+    - Broker宕机后需要重建索引、新Broker有一段时间会无响应：rebuilding delayed index. 
+
+      > 增加分区可缓解，让每个分区的数据尽可能小。
+
+    - 索引是在subscription维度，可能有重复：the index only available for a subscription.
+      
+
+  - **优化 - PIP26 Hieraychical Timing Wheels**
+
+    > http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf 
+    >
+    > https://blog.acolyer.org/2015/11/23/hashed-and-hierarchical-timing-wheels/
+
+    - 自定义延迟精度，并分片；只有最近的分片存储在内存、其他的持久化
+      ![image-20220327195558877](../img/pulsar/pulsar-delayed-msg-plan.png)
+    - 取到M9时，会查看时间片 time-partition-0 是否有消息到期。
+
+  - **挑战**
+
+    - 如何清理延时消息？
+    - Safe position for subscription to start read?
+    - 内存里需要维护 too much individual acks, introduced much memory overhead. 
 
 
 
@@ -972,10 +1007,6 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - 而如果不配置，则仍然发送响应，这可能到时 OOM （如果通过channel发送的字节过大）
 
 
-
-# | 功能
-
-|| 
 
 
 
