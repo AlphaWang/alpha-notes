@@ -1813,13 +1813,22 @@ https://time.geekbang.org/column/article/110482
 - 每个网络线程专属，不共享；因为没必要共享了！！！
   
 - **Purgatory** 炼狱
-  - 用来缓存延时请求
+  - 作用：用来缓存延时请求。当请求不能立刻处理时，就会暂存在Purgatory中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
 
-  - 例如acks=all时
-
-    > acks=all, 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
+    > case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
     >
-    > 当请求不能立刻处理时，就会暂存在Purgatory中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
+    > Case-2: fetch requests with `min.bytes=1`
+
+  - 原理：Hierarchical Timing Wheels
+
+    > https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/ 
+    >
+    > - Timeout timer：
+    >   - DelayQueue: 插入复杂度 O(logn)
+    >   - Hierarchical Timing Wheel: 插入复杂度 O(m), m = 时间轮个数
+    >     - Tips: 循环数组取多长为宜？2的N次幂 --> 以便将 `取模运算` 优化为 `位运算` ：a % 2^n == a & (2^n - 1)
+    >     - 时间轮 + 最小堆：堆内存储有请求的时间格，避免空转。
+    > - Watcher list:  
 
 
 
