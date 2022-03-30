@@ -1063,9 +1063,45 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
+## || 新功能
+
+### Producer Partial RoundRobin
+
+目的：分区过多时，producer的链接可能非常多。
+
+![image-20220330202155910](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/producer-partial-round-robin.png)
+
+```java
+PartitionedProducerImpl<byte[] producer = (PartitionedProducerImpl<byte[]>) pulsarClient.newProducer()
+  .topic("")
+  .enableLazyStartPartitionedProducers(true) //设置1
+  .messageRouter(new PartialRoundRobinMessageRouterImpl(3)) //设置2
+  .messageRouting(MessageRoutingMode.CustomPartition)
+  .enableBatching(false)
+  .create();
+```
 
 
 
+### Consumer Redeliver Backoff
+
+```java
+// 反向签收
+client.newConsumer()
+  .negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
+                                .minDelayMs(1000)
+                                .maxDelayMs(60 * 1000)
+                                .build())
+  .subscribe();
+
+client.newConsumer()
+  .ackTimeout(10, TimeUnit.SECOND)
+  .ackTimeoutRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
+                                .minDelayMs(1000)
+                                .maxDelayMs(60 * 1000)
+                                .build())
+  .subscribe();
+```
 
 
 
