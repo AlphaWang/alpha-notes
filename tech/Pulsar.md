@@ -384,7 +384,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 # | Broker
 
-可以理解为 Bookie 的客户端。
+Broker 是 Bookie 的客户端。
 
 
 
@@ -672,7 +672,9 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 ## || Ledger
 
-> https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
+> - https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
+>
+> - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 //TODO
 
 
 
@@ -1005,6 +1007,67 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - 配置 `waitTimeoutOnResponseBackpressureMs`
 - 当 channel 缓冲区满导致通道不可写入，写入响应会延迟等待 `waitTimeoutOnResponseBackpressureMs`，超时后不会发送响应、而只发出错误 metric；
 - 而如果不配置，则仍然发送响应，这可能到时 OOM （如果通过channel发送的字节过大）
+
+
+
+# | 功能
+
+## || Geo Replication
+
+
+
+**Subscription Replication**
+
+- 要解决的问题：
+
+  - 复制后 LedgerId / EntryId 可能会变
+
+    > Message ID = Ledger ID | Entry ID | Partition Index | Batch Index
+
+  - 要复制ack状态：目前只复制 mark delete position（连续ack的最大id）
+
+    > ACK：消费进度会被持久化到 ledger。
+    >
+    > ![image-20220330093458342](../img/pulsar/msg-ack-cursers.png)
+
+- 实现
+
+  - **Cursor Snapshot** 定期同步，记录message id 对应关系
+
+    > ClusterA 向B/C发送 `ReplicatedSubscriptionSnapshotRequest`后，会收到响应，包含 ledger_id / entry_id；则ClusterA 会保存本地ledger_id / entry_id，以及其他cluster对应的ledger_id / entry_id
+    >
+    > ![image-20220330094251420](../img/pulsar/subs-replicate-cursor-snapshot.png)
+
+
+
+- Cursor Snapshot 如何存储
+
+  - 和正常的消息穿插存储： `Snapshot Marker`
+  - 与正常的消息一样进行跨地域复制：副作用 - 影响backlog计算 
+
+- 配置
+
+  - Broker 启用：enableReplicatedSubscriptions=true (默认true)
+
+  - 创建subscription时启用：
+
+    ```java
+    Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
+                  .topic(topic)
+                  .subscriptionName("my-subscription")
+                  .replicateSubscriptionState(true)
+                  .subscribe();
+    ```
+
+  - 可配置参数：多久做一次snapshot、snapshot复制请求的timeout时间、最多缓存多少个snapshot、
+
+
+
+
+
+
+
+
 
 
 
