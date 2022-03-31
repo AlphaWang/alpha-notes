@@ -1134,6 +1134,26 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 
 
+
+
+## || Tiered Storage
+
+> - PIP: https://github.com/apache/pulsar/wiki/PIP-17:-Tiered-storage-for-Pulsar-topics 
+> - Doc: https://pulsar.apache.org/docs/en/tiered-storage-overview/
+
+
+
+- 存储老 segment:
+  - Once a segment has been sealed it is immutable. I.e. The set of entries, the content of those entries and the order of the entries can never change. 即可不必存储在SSD上了、可存储到廉价介质。
+
+- 读取老 segment
+  - For Pulsar to read back and serve messages from the object store, we will provide a `ReadHandle` implementation which reads data from the object store. 
+  - With this, Pulsar only needs to know whether it is reading from bookkeeper or the object store when it is constructing the `ReadHandle`.
+
+
+
+
+
 ## || 新功能
 
 ### Producer Partial RoundRobin
