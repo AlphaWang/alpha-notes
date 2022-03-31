@@ -1014,6 +1014,77 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ## || Geo Replication
 
+https://pulsar.apache.org/docs/en/administration-geo
+
+*Geo-replication* is the replication of persistently stored message data across multiple clusters of a Pulsar instance.
+
+![image-20220331000551070](../img/pulsar/geo-replication-clusters.png)
+
+- **配置**
+
+  - 配置 clusters 互通性
+
+    ```sh
+    # Configure the connection from us-west to us-east.
+    # Run the following command on us-west.
+    $ bin/pulsar-admin clusters create \
+      --broker-url pulsar://<DNS-OF-US-EAST>:<PORT> \
+      --url http://<DNS-OF-US-EAST>:<PORT> \
+      us-east
+    ```
+
+  - `--allowed-clusters`：配置 tenant，使其有权限使用上述clusters
+
+    ```sh
+    $ bin/pulsar-admin tenants create my-tenant \
+      --admin-roles my-admin-role \
+      --allowed-clusters us-west,us-east,us-cent
+    ```
+
+  - `set-clusters`：在 namespace level 指定 clusters 
+
+    ```sh
+    # 该namespace下的消息会被复制到所有指定cluster
+    $ bin/pulsar-admin namespaces set-clusters my-tenant/my-namespace \
+      --clusters us-west,us-east,us-cent
+      
+    # 不过发送消息时可以指定只复制到部分cluster:
+    producer.newMessage()
+            .value("my-payload".getBytes())
+            .setReplicationClusters(Arrays.asList("us-west", "us-east"))
+            .send();
+    ```
+
+    或者在 topic level 指定 `set-replication-clusters`：
+
+    ```sh
+    $ bin/pulsar-admin topics 
+      set-replication-clusters --clusters us-west,us-east,us-cent 
+      my-tenant/my-namespace/my-topic
+    ```
+
+    
+
+- **原理**
+
+  - **异步复制**
+    ![image-20220331162951691](../img/pulsar/geo-replication-underline.png)
+
+  - **Global Config Store**
+
+    - replication_clusters
+
+    ![image-20220331163143997](../img/pulsar/geo-replication-globalconfigstore.png)
+
+  - **Geo-replication without global zk**
+
+    - 可以实现自定义的复制策略，例如 Aggregation、Failover冷备
+    - TODO
+
+
+
+
+
 
 
 **Subscription Replication**
