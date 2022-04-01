@@ -7,16 +7,20 @@
 - **云原生**
   - Broker 无状态
   - Bookie 可以水平扩展，新数据存入新的Bookie
-- **支持多租户和海量Topic**
+- **支持多租户和海量 Topic**
+  - Tenant + Namespace 逻辑隔离
   - 便于做共享大集群
-- **平衡可靠消息与性能**
+- **平衡消息可靠性与性能**
   - 得益于 Quorum 机制、条带化写入策略
 - **低延迟**
-  - kafka topic增加，延迟也增加
+  - kafka topic 增加，延迟也增加
 - **高可靠、分布式**
   - Geo replication
 - **轻量级函数式计算**
+  - Pulsar Function: source --> sink
 - **批流一体**
+  - Segment 分片存储：方便支持流计算
+  - 分层存储：方便支持批处理
 - **多协议**
   - KOP, AMQP, MQTT
 - **功能丰富**
@@ -33,6 +37,10 @@
 
 ## || 架构
 
+> https://pulsar.apache.org/docs/zh-CN/concepts-architecture-overview/
+
+
+
 **代理层**
 
 - 作用：请求转发
@@ -43,6 +51,7 @@
 **Broker 层**
 
 - 负责业务逻辑
+- 提供管理接口
 
 
 
@@ -53,7 +62,25 @@
 
 
 
-https://pulsar.apache.org/docs/zh-CN/concepts-architecture-overview/
+ZK
+
+- 存储元数据
+
+  > Web-service-url 管理流地址
+  >
+  > Broker-service-url 数据流地址
+  >
+  > Ledger信息
+  >
+  > Topic 信息 （非持久化 NonPartitionedTopic 无需存储到zk）
+
+- Broker选主
+
+- 分布式锁
+
+  
+
+
 
 
 
@@ -66,18 +93,24 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 配置
 
 - **Synd Mode**
-  - **sync send**: waits for an acknowledgement from the broker after sending every message.
-  - **async send**: puts a message in a blocking queue and returns immediately.
+  - `sync send`: waits for an acknowledgement from the broker after sending every message.
+  - `async send`: puts a message in a blocking queue and returns immediately.
 
-- **Access Mode**
+- **ProducerAccessMode**
 
-  - **Shared**: Multiple producers can publish on a topic.
+  - `Shared`: Multiple producers can publish on a topic.
 
-  - **Exclusive**: Only one producer can publish on a topic.
+  - `Exclusive`: Only one producer can publish on a topic.
 
-  - **WaitForExclusive**: If there is already a producer connected, the producer creation is pending (rather than timing out) until the producer gets the `Exclusive` access. 
+  - `WaitForExclusive`: If there is already a producer connected, the producer creation is pending (rather than timing out) until the producer gets the `Exclusive` access. 
 
     > 类似选主。if you want to implement the leader election scheme for your application, you can use this access mode.
+  
+- **MessageRoutingMode**: 对于 PartitionedTopic，决定消息被发送到哪个分区/Broker
+
+  - `SinglePartition`: 如果消息有key，则对key哈希找分区；无key，则发送到某个特定分区（可以实现全局有序）；
+  - `RoundRobinPartition`: 如果无key，则轮询发到各个分区；
+  - `CustomPartition`: 自定义路由。
 
 
 
@@ -93,8 +126,9 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
     - batches are tracked and *stored* as single units rather than as individual messages.
     - Consumer unbundles a batch into individual messages. In general, a batch is acknowledged when all of its messages are acknowledged by a consumer. 
-    - 一个消息ack失败，会导致整个batch重发。2.6.0 之后引入 batch index acknowledgement 解决重复发送问题：消费者发送 batch index ack request. 
-
+    - 消费的时候，一批消息只会被同一个consumer消费。
+  - 一个消息ack失败，会导致整个batch重发。2.6.0 之后引入 batch index acknowledgement 解决重复发送问题：消费者发送 batch index ack request. 
+    
     
 
 - **Chunking**
@@ -267,8 +301,6 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   
 
-- 
-
   
 
 ## || Topic
@@ -294,7 +326,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 **Partitioned Topic**
 
-- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理；
+- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理、分担流量压力；
 - 实现：N 个内部主题。
 - routing mode: 决定生产到哪个分区；
   - RoundRobinPartition
@@ -385,6 +417,67 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 # | Broker
 
 Broker 是 Bookie 的客户端。
+
+## || 主题归属
+
+
+
+- **ZK 存储**
+
+  > 不能直接在 zk 上存储 topic - broker 归属关系：否则数据量太大
+
+  - ZK 只保存 Bundle 与 Broker 之间的联系。
+  - Topic 归属哪个 broker 是通过一致性哈希动态计算出来的。
+
+- **Topic 归属的计算步骤** `ServerCnx#handleLookup`
+
+  - 根据 namespace 找到其所有的 Bundle；
+
+  - 计算 Topic 所属的 Bundle：一致性哈希算法；
+
+  - 确定 Bundle 归属哪个 Broker，先找到`裁判Broker`，其通过 loadManager 查找负载最低的 Broker 并把Bundle 分配给他
+
+    > 裁判 Broker:
+    >
+    > - 优先选择 Heartbeat、SLAMonitor 所在的broker；
+    > - 如果 loadManager 使用的是中心化策略，则需要 Leader 裁判；
+    > - 如果 loadManager 使用的是非中心化策略，则当前Broker即可裁判；
+
+  - 客户端请求到归属 Broker，该Broker会尝试在 zk 写入一个节点，如果写入失败则说明 Bundle 被别的 Broker 抢到了。
+
+  
+
+- **Topic 的迁移**
+
+  - 作用：
+    - 当 Broker 扩容后，将现有的topic迁移到新 Broker上。
+    - 或者当 Broker负载不均衡时，把高负载broker上的部分bundle转移到低负载broker。
+  - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
+    - 支持 split bundle （线上建议关闭）
+    - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
+
+
+
+## || 压缩主题
+
+
+
+- 作用：相同key的消息，只保存最新的值。
+- 触发
+  - CLI: `pulsar-admin topics compact {name}`
+  - 自动：定时线程检查积压的消息是否达到阈值。
+- 实现
+  - 接收到消息后，在原始topic创建Ledger时，同时在内部创建一个 `CompactedTopic` 对象；
+  - 每个 Broker 上有一个单线程调度器 `compactionMonitor`，定时触发当前 Broker上所有 topic的 `checkCompaction`方法；每个Topic单独创建 `RawReader`直接从 bk 读取原始主题的数据；RawReader 会创建一个 `CompactorSubscription`。
+  - 压缩阶段一：遍历原始主题，在内存中保存每个消息的 key + MessageId，只保留最新记录。
+  - 压缩阶段二：根据阶段一的MessageId 再读一次数据，写入新的压缩 Ledger。
+- Q: 压缩是异步进行的，那如何保证读取时总是读到最新值呢？
+  - 如果要读取的 MessageId 位于游标位置之前，则从压缩主题读取；
+  - 如果位于游标位置之后，则证明尚未被压缩，则从原始主题读取；
+
+
+
+
 
 
 
