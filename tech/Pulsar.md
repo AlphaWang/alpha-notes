@@ -144,9 +144,9 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   - 限制
 
-    - Chunking is only available for persisted topics.  
-    - Chunking is only available for the exclusive and failover subscription types. 
-    - Chunking cannot be enabled simultaneously with batching.
+    - 不能同时使用  batching；
+    - 仅支持持久化主题；
+    - 仅支持 exclusive / failover 订阅模式，要保证消息被同一个消费者消费。
 
 
 
@@ -155,6 +155,11 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - 生产者多次发送同样的消息，只会被保存一次到bookie。
 
   - 配置：https://pulsar.apache.org/docs/en/cookbooks-deduplication/ 
+
+  - 实现：
+
+    - 生产者每条消息会设置一个`sequenceId`，如果broker遇到比之前小的ID则可过滤掉。
+    - 生产者重连后，会从Broker拿到当前topic最后的`sequenceId`，继续累加。
 
   - 可用于 effectively-once  语义
 
