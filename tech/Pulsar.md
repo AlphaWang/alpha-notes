@@ -150,20 +150,49 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
+- **重试机制**
+
+  - 不会重试的场景
+
+    - Topic 已关闭：producer 收到此异常后会把自己关闭；
+    - 服务端返回 NotAllowedError：客户端直接抛出异常；
+    - 超时：TCP 连接级别的超时抛出异常；
+
+  - 重试的场景
+
+    - 消息校验和不正确：缺失或被篡改；
+    - 逻辑重连：Bundle 卸载、分裂等导致主题归属转移；
+    - 无法获得连接：
+
+    
+
 - **Deduplication**
 
-  - 生产者多次发送同样的消息，只会被保存一次到bookie。
-
-  - 配置：https://pulsar.apache.org/docs/en/cookbooks-deduplication/ 
+  - 效果：生产者多次发送同样的消息，只会被保存一次到bookie。
 
   - 实现：
 
-    - 生产者每条消息会设置一个`sequenceId`，如果broker遇到比之前小的ID则可过滤掉。
+    - 生产者每条消息会设置一个元数据 `sequenceId`，broker遇到比之前小的ID则可过滤掉。
     - 生产者重连后，会从Broker拿到当前topic最后的`sequenceId`，继续累加。
 
+  - 配置：`brokerDeduplicationEnabled=true`
+
+    > https://pulsar.apache.org/docs/en/cookbooks-deduplication/ 
+    
   - 可用于 effectively-once  语义
 
     > https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html 
+    
+    
+
+- **消息顺序**
+
+  - `业务线程` 的影响：多个线程同时持有一个 Producer 对象；
+  - `路由模式` 的影响：SinglePartition 有序、RoundRobinPartition 无序；
+  - `分区` 的影响：如果只有一个分区，则同SinglePartition模式，能保证有序；例外：异步发送失败后重试；
+  - `发送方式` 的影响：同步 vs 异步
+  - `批量发送` 的影响: 一批消息是原子性。但批与批之间的顺序可能乱；
+  - `消息key` 的影响：相同key会被发到同一分区，能保证有序性；
 
   
 
