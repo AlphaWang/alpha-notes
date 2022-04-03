@@ -354,22 +354,40 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 - **Acknowledgement**
 
-  - Being acknowledged **individually**. With individual acknowledgement, the consumer acknowledges each message and sends an acknowledgement request to the broker.
-    `consumer.acknowledge(msg);`
+  - **确认场景**
 
-  - Being acknowledged **cumulatively**. With cumulative acknowledgement, the consumer only acknowledges the last message it received. All messages in the stream up to (and including) the provided message are not redelivered to that consumer.
-    `consumer.acknowledgeCumulative(msg);`
+    - 单条消息确认：`consumer.acknowledge(msg);`
+    
+  - 累积消息确认：`consumer.acknowledgeCumulative(msg);`
+    
+    - 批量消息中的单个消息确认：Broker 配置 `acknowledgementAtBatchIndexLevelEnabled=true`
 
-  - **Negative Ack**: 表示处理失败、稍后重发。
-    `consumer.negativeAcknowledge(msg);`
-
+    - 否定应答: 表示处理失败、稍后重发给其他消费者。`consumer.negativeAcknowledge(msg);`
+    
     > Q: 何时重新deliver、能否指定? 
+      > A: 全局设置延迟时间；如有大量消息延迟消费，可调用 `reconsumerLater` 接口。
 
-  - **Ack timeout**: 可配置对unack消息自动重发。the client tracks the unacknowledged messages within the entire `acktimeout` time range, and sends a `redeliver unacknowledged messages` request to the broker automatically when the acknowledgement timeout is specified.
+      
 
-    > Q: 由消费者请求重发，而不是broker主动推送？
+  - **确认流程**
+
+    - 待确认的消息先放入`AcknowledgementsGroupingTracker`缓存，默认每100ms、或大小超过1000则发送一批确认请求；目的是避免broker收到高并发的确认请求。
+    - 对于 ack at batch index level，存储格式为Map<Batch MessageId, `BitSet`>；
+    - 对于 累积消息确认，Tracker 只需保存最新确认位置即可。
+    - 对于否定应答，由 `NegativeAcksTracker`处理，其复用 Pulsar Client 时间轮，定期发送给 Broker。
 
     
+
+  - **Ack timeout**: 可对unack消息自动重发。
+
+    - 情况一：业务端调用 receive() 后：消息进入 `UnAckedMessageTracker`，其维护一个时间轮，超时后发送 redeliverUnacknowledgedMessages 命令给broker。
+
+    - 情况二：消费者做了预拉取，但尚未调用 receive()：Broker侧将这些消息标记为 `pendingAck` 状态，除非当前消费者被关闭，才会被重新投递。
+
+      > - Broker RedeliveryTracker 会记录每个消息的投递次数；
+      > - 可知如果消费者 ReceiverQueue 设置过大 是会对Broker有影响的。
+
+      
 
 - **Dead Letter Topic**
 
