@@ -449,53 +449,27 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   
 
+## || Reader
+
+Reader 包装了 Consumer，拥有Consumer的所有功能。
+
+- 特点
+  - Reader 强制使用 Exclusive 订阅类型；
+  - Reader 订阅模式是 NonDurable，即没有持久化的游标。
+
+- 示例
+
+  ```java
+  Reader<byte[]> reader = pulsarClient
+    .newReader()
+    .topic("my-topic")
+    .startMessageId(MessageId.earliest)
+    .create();
   
-
-  
-
-## || Topic
-
-命名：`{persistent|non-persistent}://tenant/namespace/topic`
-
-
-
-类型
-
-- Persistent
-- Non-persistent
-
-
-
-**Namespace**
-
--  The administrative unit of the topic, which acts as a grouping mechanism for related topics. 
-- Most topic configuration is performed at the [namespace](https://pulsar.apache.org/docs/en/concepts-messaging/#namespaces) level. 
-- Each tenant has one or multiple namespaces.
-
-
-
-**Partitioned Topic**
-
-- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理、分担流量压力；
-- 实现：N 个内部主题。
-- routing mode: 决定生产到哪个分区；
-  - RoundRobinPartition
-  - SinglePartition：随机
-  - CustomPartition
-- subscription mode: 决定从哪个分区读取；
-
-
-
-**Non-persistent Topic**
-
-- 普通 Topic 存储消息到 bookie，而non-persistent topic则只存到内存
-- 更快
-
-
-
-
-
-
+  while (reader.hasMessageAvailable()) {
+    reader.readNext();
+  }
+  ```
 
 
 
@@ -550,7 +524,81 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
+## || Topic
 
+命名：`{persistent|non-persistent}://tenant/namespace/topic`
+
+
+
+类型
+
+- Persistent
+- Non-persistent
+
+
+
+**Namespace**
+
+-  The administrative unit of the topic, which acts as a grouping mechanism for related topics. 
+-  Most topic configuration is performed at the [namespace](https://pulsar.apache.org/docs/en/concepts-messaging/#namespaces) level. 
+-  Each tenant has one or multiple namespaces.
+
+
+
+**Partitioned Topic**
+
+- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理、分担流量压力；
+- 实现：N 个内部主题。
+- routing mode: 决定生产到哪个分区；
+  - RoundRobinPartition
+  - SinglePartition：随机
+  - CustomPartition
+- subscription mode: 决定从哪个分区读取；
+
+
+
+**Non-persistent Topic**
+
+- 普通 Topic 存储消息到 bookie，而non-persistent topic则只存到内存
+- 更快
+
+
+
+## || 客户端通用能力
+
+**连接管理**
+
+- 客户端与每个broker只建立一个连接，但可配置。
+- ConnectionPool 利用 ConcurrentHashMap 保存连接，key = Broker IP. 
+
+
+
+**线程池管理**
+
+- Pulsar 优化了原生线程池：ExecutorProvider 内部创建了多个原生 `ScheduledExecutorService`，每个线程池max thread = 1
+
+- 优点：
+
+  - 实现线程池隔离；
+  - 保证线程安全、实现去锁。getExecutor(Object obj) 只要传入对象一样，则每次拿到的线程都是同一个。 
+
+  
+
+**LookupService**
+
+- 目的
+  - 动态服务发现：获取主题的归属broker。
+  - 元数据查询：分区信息、Schema信息、某个 NS 下的所有主题。
+
+
+
+**内存限制**
+
+MemoryLimitController
+
+- 目的：控制客户端内存使用量，避免例如 ReceiverQueueSize 不合理、大量 ConsumerImpl 带来的过度内存占用。
+
+  
 
 
 
