@@ -114,6 +114,22 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
+实现类
+
+- **ProducerImpl**
+  - HandlerState 状态机
+  - 发送流程
+    - 同步发送底层也是调用异步发送，然后Future.get()
+    - 压缩
+    - 分块
+    - 校验并设置元数据，包括 sequenceId
+    - 进入批量发送队列
+    - Flush：直接触发、或等待
+- **PartitionedProducerImpl**
+  - 内有保存 ProducerImpl List，每个partition对应一个
+
+
+
 功能
 
 - **Batching**
@@ -261,8 +277,76 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 配置
 
 - **Receive Mode**
-  - **Sync Receive**: blocked until a message is available.
-  - **Async Receive**: returns immediately with a future value.
+  - `Sync Receive`: blocked until a message is available.
+  - `Async Receive`: returns immediately with a future value.
+- **subscriptionMode**
+  - `durable`：在Broker生成持久化的cursor
+  - `nonDurable`
+- **subscriptionType**
+  - Exclusive, Shared, Failover, Key_Shared
+
+
+
+实现类
+
+- **ConsumerImpl** 
+
+  - 初始化
+
+    - ConsumerStatsRecorder：记录消费者metrics信息。
+    - Trackers：
+      `UnAckedMessageTracker` 记录接收未确认的消息，用于管理后续重投递；
+      `AcknowledgementsGroupingTracker` 批量确认管理；
+      `NegativeAcksTracker` negative ack 管理；
+
+  - 异步发送 Lookup 请求
+
+    - 确认主题归属的 Broker
+
+  - 获取连接
+
+    - 复用 PulsarClient 连接池；
+
+  - 发送订阅命令
+
+  - 发送 `FlowPermits` 命令
+
+    - 通知Broker推送数据，默认推送的消息个数是 ReceiverQueue 大小；
+    - 然后消费者**缓存**预拉取消息到 ReceiverQueue；
+
+    > 是一种“经过优化的 Poll 模式”：
+    >
+    > - 当 ReceiverQueue 中的消息少于一半时，消费者重新触发 FlowPermits 命令，要求Broker推送消息；
+    > - 既能避免 Push 模式下消费能力不足的问题，又能提升消息消费的及时性。
+
+- **MultiTopicsConsumerImpl**
+
+  - 用于消费多分区 PartitionedTopic
+
+- **PatternMultiTopicsConsumer**
+
+  - 用于用正则表达式订阅主题时；类似 MultiTopicsConsumerImpl，并实时更新订阅主题的变化。
+
+- **ZeroQueueConsuemrImpl**
+
+  - 不会预拉取消息；适用于消息不多但单条消息要消费很久的场景。
+
+- **RawConsumerImpl**
+
+  - 直接通过 bk client 读取和写入消息；
+  - 仅用于pulsar内部，例如实现压缩主题。
+
+
+
+消费流程
+
+- 同步接收
+  - 直接从 ReciverQueue 中 take()，同步等待
+- 异步接收
+  - 用户业务线程
+  - Netty IO 线程
+
+![image-20220403134548890](../img/pulsar/consume-flow.png)
 
 
 
@@ -385,43 +469,35 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 ## || Subscription
 
-**订阅模式**
+**订阅类型**
 
 ![image-20220322112234641](../img/pulsar/subscription-modes.png)
 
 - **Exclusive**
 
-  - 只有一个消费者绑定到当前订阅。
+  - 只有一个消费者绑定到当前订阅。其他消费者需要使用不同的 subscription name，否则报错。
 
-  - In *exclusive* mode, only a single consumer is allowed to attach to the subscription. If multiple consumers subscribe to a topic using the same subscription, an error occurs.
+  - 支持单条消息确认、累积消息确认。
 
   - > ![image-20220322112520553](../img/pulsar/subscription-modes-exclusive.png)
 
 - **Failover**
 
-  - 多个消费者可以绑定到当前订阅，但只有一个收到消息。
-
-  - In *failover* mode, multiple consumers can attach to the same subscription. A master consumer is picked for non-partitioned topic or each partition of partitioned topic and receives messages. 
-
-  - When the master consumer disconnects, all (non-acknowledged and subsequent) messages are delivered to the next consumer in line.
+  - 多个消费者可以绑定到当前订阅（而不像 Exclusive 那样直接报错），但只有一个收到消息。
 
     > ![image-20220322112744805](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-failover.png)
 
 - **Shared** 
 
-  - 多个消费者可以绑定到当前订阅，按 round-robin 模式接收消息。
-
-  - In *shared* or *round robin* mode, multiple consumers can attach to the same subscription. Messages are delivered in a round robin distribution across consumers, and any given message is delivered to only one consumer. 
-
-  - When a consumer disconnects, all the messages that were sent to it and not acknowledged will be rescheduled for sending to the remaining consumers.
+  - 多个消费者可以绑定到当前订阅，按 round-robin 模式接收消息（消费者可设置 priorityLevel 来提升自己的优先级）。
 
   - 限制：
 
     - 不保序、
-    - 无法使用 cumulative ack. 
-
-  - > ![image-20220322113010001](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-shared.png)
-
+  - 无法使用 cumulative ack. 
+  
+- > ![image-20220322113010001](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-shared.png)
+  
 - **Key_Shared** 
 
   - 多个消费者可以绑定到当前订阅，按相同key模式接收消息。
@@ -433,8 +509,8 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - 限制
 
     - 必须指定 key，或orderingKey
-    - 无法使用 cumulative ack
-    - 必须禁用 batching，或者使用 *key-based batching*
+    - 消费者无法使用 cumulative ack
+    - 生产者必须禁用 batching，或者使用 *key-based batching*
 
   - > ![image-20220322113231815](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-key-shared.png)
 
