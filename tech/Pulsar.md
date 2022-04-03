@@ -234,7 +234,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   - **原理：**
 
-    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在堆外内存优先级队列中维护索引 (time -> messageId)
+    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在堆外内存**优先级队列**中维护索引 (time -> messageId (LedgerId + EntryId))
     - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker` 
 
     ![image-20220327191641313](../img/pulsar/pulsar-delayed-msg.png)
@@ -322,14 +322,17 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 - **MultiTopicsConsumerImpl**
 
   - 用于消费多分区 PartitionedTopic
+  - 内部引用多个 ConsumerImpl
 
 - **PatternMultiTopicsConsumer**
 
   - 用于用正则表达式订阅主题时；类似 MultiTopicsConsumerImpl，并实时更新订阅主题的变化。
+  - 定时任务通过 Lookup 查到namespace下的所有主题，再通过正则筛选。
 
 - **ZeroQueueConsuemrImpl**
 
   - 不会预拉取消息；适用于消息不多但单条消息要消费很久的场景。
+  - 不可用来消费batch消息。
 
 - **RawConsumerImpl**
 
@@ -387,7 +390,18 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
       > - Broker RedeliveryTracker 会记录每个消息的投递次数；
       > - 可知如果消费者 ReceiverQueue 设置过大 是会对Broker有影响的。
 
-      
+  
+
+- **reconsumeLater**
+
+  - 作用：把消息发送到重试队列、后续再消费。
+  - 原理：
+    - 消费者创建时，指定 DeadLetterPolicy，包含 `maxRedeliverCount` `retryLetterTopic` `deadLetterTopic`
+    - 消费者自动创建对应重试队列、死信队列的内部 Producer；并同时偷偷地订阅“重试队列”。
+    - 当未超过最大重试次数，发送到重试队列；否则发送到死信队列。
+  - 注意：重试队列不是延迟队列，会立即被消费。如果设置了延迟多久reconsumeLater，则会被投递到延迟队列。
+
+
 
 - **Dead Letter Topic**
 
