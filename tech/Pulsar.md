@@ -78,9 +78,46 @@ ZK
 
 - 分布式锁
 
-  
 
 
+
+**隔离性**
+
+- BK 读写存储隔离
+
+- Namespace 隔离
+
+  - 让指定Namespace下所有 Bundle 只落在指定的 Broker 上，避免影响其他节点。
+
+  - ```sh
+    # 设置 NS 隔离策略
+    pulsar-admin ns-isolation-policy set
+      --primary broker-regs1
+      --secondary broker-regs2
+    ```
+
+- Bookie 隔离：`set-bookie-affinity-group` 设置亲和性
+
+  - 让指定Namespace下的主题尽量存到指定的 Bookie
+
+  - ```sh
+    # 设置bookie group信息
+    pulsar-admin bookies set-bookie-rack
+      -b 192.168.1.222:3181 
+      -r rack1
+      -g group1
+    
+    # 设置亲和性
+    pulsar-admin namespaces set-bookie-affinity-group
+      --primary-group group1
+      --secondary-group group2
+    # 设置反亲和性
+    pulsar-admin namespaces set-anti-affinity-group
+      --group group1
+      tenant/namespace
+    ```
+
+    
 
 
 
@@ -968,7 +1005,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
     - 所有写操作，先**顺序写入**追加到 Journal，*不管来自哪个 Ledger*。
     - 写满后，打开一个新的 Journal 
   - 作用：
-    - 写入速度快（顺序写入一个文件，没有随机访问）、读写存储隔离
+    - 写入速度快（顺序写入一个文件，没有随机访问）、**读写存储隔离**
     - 相当于是个**循环 Buffer**. 
   - 配置：
     - JournalDirectories: 每个目录对应一个Thread，给多个Ledger开多个directory可提高写入SSD的吞吐。
@@ -1118,9 +1155,28 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
   - 新的 bookie 替换原有的 ensembler，复制原ledger entries；
 
-    
 
 
+
+**Broker 高可用**
+
+- 当 Broker 节点宕机，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
+
+
+
+**跨机架高可用**
+
+- BK 客户端的跨区域感知：
+  - 写入时选择bookie节点时，必定包含来自不同机架的节点。
+- 注意
+  - 务必保证每个机架都有足够多节点，否则可能导致找不到足够多不同机架节点。
+  - 同步高可用：同步写入多机架，延迟会增加。
+
+
+
+**跨地域高可用**
+
+- GEO Replication：异步，非强一致
 
 
 
@@ -1639,7 +1695,34 @@ https://pulsar.apache.org/docs/en/administration-geo
 - Cursor Snapshot 如何存储
 
   - 和正常的消息穿插存储： `Snapshot Marker`
-  - 与正常的消息一样进行跨地域复制：副作用 - 影响backlog计算 
+
+  - 与正常的消息一样进行跨地域复制：实现跨地域请求响应
+
+  - 副作用 - 影响backlog计算 
+
+    ```json
+    --示例
+    {
+      "subscription_name": "my-subs",
+      "clusters": [
+        {
+          "cluster": "cluster-1",
+          "message_id" : {
+            "ledger_id": 11,
+            "entry_id": 4567
+          }
+        }, {
+          "cluster": "cluster-2",
+          "message_id" : {
+            "ledger_id": 22,
+            "entry_id": 5678
+          }
+        }
+      ]
+    }
+    ```
+
+    
 
 - 配置
 
@@ -1714,8 +1797,6 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 - 作用
   - 数据经过转换之后存入外部数据源。
-
-
 
 
 
