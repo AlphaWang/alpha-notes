@@ -190,6 +190,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
     - 生产者每条消息会设置一个元数据 `sequenceId`，broker遇到比之前小的ID则可过滤掉。
     - 生产者重连后，会从Broker拿到当前topic最后的`sequenceId`，继续累加。
+    - Broker还会定期将sequenceId快照存储到 BK，防止Broker和客户端同时宕机。
 
   - 配置：`brokerDeduplicationEnabled=true`
 
@@ -820,8 +821,6 @@ Schema 存储在 BookKeeper 中。
 
 ## || 压缩主题
 
-
-
 - 作用：相同key的消息，只保存最新的值。
 - 触发
   - CLI: `pulsar-admin topics compact {name}`
@@ -837,13 +836,70 @@ Schema 存储在 BookKeeper 中。
 
 
 
-## || 消息去重
-
-
-
 ## || 事务消息
 
+目的：用于保证精确一次语义。
 
+- Producer 生产到不同分区时，要么同时失败，要么同时成功。
+- Consumer 消费多条消息时，要么同时确认失败，要么同时确认成功。
+- Producer / Consumer 在同一个事务时，要么同时失败，要么同时成功。
+
+
+
+用法：
+
+```java
+// 示例：保证 produce & consume ack 在同一个事务里
+PulsarClient client = PulsarClient.builder()
+  .serviceUrl()
+  .enableTransaction(true)
+  .build();
+
+// 1. 开启事务
+// 客户端向`TC`发送newTxn命令，TC生成新事务
+Transaction tx = pulsarClient
+  .newTransaction()
+  .withTransacationTimeout(1, TimeUnit.MINUTES)
+  .build()
+  .get();
+
+
+Message<String> msg = sourceConsumer.receive();
+// 2. 发送消息
+// 消息会先经过每个Broker上的`RM`，RM记录元数据；写入主题后，该消息对消费者不可见
+// 原理：每个主题有一个 maxReadPosition属性
+sinkProducer.newMessage(tx)
+  .value("sink data")
+  .sendAsync();
+// 3. 发送ACK
+// 不会直接修改游标中的MarkDeleted位置，而是先持久化到一个额外的日志Ledger中，此时主题中的消息并未被真正确认。
+sourceConsumer.acknowledgeAsync(msg.getMessageId(), tx);
+// 4. 提交事务
+// TC收到请求后，向RM广播提交事务；更新元数据、让消息对消费者可见
+// 消费者RM会从日志Ledger读取刚才的消息确认、执行确认操作。
+tx.commit().get();
+
+```
+
+
+
+## || Dispatcher
+
+Dispatcher 负责从 bk 读取数据、返回给消费者。
+
+**流程**
+
+- 收到消费者 flowPerm 命令后，循环调用 bk 客户端读取数据；
+- 凑足后，选择一个 Consumer：
+  - Key Shared的情况下
+    - AUTO_SPLIT：新consumer按照一致性哈希环（TreeMap实现）方式进入。
+    - STICKY：加入哈希环时，如果区间有重叠 则报错，拒绝新consumer加入。
+  - 按优先级选择
+- 过滤：延时消息、事务消息
+- 发送给消费者：根据订阅类型不同
+  - 独占：所有entry发送给一个消费者；
+  - 共享：发给多个消费者；
+  - KeyShared：按key选择；
 
 
 
@@ -1612,12 +1668,23 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 
 
-- 存储老 segment:
-  - Once a segment has been sealed it is immutable. I.e. The set of entries, the content of those entries and the order of the entries can never change. 即可不必存储在SSD上了、可存储到廉价介质。
+- 目的：将较旧的数据从 BK 移动到其他廉价存储中。
+
+- 触发存储老 segment:
+
+  - 当 Ledger 被关闭时，Offloader 判断Ledger 堆积数是否超过阈值；ManagedLedger 调用具体offloader循环卸载数据。
+
+    > Once a segment has been sealed it is immutable. I.e. The set of entries, the content of those entries and the order of the entries can never change. 
 
 - 读取老 segment
-  - For Pulsar to read back and serve messages from the object store, we will provide a `ReadHandle` implementation which reads data from the object store. 
-  - With this, Pulsar only needs to know whether it is reading from bookkeeper or the object store when it is constructing the `ReadHandle`.
+  
+  - 数据虽然被卸载，但元数据还保存在 ZK；
+  
+  - ManagedLedger 默认用 BK 作为数据源，如果元数据表明已卸载，则返回 Offloader 的数据源句柄。
+  
+    > For Pulsar to read back and serve messages from the object store, we will provide a `ReadHandle` implementation which reads data from the object store. 
+    >
+    > With this, Pulsar only needs to know whether it is reading from bookkeeper or the object store when it is constructing the `ReadHandle`.
 
 
 
