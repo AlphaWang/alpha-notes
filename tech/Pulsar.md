@@ -608,6 +608,176 @@ MemoryLimitController
 
 Broker 是 Bookie 的客户端。
 
+## || 生产消费流程
+
+Broker 端生产流程
+
+- managedLedger：与BookKeeper打交道。
+
+![image-20220404110407223](../img/pulsar/broker-produce-flow.png)
+
+
+
+Broker 端消费流程
+
+- handlwFlow：收到消费者的请求
+- 校验unacked消息：如果该消费者接收了很多消息但都没确认，则触发限流。
+
+![image-20220404110452228](../img/pulsar/broker-consume-flow.png)
+
+
+
+## || Schema
+
+Schema 存储在 BookKeeper 中。
+
+//TODO
+
+
+
+## || 安全机制
+
+认证授权
+
+- JWT
+- Athenz
+- Kerberos
+- OAuth2.0
+
+
+
+加密
+
+- TLS加密
+- 端到端加密
+
+
+
+## || 元数据管理
+
+**元数据存储**
+
+- LocalZooKeeper
+  - 保存集群内部的元数据
+- GlobalZooKeeper (ConfigurationStoreServers)
+  - 用于不同Broker集群之间的数据互通；
+  - 例如跨地域复制时集群之间的元数据需要互相感知。
+
+
+
+**元数据缓存**
+
+- `AbstractMetadataStore` 使用了 Caffeine 缓存
+- 通过 ZK Watcher 通知缓存更新
+- 缓存数据
+  - existsCache: 缓存节点、路径是否存在
+  - childrenCache: 缓存子节点信息
+  - metadataCache: 缓存当前节点信息
+
+
+
+**线程安全**
+
+- 使用ZK Version 机制，通过 **CAS + CopyOnWrite** 来保证线程安全。
+
+- 更新原数据流程，被封装到一个Function类型的 Lambda 表达式：
+
+  - 1. 从缓存中读取 Policies 对象；
+    2. 修改对象中的某个策略值；
+    3. 写入 ZK，并带上 Version；
+
+  - 如果第三步失败，则重新调用 Function，从第一步重新执行。
+
+
+
+## || 存储管理
+
+> `ManagedLedger` 负责消息存储，而不是直接使用 bk client。
+
+
+
+**存储模型**
+
+- 每个非分区 Topic 都对应一个或多个 Ledger；只有一个Ledger处于OPEN状态。
+- 每个 Ledger 包含多个 Entry，每个 Entry 对应一条或一批消息。
+
+
+
+**存储流程**
+
+- **创建 Ledger**
+  - 创建 Topic 时，向 ZK 写入 Ledger 元数据；当Producer或Consumer连接到broker上的某个主题时，才会真正创建对应 Topic 的 Ledger。
+  - 创建 `ManagedLedger`，获取元数据、决定是否创建新 Ledger。
+- **写入 Ledger**
+  - `ManagedLedger` 封装 OpAddEntry 对象。
+  - 根据 EntryId 计算需要并行写入的 Bookie 节点、然后并行写入。 
+  - 写入成功，则缓存到 Write Cache。
+- **读取 Ledger**
+  - Cursor逻辑：对比当前读的位置、以及Ledger中最后一条写入消息的 MessageId，判断是否还有消息可读。
+  - 检查是否需要切换 Ledger。
+  - 尝试从 `ManagedLedger` Write Cache 中读取，读不到则回源到 BK 客户端读取。
+
+
+
+**游标**
+
+- 作用：存储当前订阅的消费位置。
+
+- 存储内容
+
+  - `markDeletePosition`：被连续确认的最大 EntryID，这个ID之前的所有entry都被消费过。
+
+    > 消费者重启后，只能从markDeletePosition位置开始消费，会存在重复消费的可能。
+
+  - `readPosition`：订阅的当前读取位置。
+
+  - `individualDeletedMessages`：用于保存消息的空洞信息。
+
+    > 默认利用 Guava Range 对象，存储已被确认的范围列表。
+    >
+    > 还可选择优化版，利用 BitSet 记录每个Entry是否被确认。适用于空洞较多的情况。
+
+  - `batchDeletedIndexes`：用于保存批量消息中单条消息确认的信息。
+
+    > Key = Position对象，包含 LedgerId, EntryId
+    >
+    > Value = BitSet，记录batch中有哪些消息已被确认。
+
+- 空洞管理的优化
+  - 问题：大量订阅会让游标数量暴增、BK 单个entry最大5M 超过会导致空洞信息持久化失败。
+  - 优化：LRU + 分段存储。
+    //TODO
+- 消息回溯 seek()
+  - 根据 ID 回溯
+    - 修改 Cursor 中的 markDeletetionPosition 和 readPosition、清理 individualDeletedMessages 中的空洞信息、清除 batchDeletedIndexes 中的信息。
+    - 后续消费者重新订阅时，会从readPosition开始读取消息。
+  - 根据时间戳回溯
+    - 遍历找到 Ledger，再二分查找到对应的 EntryId
+
+
+
+**数据清理**
+
+- 属性值
+
+  - `markDeletePosition`：如果一个Ledger中所有entry都在`markDeletePosition`之前，则这个 Ledger 可被清理。
+
+    > 即，entry被确认后会立即标记为可删除，但并不一定会马上被删除。需要等到Ledger中所有entry都被确认才行。
+
+  - `Retention`：消息被确认后还想保留一段时间。
+
+  - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个Ledger也会自动被确认、让Ledger进入Retention状态。
+
+    > 本质是自动将 `MarkDelete`向前移；解决如果没有订阅时，消息的永远堆积问题。 
+
+
+
+
+
+
+
+
+
 ## || 主题归属
 
 
@@ -667,6 +837,12 @@ Broker 是 Bookie 的客户端。
 
 
 
+## || 消息去重
+
+
+
+## || 事务消息
+
 
 
 
@@ -703,9 +879,7 @@ Broker 是 Bookie 的客户端。
 
 
 
-### 组件
-
-**Metadata Store**
+### 组件：Metadata Store
 
 - Zk / etcd
 - 存储 ledger 元数据
@@ -715,7 +889,7 @@ Broker 是 Bookie 的客户端。
 
 
 
-#### **Bookie**
+### 组件：Bookie
 
 - 而 Bookie 逻辑很轻量化
 - 可当做是一个 KV 存储
@@ -733,6 +907,7 @@ Broker 是 Bookie 的客户端。
 **Bookie 组件**
 
 - **Journal**
+  
   - 事务日志文件。在修改 ledger 之前，先记录事务日志。
     - 所有写操作，先**顺序写入**追加到 Journal，*不管来自哪个 Ledger*。
     - 写满后，打开一个新的 Journal 
@@ -748,10 +923,17 @@ Broker 是 Bookie 的客户端。
   - Flush 之后，Journal 即可被删除
   - ![image-20220326234645526](../img/pulsar/bk-arch-comp-writecache.png)
 - **Ledger Directory**
+  
   - **Entry log**
     - An entry log file manages the written entries received from BookKeeper clients. 
     - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
-    - 其实就是 write cache的内容
+    - 其实就是 write cache 的内容
+    
+    > Q：为什么不直接存储 Journal 内容？
+    >
+    > - 因为一个 Journal 可能包含多个Ledger，可能造成随机读。
+    > - 另外实现读写分离。
+    
   - **Index file**
     - 每个 ledger 有一个 index 文件
     - entryId --> position 映射
@@ -770,7 +952,7 @@ Broker 是 Bookie 的客户端。
 
 
 
-#### **Client**
+### 组件：Client
 
 > 对 Pulsar 来说，此 client 为 Broker.
 
@@ -820,21 +1002,25 @@ Broker 是 Bookie 的客户端。
 
 - 胖客户端决定：openLedger(`Ensemble`, `Write Quorum`, `Ack Quorum`)
 
-  - Ensemble：组内节点数目，用于分散写入数据到多个节点；**控制一个 Ledger 的读写带宽**
-  - Write Quorum：数据备份数目；**控制一条记录的副本数量**；
-  - Ack Quorum：等待刷盘节点数目；**控制写入每条记录需要等待的 ACK 数量**；
+  - **Ensemble**：组内节点数目，用于分散写入数据到多个节点；**控制一个 Ledger 的读写带宽**
+
+    > 注意必须 < 所有节点总数，否则一个节点宕机就会导致写入失败。
+  - **Write Quorum**：数据备份数目；**控制一条记录的副本数量**；
+  - **Ack Quorum**：等待刷盘节点数目；**控制写入每条记录需要等待的 ACK 数量**；
 
 - 灵活性配置
 
-  - 增加 Emsemble：**增加读写带宽**
-  - WQ = AQ，等待所有Write Quorum的ack：**提供强一致性保障**
-  - 减少 QA：**减少长尾时延**
+  - `增加 Emsemble (E > WQ)`：“条带化” 读写bk
+    - **增加读写带宽**，增加总吞吐量，充分发挥每块磁盘IO性能。
+    - 还可以让数据分布更平均，避免某个分区数据倾斜。
+  - `WQ = AQ`，等待所有Write Quorum的ack：**提供强一致性保障**
+  - `减少 QA`：**减少长尾时延**
 
   
 
 - 示例
   
-  - E = 5, WQ = 3
+  - E = 5, WQ = 3 条带化写入
   - 对于指定 entryId，对5取模，决定存到哪三个 bookie；效果是按 Round Robin选择
   - ![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
 
