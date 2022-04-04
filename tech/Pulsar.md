@@ -1688,6 +1688,37 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 
 
+## || Function & Pulsar IO
+
+**Function**
+
+https://pulsar.apache.org/docs/en/schema-get-started/
+
+- 作用
+  - 消费主题中的数据，进行处理，再写入另一个主题。
+  - 输入输出都必须是 Pulsar Topic。
+- Runtime
+  - **线程**：ThreadRuntime 将function包装成一个Runnable。
+  - **进程**：ProcessRuntime 调用 Java ProcessBuilder 创建一个进程对象；新进程暴露 gRPC服务，提供健康检查接口。
+  - **K8S**：KubernetesRuntime 创建 Headless Service，为每个Function创建一个StatefulSet，让Function在Pod中运行。
+- 特点
+  - 可配置三种语义保障
+
+
+
+
+
+**Pulsar IO (connector)**
+
+https://pulsar.apache.org/docs/en/io-overview/
+
+- 作用
+  - 数据经过转换之后存入外部数据源。
+
+
+
+
+
 
 
 ## || 新功能
