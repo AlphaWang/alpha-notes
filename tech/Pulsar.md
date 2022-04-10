@@ -1259,7 +1259,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 
 
-Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 被称为 `Ledger`、并保存在 BookKeeper 服务器 `bookie` 上。
+Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 被称为 `Ledger (日志段)`、并保存在 BookKeeper 服务器 `bookie` 上。
 
 - 每个 ledger 保存在多个 bookie 上，这组 bookie 被称为 ensemble；
 

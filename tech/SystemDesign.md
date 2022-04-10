@@ -4,6 +4,29 @@
 
 
 
+TBD
+
+- Chapter 1: Scale From Zero To Millions Of Users
+- Chapter 2: Back-of-the-envelope Estimation
+- Chapter 3: A Framework For System Design Interviews
+- Chapter 4: Design A Rate Limiter
+- Chapter 5: Design Consistent Hashing
+- Chapter 6: Design A Key-value Store
+- Chapter 7: Design A Unique Id Generator In Distributed Systems
+- Chapter 8: Design A Url Shortener
+- Chapter 9: Design A Web Crawler
+- Chapter 10: Design A Notification System
+- Chapter 11: Design A News Feed System
+- Chapter 12: Design A Chat System
+- Chapter 13: Design A Search Autocomplete System
+- Chapter 14: Design Youtube
+- Chapter 15: Design Google Drive
+- Chapter 16: The Learning Continues
+
+
+
+
+
 # | 计数系统设计
 
 ## || 微博点赞数、评论数存储
@@ -459,9 +482,115 @@ Sharding KEY：
 
 # | MQ 系统设计
 
-TBD
 
 
+# | Chat 
+
+https://systeminterview.com/design-a-chat-system.php  
+
+
+
+需求
+
+- Receive messages from other clients.
+- Find the right recipients for each message and relay the message to the recipients.
+- If a recipient is not online, hold the messages for that recipient on the server until she is online.
+
+
+
+沟通方式
+
+- **Polling**
+
+  - 客户端每隔一段时间发请求，询问是否有新消息。
+  - 缺点：
+    - 浪费服务端资源
+
+- **Long Polling**
+
+  - 客户端发起链接后不会马上关闭，而是等待一段时间服务器响应。
+  - 缺点：
+    - 发送者和接收者可能连到不同服务器
+    - 服务器无法感知客户端是否断链；
+    - 效率低，需要为低频客户端保持链接。
+
+- **WebSocket** 
+
+  - 建立持久化双向通道
+
+    > It starts its life as a HTTP connection and could be “upgraded” via some well-defined handshake to a WebSocket connection.
+
+
+
+组件
+
+- **Chat Server**
+
+  - 处理消息收发
+
+- **Presence Server**
+
+  - 管理上下线状态
+
+- **API Server**
+
+  - 处理用户登录、注册、修改 profile
+
+- **Notification Server**
+
+  - 推送提醒消息
+
+- **KV Store**
+
+  - 保存消息历史 
+
+  - MessageId: 要求有序
+
+    > 三种思路
+    >
+    > - 自增逐渐：nosql 不支持；
+    > - 全局ID生成器，Snowflake：重量级
+    > - 本地ID生成器：只要保证在一对一聊天、或一个群聊内唯一且有序即可。
+
+
+
+消息流程
+
+- UserA 发送消息给 Chat Server 1；
+
+- Chat Server1 调用 ID 生成器生成 message id；
+
+- Chat Server1 将消息发送到队列；
+
+- 消息存储到 KV store；
+
+- 如果 UserB在线，则消息转发给UserB对应的Chat Server2；由Chat Server2通过websocket发送给UserB。
+
+  > Q: 如果转发到 Chat Server2? 
+  >
+  > - A: 增加 User Mapping Service, 存储 user·-server对应关系。
+  >
+  > Q: 找到server后，如何通信？
+  >
+  > - A1：为每个 server创建 dedicated queue。缺点：队列太多、server宕机后 队列里的消息怎么办。
+  > - A2：HTTP 会导致消息无序、且请求量巨大。
+  > - A3：改进HTTP：添加 prevMsgId 保序、使用 buffer 降低请求量。
+
+- 如果 UserB 不在线，则发送调用Notification Server发送 Push notification
+
+
+
+群聊
+
+- 群组较小时：PUSH
+- 群组较大时：PULL
+
+
+
+上下线状态
+
+- 心跳保活
+- 存储到redis （同时也是 user-server mapping）
 
 
 
@@ -639,4 +768,5 @@ System Design Interview (印度口音)
 System Design Primer
 
 - https://github.com/donnemartin/system-design-primer
+- https://systeminterview.com/
 

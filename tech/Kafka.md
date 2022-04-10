@@ -998,14 +998,14 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 ### Replica
 
-#### 副本作用
+**副本作用**
 
 - **Availability**：数据冗余，提升可用性、容灾能力
 - **备份**：同一分区下所有副本保存“相同的”消息序列
 
 
 
-**两个角色**
+两个角色
 
 - **Leader Replica**
   
@@ -1040,7 +1040,7 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 
 
-**可优化的点**
+可优化的点
 
 - 提高伸缩性：让follower副本提供读功能？
 
@@ -1053,7 +1053,7 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 
 
-#### 副本分类
+**副本分类**
 
 - AR: Assigned Replicas - 所有副本集合
 
@@ -1080,53 +1080,49 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 
 
-#### 副本 Lead Election
+**副本 Lead Election**
 
-**正常领导者选举**
+- **正常领导者选举**
+  - 当 Leader 挂了，zk感知，Controller watch，并从 ISR 中选出新 Leader
 
-- 当 Leader 挂了，zk感知，Controller watch，并从 ISR 中选出新 Leader
-
-- 其实并不是选出来的，而是 Controller 指定的
-
+  - 其实并不是选出来的，而是 Controller 指定的
 
 
-**Unclean 领导者选举**
 
-- 当ISR全空，如果`unclean.leader.election.enable=true`；从OSR中选出领导者
+- **Unclean 领导者选举**
+  - 当ISR全空，如果`unclean.leader.election.enable=true`；从OSR中选出领导者
 
-- 问题
-
-  - 提高可用性的代价：消息丢失！
-  - **CP --> AP**：通过配置参数，实现选择 C vs. A
+  - 问题
+    - 提高可用性的代价：消息丢失！
+    - **CP --> AP**：通过配置参数，实现选择 C vs. A
 
   
 
 
 
-#### 副本同步：HWM
+**副本同步：HWM**
 
-**高水位 High Watermark**
+- **高水位 High Watermark**
+  - HWM = ISR集合中最小的 Log End Offset (LEO)
 
-HWM = ISR集合中最小的 Log End Offset (LEO)
+    > LEO 日志末端位移: 表示副本写入下一条消息的位移值。
 
-> LEO 日志末端位移: 表示副本写入下一条消息的位移值。
+  - 是一个特定的偏移量
 
-- 是一个特定的偏移量
-- 分区的高水位  == Leader 副本的高水位
-
-
-
-**HWM 作用**
-
-- 定义消息可见性：消费者只能拉取高水位之前的消息
-
-  > 高水位以上的消息属于未提交消息。即：消息写入后，消费者并不能马上消费到！
-
-- 实现异步的副本同步 - [TBD]
-
-  https://time.geekbang.org/column/article/112118
+  - 分区的高水位  == Leader 副本的高水位
 
 
+
+- **HWM 作用**
+  - 定义消息可见性：消费者只能拉取高水位之前的消息
+
+    > 高水位以上的消息属于未提交消息。即：消息写入后，消费者并不能马上消费到！
+
+  - 实现异步的副本同步 - [TBD]
+
+    https://time.geekbang.org/column/article/112118
+
+  
 
 **更新机制** - TBD
 
@@ -1148,7 +1144,7 @@ HWM = ISR集合中最小的 Log End Offset (LEO)
 
 
 
-#### 副本原理
+**副本原理**
 
 流程
 
@@ -1193,62 +1189,60 @@ HWM = ISR集合中最小的 Log End Offset (LEO)
 
 
 
-#### Leader Epoch？
+**Leader Epoch？**
 
-**HWM 可能出现数据丢失**
+- **HWM 可能出现数据丢失**
 
-**场景1：陆续重启**
-
-1. Follower高水位尚未更新时，发生重启；
-
-2. 其重启后，会根据之前的HW来更新LEO，造成数据截断；
-
-3. Follower再次拉取消息，理应会把截断的数据重新拉过来；但是假如此时Leader宕机，Follower则成为新的Leader
-
-只会发生在 min.insync.replicas = 1 时？？？
-
-
-
-**场景2：同时重启**
-
-假设集群中有两台Broker，Leader为A，Follower为B。A中有两条消息m1和m2，他的HW为1，LEO为2；B中有一条消息m1，LEO和HW都为1.
-
-- 假设A和B同时挂掉，然后B先醒来，成为了Leader（假设此时的min.insync.replicas = 1）。然后B中写入一条消息m3，并且将LEO和HW都更新为2.
-- 然后A醒过来了，向B发送FetchrRequest，B发现A的LEO和自己的一样，都是2，就让A也更新自己的HW为2。但是其实，虽然大家的消息都是2条，可是消息的内容是不一致的。一个是(m1,m2),一个是(m1,m3)。
-
-这个问题也是通过引入leader epoch机制来解决的。
-
-现在是引入了leader epoch之后的情况：B恢复过来，成为了Leader，之后B中写入消息m3，并且将自己的LEO和HW更新为2，注意这个时候LeaderEpoch已经从0增加到1了。
-紧接着A也恢复过来成为Follower并向B发送一个OffsetForLeaderEpochRequest请求，这个时候A的LeaderEpoch为0。B根据0这个LeaderEpoch查询到对应的offset为1并返回给A，那么A就要对日志进行截断，删除m2这条消息。然后用FetchRequest从B中同步m3这条消息。这样就解决了数据不一致的问题。
-
-
-
-**原因**
-
-- Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
+  > **场景1：陆续重启**
+  >
+  > 1. Follower高水位尚未更新时，发生重启；
+  >
+  > 2. 其重启后，会根据之前的HW来更新LEO，造成数据截断；
+  >
+  > 3. Follower再次拉取消息，理应会把截断的数据重新拉过来；但是假如此时Leader宕机，Follower则成为新的Leader
+  >
+  > 只会发生在 min.insync.replicas = 1 时？？？
+  >
+  > 
+  >
+  > **场景2：同时重启**
+  >
+  > 假设集群中有两台Broker，Leader为A，Follower为B。A中有两条消息m1和m2，他的HW为1，LEO为2；B中有一条消息m1，LEO和HW都为1.
+  >
+  > - 假设A和B同时挂掉，然后B先醒来，成为了Leader（假设此时的min.insync.replicas = 1）。然后B中写入一条消息m3，并且将LEO和HW都更新为2.
+  > - 然后A醒过来了，向B发送FetchrRequest，B发现A的LEO和自己的一样，都是2，就让A也更新自己的HW为2。但是其实，虽然大家的消息都是2条，可是消息的内容是不一致的。一个是(m1,m2),一个是(m1,m3)。
+  >
+  > 这个问题也是通过引入leader epoch机制来解决的。
+  >
+  > 现在是引入了leader epoch之后的情况：B恢复过来，成为了Leader，之后B中写入消息m3，并且将自己的LEO和HW更新为2，注意这个时候LeaderEpoch已经从0增加到1了。
+  > 紧接着A也恢复过来成为Follower并向B发送一个OffsetForLeaderEpochRequest请求，这个时候A的LeaderEpoch为0。B根据0这个LeaderEpoch查询到对应的offset为1并返回给A，那么A就要对日志进行截断，删除m2这条消息。然后用FetchRequest从B中同步m3这条消息。这样就解决了数据不一致的问题。
 
 
 
-**解决： Leader Epoch**
-
-取值
-
-- 大版本：单调递增的版本号
-
-  > 领导变更时会增加大版本
-
-- 小版本：起始位移，leader副本在该Epoch值上写入的首条消息的位移
+- **原因**
+  - Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
 
 
 
-目的
+- **解决： Leader Epoch**
+  - 取值
 
-- 规避高水位可能带来的数据丢失
-- 新的流程
+    - 大版本：单调递增的版本号
 
-2. Follower重启后，先向Leader请求Leader的LEO；会发现缓存中没有 > Leader LEO的Epoch；所以不做日志截断
+      > 领导变更时会增加大版本
 
-3. Leader重启后，新的Leader会更新Leader Epoch
+    - 小版本：起始位移，leader副本在该Epoch值上写入的首条消息的位移
+
+    
+
+  - 目的
+
+    - 规避高水位可能带来的数据丢失
+
+  - 新的流程
+
+    - Follower重启后，先向Leader请求Leader的LEO；会发现缓存中没有 > Leader LEO的Epoch；所以不做日志截断
+    - Leader重启后，新的Leader会更新Leader Epoch
 
 
 
@@ -2995,6 +2989,47 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 可用替换：Confluent's Replicator
 https://www.confluent.io/product/confluent-platform/global-resilience/
+
+
+
+
+
+## || Tiered Storage
+
+> https://cwiki.apache.org/confluence/display/KAFKA/KIP-405%3A+Kafka+Tiered+Storage KIP
+>
+> https://kreuzwerker.de/en/post/apache-kafka-tiered-storage-and-why-you-should-care 
+>
+> https://docs.confluent.io/platform/current/kafka/tiered-storage.html 
+>
+> https://www.youtube.com/watch?v=3lgGgHpYcRs from Uber
+
+
+
+Kafka Retention 为什么不能过长？
+
+- 每个 Broker 数据如果过多，会导致 recovery & rebalancing 耗时。
+
+- 如果提高 Broker 个数，又会导致不必要的 空闲CPU/内存 资源；也会带来部署复杂性、运维成本。
+
+  > Q: 不考虑成本的情况下，提高broker个数是否是个可行方案？- Topic 增加 partition?
+
+
+
+目标
+
+- 延迟敏感的应用，从local-tier 读取；回追应用，则从remote-tier读取；
+- 使得存储可以独立于 CPU/内存进行 scale。
+
+
+
+限制
+
+- 不支持压缩主题
+
+  
+
+
 
 
 

@@ -118,17 +118,13 @@
 
 - **例子**
   - Hbase
-
-  - Etcd
-
+- Etcd
   - Consul
-
-  - BigTable
-
+- BigTable
   - MongoDB
-
-  - Redis --> AP?
-  - Kafka 
+- Redis --> AP?
+  - BookKeeper
+- Kafka 
     - Unclean 领导者选举，会导致 CP --> AP
 
 
