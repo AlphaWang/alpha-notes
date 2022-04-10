@@ -311,12 +311,6 @@
 
 
 
-
-
-
-
-
-
 ## || 分布式中间件
 
 ### NoSql
@@ -445,104 +439,116 @@ memcached是lazy clean up, 那么如何保证内存不被占满？
 
 ## || 分布式互斥/锁
 
-作用
+**作用**
 
 - 排他性的资源访问
 - Distributed Mutual Exclusion
   - Critical Resource 临界资源
 
-场景
+**场景**
 
 - 订单 消息处理
 - 订单ID是共享资源，处理时要加锁；防止重复消息
   - 但锁并不保证幂等，需要业务保证 （例如处理之前查询订单状态）
 
-### 算法
+**算法**
 
-#### 1. 集中式算法
+**1. 集中式算法**
 
-实现
+- 实现
 
-- 每个程序在需要访问临界资源时，先给协调者发送一个请求。如果当前没有程序使用这个资源，协调者直接授权请求程序访问；
-- 否则，按照先来后到的顺序为请求程序“排一个号”。如果有程序使用完资源，则通知协调者，协调者从“排号”的队列里取出排在最前面的请求，并给它发送授权消息。拿到授权消息的程序，可以直接去访问临界资源。
+  - 每个程序在需要访问临界资源时，先给协调者发送一个请求。如果当前没有其他程序使用这个资源，协调者直接授权请求程序访问；
 
-优点
-
-- 简单、容易实现
-
-缺点
-
-- 引入协调者；可用性、性能受协调者影响
+  - 否则，按照先来后到的顺序为请求程序“排一个号”。如果有程序使用完资源，则通知协调者，协调者从“排号”的队列里取出排在最前面的请求，并给它发送授权消息。拿到授权消息的程序，可以直接去访问临界资源。
 
 
+- 优点
+  - 简单、容易实现
 
-#### 2. 分布式算法
 
-实现
-
-- 当一个程序要访问临界资源时，先向系统中的其他程序发送一条请求消息，在接收到所有程序返回的同意消息后，才可以访问临界资源。
-
-缺点
-
-- 消息数量指数增加；可用性低
-
-  > 消息要发给所有节点；一个节点挂了 就不可用；
-  >
-  > --> 改进：检测到节点故障则忽略它。
-
-适用场景
-
-- 适合节点少，且变动不频繁的系统：Hadoop 修改 HDFS 文件
+- 缺点
+  - 引入协调者；可用性、性能受协调者影响
 
 
 
-#### 3. 令牌环算法
 
-实现
+**2. 分布式算法**
 
-- 所有程序构成一个环结构，令牌按照顺时针（或逆时针）方向在程序之间传递，收到令牌的程序有权访问临界资源，访问完成后将令牌传送到下一个程序；若该程序不需要访问临界资源，则直接把令牌传送给下一个程序。
-
-特点
-
-- 通信效率高，公平；
-- 但也有无效通信。
-
-适用场景
-
-- 适用于规模较小，每个程序使用临界资源的频率高，且用时短的场景。
+- 实现
+  - 当一个程序要访问临界资源时，先向系统中的其他程序发送一条请求消息，在接收到所有程序返回的同意消息后，才可以访问临界资源。
 
 
+- 缺点
 
-### 实现方式
+  - 消息数量指数增加；可用性低
 
-#### 1. 数据库
+    > 消息要发给所有节点；一个节点挂了 就不可用；
+    >
+    > --> 改进：检测到节点故障则忽略它。
 
-- 唯一索引
-- for update: `select id from order where order_no= 'xxxx' for update`
 
-原理
-
-- 加锁：增加一条记录；
-
-- 放锁：删除
-
-- 通过唯一性约束保证互斥
-
-问题
-
-- 单点故障
-
-- 死锁：若记录一直删不掉？
+- 适用场景
+  - 适合节点少，且变动不频繁的系统：Hadoop 修改 HDFS 文件
 
 
 
-#### 2. Redis
 
-性能最好
+**3. 令牌环算法**
 
-原理
+- 实现
+  - 所有程序构成一个环结构，令牌按照顺时针（或逆时针）方向在程序之间传递，收到令牌的程序有权访问临界资源，访问完成后将令牌传送到下一个程序；若该程序不需要访问临界资源，则直接把令牌传送给下一个程序。
 
-- **SETNX + Expire**
+
+- 特点
+
+  - 通信效率高，公平；
+
+  - 但也有无效通信。
+
+
+- 适用场景
+  - 适用于规模较小，每个程序使用临界资源的频率高，且用时短的场景。
+
+
+
+
+**实现方式**
+
+**1. 数据库**
+
+- 实现
+
+  - 唯一索引
+
+  - for update: `select id from order where order_no= 'xxxx' for update`
+
+
+- 原理
+
+  - 加锁：增加一条记录；
+
+
+  - 放锁：删除
+
+
+  - 通过唯一性约束保证互斥
+
+
+- 问题
+
+  - 单点故障
+
+
+  - 死锁：若记录一直删不掉？
+
+
+
+
+**2. Redis**
+
+- 原理
+  - **SETNX + Expire**
+
 
 ```
 public static boolean tryGetDistributedLock(Jedis jedis, String lockKey, String requestId, int expireTime) {
@@ -570,44 +576,57 @@ String result = jedis.set(
 
 
 
-问题
+- 问题
 
-- 无法续租：执行业务时间可能超过过期时间
-
-- AP
-  - 集群同步是异步的，Master获取锁后，在同步之前崩溃了；新master是不认识这个锁的
-  - 而若用单实例，则可能阻塞业务流程
-
-解决：Redisson RedLock算法 (?)
-
-- 节点超半数
-
-- CP ?
+  - 无法续租：执行业务时间可能超过过期时间
 
 
+  - AP
+    - 集群同步是异步的，Master获取锁后，在同步之前崩溃了；新master是不认识这个锁的
+    - 而若用单实例，则可能阻塞业务流程
 
-#### 3. ZooKeeper
+
+- 解决：Redisson RedLock算法 (?)
+
+  - 节点超半数
+
+
+  - CP ?
+
+
+- 优点
+
+  - 性能最好
+
+  
+
+**3. ZooKeeper**
 
 首选！
 
-原理
+- 原理
 
-- 临时顺序节点 + Watch前一节点
-  - 避免羊群效应
-
-- 最小节点获得锁
-
-- Paxos --> ZAB 协议
-
-问题
-
-- 频繁创建删除节点，性能不及redis
-
-- 如何实现续租 (?)
+  - 临时顺序节点 + Watch前一节点
+    - 避免羊群效应
 
 
+  - 最小节点获得锁
 
-#### 4. Chubby
+
+  - Paxos --> ZAB 协议
+
+
+- 问题
+
+  - 频繁创建删除节点，性能不及redis
+
+
+  - 如何实现续租 (?)
+
+
+
+
+**4. Chubby**
 
 - 客户端缓存
   
@@ -655,11 +674,9 @@ String result = jedis.set(
 
 
 
-#### 5. etcd
+**5. etcd**
 
-原理
-
-- Raft 协议
+- 原理：Raft 协议
 
 
 
@@ -669,17 +686,23 @@ String result = jedis.set(
 
 - 负责对其他节点的协调和管理；保证其他节点的有序运行
 
+
+
 **算法**
 
-#### 1. Bully 算法
+**1. Bully 算法**
 
 > 在所有存活节点中，选取ID最大的为主节点
 
-角色
-- 普通节点
-- 主节点
+- 角色
 
-流程
+  - 普通节点
+
+  - 主节点
+
+
+- 流程
+
 1. 节点判断自己的 ID 是否为当前存活的最大 ID，如果是，则直接向其他节点发送 Victory 消息，宣誓自己的主权。 
 2. 节点向比自己 ID 大的节点发送 Election 消息，等待 Alive 回复。
 3. 如果给定时间内未收到 Alive 回复，则认为自己成为主节点，向其他节点发送 Victory 消息
@@ -687,84 +710,109 @@ String result = jedis.set(
 
 
 
-优点
-
-- 选举速度快、算法复杂度低；
-
-缺点
-
-- 每个节点有全局的节点信息，额外信息存储多；
-- ID 大的节点不稳定时会触发频繁切主；
+- 优点
+  - 选举速度快、算法复杂度低；
 
 
+- 缺点
 
-#### 2. Raft 算法
+  - 每个节点有全局的节点信息，额外信息存储多；
+
+  - ID 大的节点不稳定时会触发频繁切主；
+
+
+
+
+**2. Raft 算法**
 
 > 多数派投票选举
 
-角色
-- Leader 节点
+- 角色
 
-- Candidate 节点
+  - Leader 节点
 
-- Follower 节点
 
-流程
+  - Candidate 节点
+
+
+  - Follower 节点
+
+
+- 流程
+
 1. 初始化时都是 Follower；开始选主时所有节点转化为 Candidate，并向其他节点发送选举请求；
 2. 其他节点根据收到的选举请求的**先后顺序**，回复是否同意成为主；
 3. 若获得超过一半投票，则成成为主，状态变为 Leader；其他节点 Candidate --> Follower；
-4. Leader 任期到了，则Leader --> Follower，进入新一轮选主
+4. Leader 任期到了，则 Leader --> Follower，进入新一轮选主
 
 
 
-优点
+- 优点
 
-- 选举速度快、算法复杂度低；
-- 稳定度较 Bully好：新节点加入时会触发选主，但不一定会触发切主；
+  - 选举速度快、算法复杂度低；
 
-缺点
-
-- 节点互相通信，通信量大
+  - 稳定度较 Bully好：新节点加入时会触发选主，但不一定会触发切主；
 
 
+- 缺点
+  - 节点互相通信，通信量大
 
-#### 3. ZAB 算法
+
+
+
+**3. ZAB 算法**
 
 > ZooKeeper Atomic Broadcast：在 Raft 基础上，保证数据新的节点优先成为主：server_id + server_zxID
 
 
 
-每个节点都有唯一的三元组：
-- `server_id`: 本节点 ID
-- `server_zxID`: 本节点存放的数据 ID
-- `epoch`: 当前选举轮数
+- 每个节点都有唯一的三元组：
 
-原则：
-- `server_zxID` 最大者成为Leader;
-- 若相同，则 `server_id` 最大者成为Leader;
+  - `server_id`: 本节点 ID
 
+  - `server_zxID`: 本节点存放的数据 ID
+
+  - `epoch`: 当前选举轮数
 
 
-角色
-- Leader
-- Follower
-- Observer
+- 原则：
 
-流程
+  - `server_zxID` 最大者成为Leader;
+
+  - 若相同，则 `server_id` 最大者成为Leader;
+
+
+
+
+- 角色
+
+  - Leader
+
+  - Follower
+
+  - Observer
+
+
+- 流程
+
 1. 刚启动时，都推选自己，选票信息 `<epoch, vote_id, vote_zxID>`
 2. 因为 epoch\zxID 都相同，server_id较大者会成为推选对象；其他节点会更新自己的投票并广播
 
 
 
-优点
+- 优点
 
-- 性能高；
-- 稳定性好，新节点加入会触发选主，但不一定触发切主；
+  - 性能高；
 
-缺点
+  - 稳定性好，新节点加入会触发选主，但不一定触发切主；
 
-- 广播方式发送信息，通信量大；
-- 选举时间较长，除了投票还要对比节点 ID 和数据 ID；
+
+- 缺点
+
+  - 广播方式发送信息，通信量大；
+
+  - 选举时间较长，除了投票还要对比节点 ID 和数据 ID；
+
 
 
 
@@ -774,17 +822,15 @@ String result = jedis.set(
 
 **算法**
 
-#### 1. PoW: Proof of Work
+**1. PoW: Proof of Work**
 
 比计算能力
 
-
-#### 2. PoS: Proof of Stake
+**2. PoS: Proof of Stake**
 
 权益是指占有货币的数量和时间
 
-
-#### 3. DPoS: Delegated Proof of Stake
+**3. DPoS: Delegated Proof of Stake**
 
 解决PoS的垄断wen't
 
@@ -800,39 +846,46 @@ String result = jedis.set(
 
 **手段**
 
-#### 1. Aggregator / BFF
+**1. Aggregator / BFF**
 
 - 每次计算，性能不好
 
 
 
-#### 2. Denormalize + Materialize the view
+**2. Denormalize + Materialize the view**
 
 - 消费Stream，实时预聚合
 
 
 
-#### 3. CQRS
+**3. CQRS**
 
 > Command Query Responsibility Segregation
 
-技术点
-- Command: SQL 数据库
-- Query: Cassandra / ES / Redis...
-- 同步: CDC / MQ
+- 技术点
+
+  - Command: SQL 数据库
+
+  - Query: Cassandra / ES / Redis...
+
+  - 同步: CDC / MQ
 
 
 
-问题
 
-- 最终一致性，不实时；
+- 问题
 
-- 解决
-  - **UI 乐观更新**：写入后 UI直接显示最新值；如果写入失败再回滚。
-  - **UI 拉模式**：UI 写入时带上 version，轮询读服务查询 version 更新 UI。
-  - **UI 发布订阅**：UI 写入后，订阅读服务，当有通知是更新 UI。
-  
-  
+  - 最终一致性，不实时；
+
+
+  - 解决
+    - **UI 乐观更新**：写入后 UI直接显示最新值；如果写入失败再回滚。
+      - **UI 拉模式**：UI 写入时带上 version，轮询读服务查询 version 更新 UI。
+      - **UI 发布订阅**：UI 写入后，订阅读服务，当有通知是更新 UI。
+    
+    
+    
+
 
 ## || 分布式事务
 
@@ -1075,27 +1128,29 @@ https://matt33.com/2018/07/08/distribute-system-consistency-protocol/
 
 **流程**
 
-##### ***阶段一：投票 Voting: CanCommit/Log***
+***阶段一：投票 Voting: CanCommit/Log***
 
 - CanCommit 
-  - TM 协调者：向本地资源管理器发起执行操作的 `CanCommit` 请求；
+  - `TM 协调者`：向本地资源管理器发起执行操作的 `CanCommit` 请求；
 - LOG 
-  - RM 参与者：收到请求后，执行事务操作，记录日志（`Undo / Redo log`）但不提交；返回操作结果
+  - `RM 参与者`：收到请求后，执行事务操作，记录日志（`Undo / Redo log`）但不提交；返回操作结果
 
-##### ***阶段二：提交 Commit: DoCommit/DoAbort***
+
+
+***阶段二：提交 Commit: DoCommit/DoAbort***
 
 - DoCommit
-  - TM 协调者：收到所有参与者的结果，如果全是YES 则发送 `DoCommit` 消息；
-  - RM 参与者：完成剩余的操作并释放资源，向协调者返回 `HaveCommitted` 消息；
+  - `TM 协调者`：收到所有参与者的结果，如果全是YES 则发送 `DoCommit` 消息；
+  - `RM 参与者`：完成剩余的操作并释放资源，向协调者返回 `HaveCommitted` 消息；
   - 如果此时有参与者提交失败
     - 重试：此阶段不回滚！
     - 提交是很轻量的，重试问题不大
 
 - DoAbort
-  - TM 协调者：如果结果中有 No，则向所有参与者发送 `DoAbort` 消息；
-  - RM 参与者：之前发送 Yes 的参与者会按照回滚日志进行回滚；返回`HaveCommitted` 消息。（基于 Undo log）
+  - `TM 协调者`：如果结果中有 No，则向所有参与者发送 `DoAbort` 消息；
+  - `RM 参与者`：之前发送 Yes 的参与者会按照回滚日志进行回滚；返回`HaveCommitted` 消息。（基于 Undo log）
 
-- TM 协调者收到 HaveCommitted 消息，就意味着整个事务结束了
+- `TM 协调者`：收到 HaveCommitted 消息，就意味着整个事务结束了
 
   
 
@@ -1162,52 +1217,52 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 **流程**
 
-##### ***阶段一：CanCommit***
+***阶段一：CanCommit***
 
-- 协调者发出询问
-- 参与者检查、反馈
+- `协调者` 发出询问
+- `参与者` 检查、反馈
 
 
 
-##### ***阶段二：PreCommit***/Abort
+***阶段二：PreCommit***/Abort
 
 - 正常：都是Yes
 
-  - 协调者：发送 `PreCommit` 请求
-  - 参与者：收到 `PreCommit` 后执行事务操作，并将 `Undo 、Redo`信息记录到事务日志
+  - `协调者`：发送 `PreCommit` 请求
+  - `参与者`：收到 `PreCommit` 后执行事务操作，并将 `Undo、Redo`信息记录到事务日志
   - 执行成功后发回 ACK，并等待最终指令
 
 - 异常：包含NO
 
-  - 协调者：发送 `Abort`消息
+  - `协调者`：发送 `Abort`消息
 
-  - 参与者：收到Abort / 或超时后仍未收到协调者消息，则执行中断操作
+  - `参与者`：收到Abort / 或超时后仍未收到协调者消息，则执行中断操作
 
     > 默认会中断
     
     
 
-##### ***阶段三：DoCommit***/Abort
+***阶段三：DoCommit***/Abort
 
 - 正常：提交
 
-  - 协调者：收到所有ACK后，向所有参与者发送 `DoCommit`
-  - 参与者：正式提交事务，释放资源
+  - `协调者`：收到所有ACK后，向所有参与者发送 `DoCommit`
+  - `参与者`：正式提交事务，释放资源
 
 - 异常
 
   - 中断
 
-    - 协调者：向所有参与者发送 `Abort`
-    - 参与者：利用在PreCommit阶段记录的 Undo 日志，进行回滚，释放资源
+    - `协调者`：向所有参与者发送 `Abort`
+    - `参与者`：利用在PreCommit阶段记录的 Undo 日志，进行回滚，释放资源
 
   - 超时
 
-    - 协调者：超时会收到回复，发送中断请求
+    - `协调者`：超时会收到回复，发送中断请求
 
       > 默认中断
 
-    - 参与者：如果长时间没有得到协调者响应，参与者会自动提交
+    - `参与者`：如果长时间没有得到协调者响应，参与者会自动提交
 
       > 默认会提交！！
 
@@ -1351,7 +1406,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 步骤
 
 - **发送半消息**
-  - 发送方：发送半消息到MQ服务器
+  - 发送方：发送半消息到MQ服务器，同步
   - 这一步需要处理幂等，可能会发送重复半消息
   - 类似 prepare
 - **执行本地事务**
@@ -1519,11 +1574,19 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 ## MapReduce
 
+
+
 ## Stream
+
+
 
 ## Actor
 
+
+
 ## 流水线
+
+
 
 
 
@@ -1833,7 +1896,7 @@ TBD
 
 ### 缓存读写策略
 
-#### **1. Cache Aside: 旁路缓存策略**
+**1. Cache Aside: 旁路缓存策略**
 
 - 读：
 
@@ -1845,7 +1908,7 @@ TBD
 
 - 问题：
 
-  - 能否成功后**更新**缓存，而不是删除？--> 防止两个并发写导致不一致
+  - 写入成功后**更新**缓存，而不删除？--> 防止两个并发写导致不一致
 
     >  e.g. 数据库值=19
     >
@@ -1878,14 +1941,14 @@ TBD
 
 - 变通
 
-  - 插入数据后，可以直接写入缓存
+  - 第一次插入数据后，可以直接写入缓存
 
     > 避免数据库主从同步延迟。
     > 新数据不会有并发更新问题。
 
 
 
-#### 2. Read/Write Through: 读穿/写穿策略
+**2. Read/Write Through: 读穿/写穿策略**
 
 >思想：用户只与缓存打交道
 
@@ -1903,7 +1966,8 @@ TBD
 
 
 
-#### 3. Write Back: 写回策略
+**3. Write Back: 写回策略**
+
 > 思想
 >
 > - 写入数据时，只写缓存；并把缓存块标记为脏；
@@ -1918,7 +1982,7 @@ TBD
 
 
 
-#### 4. Write Behind Caching
+**4. Write Behind Caching**
 
 - 写
 
@@ -1942,7 +2006,7 @@ TBD
 
 ### 问题
 
-#### 缓存粒度控制
+**1. 缓存粒度控制**
 
 - 缓存全量属性
   
@@ -1951,30 +2015,33 @@ TBD
   
   - 占用空间小
   
-  
-
-#### 缓存热点问题
-
-解决
-
-- 多级缓存
-
-如何识别热点？
-
-- 客户端
-- 监控系统
 
 
 
-#### 缓存并发回源问题
+**2. 缓存热点问题**
 
-问题
+- 解决
+  - 多级缓存
 
-- 同一个key同时并发回源
 
-解决
+- 如何识别热点？
 
-- 回源时 加锁 + 双重检查
+  - 客户端
+
+  - 监控系统
+
+
+
+
+**3. 缓存并发回源问题**
+
+- 问题
+  - 同一个key同时并发回源
+
+
+- 解决
+  - 回源时 加锁 + 双重检查
+
 
 ```java
 @Autowired
@@ -2006,34 +2073,45 @@ public String right() {
 
 
 
-- 缺点是限制了访问并发性
+- 缺点
+  - 限制了访问并发性
+
 - 优化
   - 用进程内锁，而非分布式锁 --> 允许不同节点并发回源；
   - 用 Semaphore 限制并发数 --> 允许并发回源，但限制同时并发数
 
 ​	
 
-#### 缓存穿透问题
-
-原因
-- 大量请求未命中缓存，而访问后端系统
-- 业务代码自身问题
-- 恶意攻击、爬虫
-
-发现
-- 业务响应时间
-- 监控指标：总调用数、缓存命中数、存储层命中数
 
 
+**4. 缓存穿透问题**
 
-解决
+- 原因
 
-- 缓存空对象
-  - 要注意空对象对内存占用的影响
-- 布隆过滤器拦截
-  - 实践：创建数据时要同时修改布隆过滤器
-  - 缺点：存在误判、不支持删除元素
-  - Guava BloomFilter
+  - 大量请求未命中缓存，而访问后端系统
+
+  - 业务代码自身问题
+
+  - 恶意攻击、爬虫
+
+
+- 发现
+
+  - 业务响应时间
+
+  - 监控指标：总调用数、缓存命中数、存储层命中数
+
+
+- 解决
+
+  - **缓存空对象**
+    - 要注意空对象对内存占用的影响
+
+  - **布隆过滤器拦截**
+    - 实践：创建数据时要同时修改布隆过滤器
+    - 缺点：存在误判、不支持删除元素
+    - Guava BloomFilter
+
 
 ```java
 
@@ -2075,85 +2153,100 @@ public String right2(@RequestParam("id") int id) {
 
    
 
-#### 缓存雪崩问题
+**5. 缓存雪崩问题**
 
-问题
-
-- cache服务器异常，流量直接压向后端db或api，造成级联故障
-
-优化
-
-- **保证缓存高可用**
-  - redis sentinel
-  -  redis cluster
-  - 主从漂移：VIP + keepalived
-
-- **保证不在同一时间过期**
-  - 过期时间 + 扰动值
-- **不主动过期**
-  - 后台线程定时更新
-- **依赖隔离组件为后端限流（降级）**
-- **提前演练**
+- 问题
+  - cache服务器异常，流量直接压向后端db或api，造成级联故障
 
 
+- 优化
 
-#### 一致性问题
+  - **保证缓存高可用**
+    - redis sentinel
+    -  redis cluster
+    - 主从漂移：VIP + keepalived
 
-问题
 
-- 缓存值与 DB 值不一致
+  - **保证不在同一时间过期**
+    - 过期时间 + 扰动值
+
+  - **不主动过期**
+    - 后台线程定时更新
+
+  - **依赖隔离组件为后端限流（降级）**
+
+  - **提前演练**
 
 
 
-方案
 
-- 通过过期时间来更新缓存，DB 更新后不会触发缓存更新
+**6. 一致性问题**
 
-- 在更新 DB 的同时更新缓存 --> 并发问题？
+- 问题
+  - 缓存值与 DB 值不一致
 
-- 基于2，MQ 异步更新缓存
 
-- 将 DB 更新、缓存更新放到一个事务中
+- 方案
 
-- 订阅binlog更新缓存
+  - 通过过期时间来更新缓存，DB 更新后不会触发缓存更新
 
-  
 
-#### 无底洞问题
+  - 在更新 DB 的同时更新缓存 --> 并发问题？
 
-问题
-- 加机器性能不升反降
 
-  > 原因：
+  - 基于2，MQ 异步更新缓存
 
-- 客户端批量接口需求（mget, mset）
 
-- 后端数据增长与水平扩展需求
+  - 将 DB 更新、缓存更新放到一个事务中
 
-优化
 
-- 命令本身优化
+  - 订阅binlog更新缓存
 
-  - 慢查询 keys
-  - hgetall bigkey
+    
 
-- 减小网络通信次数
 
-  - 串行mget --> 串行IO --> 并行IO 
-  - hash_tag
+**7. 无底洞问题**
 
-- 降低接入成本
+- 问题
 
-  - 客户端长连接、连接池
-  -  NIO
+  - 加机器性能不升反降
 
-  
+    > 原因：
+
+
+  - 客户端批量接口需求（mget, mset）
+
+
+  - 后端数据增长与水平扩展需求
+
+
+- 优化
+
+  - 命令本身优化
+
+    - 慢查询 keys
+    - hgetall bigkey
+
+
+  - 减小网络通信次数
+
+    - 串行mget --> 串行IO --> 并行IO 
+    - hash_tag
+
+
+  - 降低接入成本
+
+    - 客户端长连接、连接池
+    -  NIO
+
+    
+
 
 # | 分布式指标
 
 ## || 可靠性 Reliability
 
-### 定义: fault-tolerant / resilient
+**定义: Fault-Tolerant / Resilient**
 
 - 即便发生了某些错误（`fault`），系统仍可以继续工作（`fault-tolerant`，`resilient`）。
 
@@ -2168,234 +2261,269 @@ public String right2(@RequestParam("id") int id) {
 
 
 
-### 手段
-
-#### 负载均衡 Load Balance
-
-目标
-
-- 避免服务器过载
-
 手段
 
-- 轮询
-- 带权重的轮询
+**1. 负载均衡 Load Balance**
+
+- 目标
+  - 避免服务器过载
+
+
+- 手段
+
+  - 轮询
+
+  - 带权重的轮询
 
 
 
-#### 降级 Degradation
 
-手段
-- **降低一致性**
-  - 使用异步简化流程
-  - 降低数据一致性：缓存
-- **停止次要功能**
-  - 先限流再停止
-  - 例如双十一停止退货服务
-- **简化功能**
-- **拒绝部分请求** --> 限流？
-- **限流降级、开关降级**
+**2. 降级 Degradation**
 
+- 手段
 
+  - **降低一致性**
+    
+    - 使用异步简化流程
+    - 降低数据一致性：缓存
+    
+    - **停止次要功能**
+      - 先限流再停止
+      - 例如双十一停止退货服务
+    
 
-触发
+  - **简化功能**
 
-- 吞吐量过大时
-- 响应时间过慢时
-- 失败次数过多时
-- 网络或服务故障时
+  - **拒绝部分请求** --> 限流？
 
-
-
-原理
-
-- hystrix fallback 原理
-
-  https://segmentfault.com/a/1190000005988895
-
-- 滚桶式统计
-  - 10秒滚动窗口
-  -  每1秒一个桶
-  
--  RxJava Observable.window()实现滑动窗口
+  - **限流降级、开关降级**
 
 
 
-#### 熔断 Circuit Breaker
 
-作用：保护服务调用方
+- 触发
 
-- 防止程序不断尝试执行可能会失败的操作
-- 防止浪费CPU时间去等待长时间的超时产生
-- 防止雪崩
+  - 吞吐量过大时
 
+  - 响应时间过慢时
 
+  - 失败次数过多时
 
-vs. 降级
-
-- 降级概念更广，熔断是降级的一种
+  - 网络或服务故障时
 
 
 
-原理
 
-- Hystrix实现 https://github.com/Netflix/Hystrix/wiki/How-it-Works#CircuitBreaker
+- 原理
 
-- resilience4j https://resilience4j.readme.io/docs/circuitbreaker
+  - hystrix fallback 原理
 
-- Jedis 封装示例
+    https://segmentfault.com/a/1190000005988895
 
-  - open状态时定期检测可用性
+    - 滚桶式统计
+      - 10秒滚动窗口
+      -  每1秒一个桶
+      
 
-    ```java
-    new Timer("RedisPort-Recover", true).scheduleAtFixedRate(new TimerTask() {
-      @Override
-      public void run() {
-        if (breaker.isOpen()) {
-          Jedis jedis = null;
-          try {
-      jedis = connPool.getResource();
-      jedis.ping(); // 验证 redis 是否可用
-      successCount.set(0); // 重置连续成功的计数
-      breaker.setHalfOpen(); // 设置为半打开态
-          } catch (Exception e) {
-          } finally {
-            if (jedis != null) {
-              jedis.close();
+
+  -  RxJava Observable.window()实现滑动窗口
+
+
+
+
+**3. 熔断 Circuit Breaker**
+
+- 作用：保护服务调用方
+
+  - 防止程序不断尝试执行可能会失败的操作
+
+  - 防止浪费CPU时间去等待长时间的超时产生
+
+  - 防止雪崩
+
+
+
+
+- vs. 降级
+  - 降级概念更广，熔断是降级的一种
+
+
+
+
+- 原理
+
+  - Hystrix实现 https://github.com/Netflix/Hystrix/wiki/How-it-Works#CircuitBreaker
+
+
+  - Resilience4j https://resilience4j.readme.io/docs/circuitbreaker
+
+
+  - Jedis 封装示例
+
+    - open状态时定期检测可用性
+
+      ```java
+      new Timer("RedisPort-Recover", true).scheduleAtFixedRate(new TimerTask() {
+        @Override
+        public void run() {
+          if (breaker.isOpen()) {
+            Jedis jedis = null;
+            try {
+        jedis = connPool.getResource();
+        jedis.ping(); // 验证 redis 是否可用
+        successCount.set(0); // 重置连续成功的计数
+        breaker.setHalfOpen(); // 设置为半打开态
+            } catch (Exception e) {
+            } finally {
+              if (jedis != null) {
+                jedis.close();
+            }
           }
-        }
-       }
-       }
-    }, 0, recoverInterval); // 初始化定时器定期检测 redis 是否可用
-    ```
-
-    
-
-  - 操作数据时判断状态
-
-    ```java
-    //1. 断路器打开则直接返回空值
-    if (breaker.isOpen()) { 
-      return null;  
-    }
-    
-    K value = null;
-    Jedis jedis = null;
-    
-    try {
-      jedis = connPool.getResource();
-      value = callback.call(jedis);
-      
-      //2. 如果是半打开状态
-      if(breaker.isHalfOpen()) {
-    if(successCount.incrementAndGet() >= SUCCESS_THRESHOLD) {// 成功次数超过阈值
-    failCount.set(0);  // 清空失败数   
-    breaker.setClose(); // 设置为关闭态
-              }
          }
-         return value;
-    } catch (JedisException je) {
-    
-    // 3. 失败：如果是关闭态
-    if(breaker.isClose()){ 
-    if(failCount.incrementAndGet() >= FAILS_THRESHOLD){ // 失败次数超过阈值
-     breaker.setOpen();  // 设置为打开态
-       }
-    } 
-    
-    //4. 失败：如果是半打开态
-    else if(breaker.isHalfOpen()) {  
-      breaker.setOpen();    // 直接设置为打开态
+         }
+      }, 0, recoverInterval); // 初始化定时器定期检测 redis 是否可用
+      ```
+
+      
+
+    - 操作数据时判断状态
+
+      ```java
+      //1. 断路器打开则直接返回空值
+      if (breaker.isOpen()) { 
+        return null;  
+      }
+      
+      K value = null;
+      Jedis jedis = null;
+      
+      try {
+        jedis = connPool.getResource();
+        value = callback.call(jedis);
+        
+        //2. 如果是半打开状态
+        if(breaker.isHalfOpen()) {
+      if(successCount.incrementAndGet() >= SUCCESS_THRESHOLD) {// 成功次数超过阈值
+      failCount.set(0);  // 清空失败数   
+      breaker.setClose(); // 设置为关闭态
+                }
+           }
+           return value;
+      } catch (JedisException je) {
+      
+      // 3. 失败：如果是关闭态
+      if(breaker.isClose()){ 
+      if(failCount.incrementAndGet() >= FAILS_THRESHOLD){ // 失败次数超过阈值
+       breaker.setOpen();  // 设置为打开态
+         }
       } 
-      throw  je;
       
-    } finally {
-         if (jedis != null) {
-               jedis.close();
-         }
-    }
+      //4. 失败：如果是半打开态
+      else if(breaker.isHalfOpen()) {  
+        breaker.setOpen();    // 直接设置为打开态
+        } 
+        throw  je;
+        
+      } finally {
+           if (jedis != null) {
+                 jedis.close();
+           }
+      }
+      ```
+
+      
+
+
+
+
+- 状态
+
+  - **Closed**
+    - 记录失败次数
+  - **Open**
+    - 失败次数超过阈值，则断开
+    - 并且开启一个超时时钟 --> how?
+
+  - **Half-Open**
+    - 超时时钟到期，允许一定数量的请求调用服务
+
+
+
+
+- 实践
+
+  - 错误类型
+    - 有些错误先走**重试**，比如限流、超时
+    - 有些错误直接**熔断**，比如远程服务器挂掉
+
+  - 日志监控
+    - 测试服务是否可用
+      - ping
+      - 不必等到真实流量才切回 closed
+
+
+  - 手动重置
+
+  - 并发问题: atomic
+
+  - 资源分区
+    - 只对有问题的分区熔断，而不是整体
+
+
+
+
+**4. 限流 Throttle**
+
+- 作用：保护服务提供方
+  - 对并发访问进行限速，对整体流量做塑形
+
+
+- 部署位置
+
+  - API 网关
+
+  - RPC 客户端
+
+
+- 后果
+
+  - 拒绝服务
+
+  - 服务降级
+
+  - 特权请求：多租户
+
+  - 延时处理
+
+
+- 设计
+
+  - 限流规则
+
+    - 阈值的设置
+      - 配置中心，动态调整
+      -  yml, properties
+
+    ```
+    configs:
+    
+    - appId: app-1
+      limits:
+      - api: /v1/user
+        limit: 100
+        unit：60
+      - api: /v1/order
+        limit: 50
+    - appId: app-2
+      limits:
+      - api: /v1/user
+        limit: 50
+      - api: /v1/order
+        limit: 50
     ```
 
-    
 
 
-
-状态
-
-- Closed
-  - 记录失败次数
-- Open
-  - 失败次数超过阈值，则断开
-  - 并且开启一个超时时钟 --> how?
-- Half-Open
-  - 超时时钟到期，允许一定数量的请求调用服务
-
-
-
-实践
-
-- 错误类型
-  - 有些错误先走**重试**，比如限流、超时
-  - 有些错误直接**熔断**，比如远程服务器挂掉
-- 日志监控
-- 测试服务是否可用
-  - ping
-  - 不必等到真实流量才切回 closed
-- 手动重置
-- 并发问题: atomic
-- 资源分区
-  - 只对有问题的分区熔断，而不是整体
-
-
-
-#### 限流 Throttle
-
-作用：保护服务提供方
-- 对并发访问进行限速，对整体流量做塑形
-
-
-
-部署位置
-
-- API 网关
-- RPC 客户端
-
-
-
-后果
-
-- 拒绝服务
-- 服务降级
-- 特权请求：多租户
-- 延时处理
-
-
-
-设计
-
-- 限流规则
-
-  - 阈值的设置
-    - 配置中心，动态调整
-    -  yml, properties
-
-  ```
-  configs:
-  
-  - appId: app-1
-    limits:
-    - api: /v1/user
-      limit: 100
-      unit：60
-    - api: /v1/order
-      limit: 50
-  - appId: app-2
-    limits:
-    - api: /v1/user
-      limit: 50
-    - api: /v1/order
-      limit: 50
-  ```
 
 
 
@@ -2406,15 +2534,17 @@ vs. 降级
 
 
 
-限流模式
+- 限流模式
 
-- 单机
-- 分布式
-  - 集中式管理计数器；例如 存到Redis；注意 Redis超时情况，设置合理超时时间
+  - 单机
+
+  - 分布式
+    - 集中式管理计数器；例如 存到Redis；注意 Redis超时情况，设置合理超时时间
 
 
 
-限流算法
+
+**限流算法**
 
 - **固定窗口算法**
 
@@ -2463,12 +2593,12 @@ vs. 降级
   
   - 用队列实现，队满则拒绝
   - 速率控制较均匀、精确
-- 不能处理突发流量
+  - 不能处理突发流量
   
   
   
 - **令牌通算法 Token Bucket**
-  
+
   - 中间人：往桶里按照固定速率放入token，且总数有限制
   - 限速不精确，能处理突发流量
     - 桶的大小决定了突发流量处理量
@@ -2480,11 +2610,11 @@ vs. 降级
       - 性能优化：每次取一批令牌，减少请求redis的次数
       
       
-  
+
 - **基于响应时间的动态限流**
-  
--  TCP: Round Trip Time拥塞控制算法
-  
+
+- TCP: Round Trip Time拥塞控制算法
+
 - **全局流控**
 
   - Redis INCR + Lua
@@ -2539,7 +2669,7 @@ vs. 降级
 
 ## || 可扩展性 Scalability
 
-### 定义: 负载 - 性能
+**定义: 负载 - 性能**
 
 - 描述负载增高时系统的处理能力。
   Scalability is the term we use to describe a system's ability to cope with increased load.
@@ -2560,16 +2690,16 @@ vs. 降级
 
 
 
-### 手段
+**手段**
 
-#### Scale-up
+**1. Scale-up**
 
 - 垂直扩展；
 - 升级到更强大的机器；
 
 
 
-#### Scale-out
+**2. Scale-out**
 
 - 水平扩展；
 - 将负载分布到多个小机器；
@@ -2578,7 +2708,7 @@ vs. 降级
 
 
 
-#### Elastic
+**3. Elastic**
 
 - 负载增加时自动增加计算资源；
 
@@ -2586,9 +2716,7 @@ vs. 降级
 
 ## || 可维护性 Maintainability
 
-### 定义
-
-易于维护
+定义：易于维护
 
 - 易于修复缺陷；
 - 易于运维；
@@ -2600,148 +2728,178 @@ vs. 降级
 
 
 
-### 手段
+手段
 
-#### 可运维性 Opeability
+- **可运维性 Opeability**
 
-- 可观测运行时行为和内部状态；
-- 自动化、与标准工具集成；
-- 避免依赖单个机器；
-- 良好的文档和操作模式；
-- 良好的默认行为；
-- 自我修复；同时给管理员手动控制；
-- 行为可预测；Minimizing suprises；
+  - 可观测运行时行为和内部状态；
+
+  - 自动化、与标准工具集成；
+
+  - 避免依赖单个机器；
+
+  - 良好的文档和操作模式；
+
+  - 良好的默认行为；
+
+  - 自我修复；同时给管理员手动控制；
+
+  - 行为可预测；Minimizing suprises；
 
 
 
-#### 简单性 Simplicity
 
-- “抽象 Abstraction” 可以降低复杂性；
+- **简单性 Simplicity**
+  - “抽象 Abstraction” 可以降低复杂性；
   - facade
 
 
 
-#### 可演化性 Evolvability / Extensibility
 
-- Agile
-- 架构重构
+- **可演化性 Evolvability / Extensibility**
+
+  - Agile
+
+  - 架构重构
+
 
 
 
 ## || 高可用
 
-### 手段
+手段
 
-#### 故障隔离 Bulkheads
+**1. 故障隔离 Bulkheads**
 
-https://resilience4j.readme.io/docs/bulkhead
+> https://resilience4j.readme.io/docs/bulkhead
 
-故障隔离策略
+- 故障隔离策略
 
-- **线程级隔离**
-  - 常用于单体应用
-  - 通信
-    - 共享变量
-
-- **进程级隔离**
-  - 通信
-    - 信号量
-    - 消息队列
-    - 共享内存
-    - RPC
-
-- **资源隔离**
-  - 微服务服务隔离
-    - 服务注册时：接口名 + 分组参数
-    - 服务发现时：不同客户端的请求带的分组参数不一样，获取的服务器列表也就不一样了
-  - 通过容器隔离资源
-
-- **用户隔离（多租户**）
-  - 服务共享
-  - 数据隔离
+  - **线程级隔离**
+    - 常用于单体应用
+    - 通信
+      - 共享变量
 
 
+  - **进程级隔离**
+    - 通信
+      - 信号量
+      - 消息队列
+      - 共享内存
+      - RPC
 
-隔离带来的问题
 
-- 多板块数据的聚合：响应时间下降
-- 大数据仓库：增加数据合并复杂度
-- 故障雪崩
-- 分布式事务
+  - **资源隔离**
+    - 微服务服务隔离
+      - 服务注册时：接口名 + 分组参数
+      - 服务发现时：不同客户端的请求带的分组参数不一样，获取的服务器列表也就不一样了
+    - 通过容器隔离资源
+
+
+  - **用户隔离（多租户**）
+    - 服务共享
+    - 数据隔离
 
 
 
-#### 故障恢复 Failover
 
-故障检测
+- 隔离带来的问题
 
-- 心跳
-  - 固定心跳检测
-  - 基于历史心跳消息预测故障
+  - 多板块数据的聚合：响应时间下降
 
+  - 大数据仓库：增加数据合并复杂度
 
+  - 故障雪崩
 
-故障恢复
-
-- 对等节点
-  
-- 随机访问另一个即可
-  
-- 不对等节点
-
-  - 选主：在多个备份节点上达成一致
-  - Poxos，Raft
-
-  
-
-#### 超时控制
-
-目的是不让请求一直保持，释放资源给接下来的请求使用
-
-设置
-
-- **ConnectTimeout**
-  - 建立连接阶段最长等待时间
-  - 1~5s即可
-    - 几秒连接不上，则可能永远连不上；配长了没意义
-
-- **ReadTimeout**
-  - 从socket上读取数据的最长等待时间
-  - 设为 TP99 RT
-    - 过长：下游抖动会影响到客户端自己，线程hang
-    - 过短：影响成功率
+  - 分布式事务
 
 
 
-#### 重试 Retry
 
-场景
+**2. 故障恢复 Failover**
 
-- 认为这个故障时暂时的，而不是永久的；例如网络抖动
+- 故障检测
+  - 心跳
+    - 固定心跳检测
+    - 基于历史心跳消息预测故障
 
-- 调用超时
 
-- 返回了某种可以重试的错误：繁忙中，流控中，资源不足...
 
-- 注意要幂等！
 
-  - 绝对值的修改 天然幂等
+- 故障恢复
 
-  - 相对值的修改
+  - 对等节点
+    
 
-    - 加 where 条件
-    - 转换成绝对值修改（先查出来）
+  - 随机访问另一个即可
+    
+
+  - 不对等节点
+
+    - 选主：在多个备份节点上达成一致
+    - Poxos，Raft
 
     
 
-**重试策略(Spring)**
 
-- NeverRetryPolicy：只调一次
-- AlwaysRetryPolicy：无限重试，直到成功
-- SimpleRetryPolicy：固定次数重试
-- TimeoutRetryPolicy：在超时时间内允许重试
-- CircuitBreakerRetryPolicy：有熔断功能的重试策略
-- CompositeRetryPolicy：组合
+**3. 超时控制**
+
+目的是不让请求一直保持，释放资源给接下来的请求使用
+
+- 设置
+
+  - `ConnectTimeout`
+    - 建立连接阶段最长等待时间
+    - 1~5s即可。几秒连接不上，则可能永远连不上；配长了没意义
+
+  - `ReadTimeout`
+    - 从socket上读取数据的最长等待时间
+    - 设为 TP99 RT
+      - 过长：下游抖动会影响到客户端自己，线程hang
+      - 过短：影响成功率
+
+
+
+
+**4. 重试 Retry**
+
+- 场景
+
+  - 认为这个故障时暂时的，而不是永久的；例如网络抖动
+
+
+  - 调用超时
+
+
+  - 返回了某种可以重试的错误：繁忙中，流控中，资源不足...
+
+
+  - 注意要幂等！
+
+    - 绝对值的修改 天然幂等
+
+    - 相对值的修改
+
+      - 加 where 条件
+      - 转换成绝对值修改（先查出来）
+
+      
+
+
+- 重试策略(Spring)
+
+  - NeverRetryPolicy：只调一次
+
+  - AlwaysRetryPolicy：无限重试，直到成功
+
+  - SimpleRetryPolicy：固定次数重试
+
+  - TimeoutRetryPolicy：在超时时间内允许重试
+
+  - CircuitBreakerRetryPolicy：有熔断功能的重试策略
+
+  - CompositeRetryPolicy：组合
+
 
 ```java
 @Service
@@ -2758,31 +2916,38 @@ public interface MyService {
 
 
 
-**退避策略(Spring)**
+- 退避策略(Spring)
 
-- NoBackOffPolicy：立即重试
-- FixedBackOffPolicy：固定时间退避
-  
-- sleeper | backOffPeriod
-  
-- UniformRandomBackOffPolicy：随机时间退避
-  
-- sleeper | minBackOffPeriod | maxBackOffPeriod
-  
-- ExponentialBackOffPolicy：指数退避策略
+  - NoBackOffPolicy：立即重试
 
-  ```java
-  public static long getWaitTimeExp(int retryCount) {
-      long waitTime = ((long) Math.pow(2, retryCount) );
-      return waitTime;
-  }
-  ```
+  - FixedBackOffPolicy：固定时间退避
+    
 
-- ExponentialRandomBackOffPolicy：指数对比策略，并引入随机乘数
+  - sleeper | backOffPeriod
+    
+
+  - UniformRandomBackOffPolicy：随机时间退避
+    
+
+  - sleeper | minBackOffPeriod | maxBackOffPeriod
+    
+
+  - ExponentialBackOffPolicy：指数退避策略
+
+    ```java
+    public static long getWaitTimeExp(int retryCount) {
+        long waitTime = ((long) Math.pow(2, retryCount) );
+        return waitTime;
+    }
+    ```
+
+
+  - ExponentialRandomBackOffPolicy：指数对比策略，并引入随机乘数
 
 
 
-实现
+
+- 实现
 
 ```java
 public static void doOperationAndWaitForResult() {
@@ -2822,110 +2987,129 @@ do {
 
 
 
-#### 防雪崩
+**5. 防雪崩**
 
-https://segmentfault.com/a/1190000005988895
+>  https://segmentfault.com/a/1190000005988895
 
-流量控制
+- 流量控制
 
-- 网关限流
-
-- 用户交互限流
-
-- 关闭重试
+  - 网关限流
 
 
+  - 用户交互限流
 
-改进缓存模式
 
-- 缓存预加载
-
-- 同步改为异步刷新
+  - 关闭重试
 
 
 
-服务自动扩容
 
-服务调用者降级
+- 改进缓存模式
+
+  - 缓存预加载
 
 
-
-### 指标
-
-#### MTBF / (MTBF + MTTR)
-
-MTBF: Mean Time Between Failure
-
-MTTR: Mean Time To Repair
+  - 同步改为异步刷新
 
 
 
-#### VALET
 
-- Volume - 容量，TPS
+- 服务自动扩容
 
-- Availability - 可用性
-
-- Latency - 时延
-
-- Errors - 错误率
-
-- Tickets - 人工介入
-
-### 框架
-
-#### Hystrix
-
-HystrixCommand
-
-- run()
-- getFallback()
-- 执行
-  - queue()
-  -  observe()
+- 服务调用者降级
 
 
 
-Spring Cloud Hystrix
+**指标**
 
-- @HystrixCommand
+- **MTBF / (MTBF + MTTR)**
 
-
-
-请求合并、请求缓存
-
-- TBD
+  > MTBF: Mean Time Between Failure
+  >
+  > MTTR: Mean Time To Repair
 
 
 
-隔离
+- **VALET**
 
-- 信号量隔离
-  - 轻量
-  - 不支持任务排队、不支持主动超时、异步调用
-  - 适用高扇出，例如网关
-
-- 线程隔离
-  - 支持排队、超时、异步调用
-  - 线程调用会产生额外开销适用有限扇出
+  - Volume - 容量，TPS
 
 
-
-监控
-
-- hystrix.stream
-- hystrix dashboard
-- turbine
-  - 聚合
-  - 输出到dashboard
+  - Availability - 可用性
 
 
+  - Latency - 时延
 
-#### Alibaba Sentinel
+
+  - Errors - 错误率
+
+
+  - Tickets - 人工介入
+
+  
+
+**框架**
+
+**1. Hystrix**
+
+- HystrixCommand
+
+  - run()
+
+  - getFallback()
+
+  - 执行
+    - queue()
+    -  observe()
+
+
+
+
+- Spring Cloud Hystrix
+  - @HystrixCommand
+
+
+
+
+- 请求合并、请求缓存
+  - TBD
+
+
+
+
+- 隔离
+
+  - 信号量隔离
+    - 轻量
+    - 不支持任务排队、不支持主动超时、异步调用
+    - 适用高扇出，例如网关
+
+
+  - 线程隔离
+    - 支持排队、超时、异步调用
+    - 线程调用会产生额外开销适用有限扇出
+
+
+
+
+- 监控
+
+  - hystrix.stream
+
+  - hystrix dashboard
+
+  - turbine
+    - 聚合
+    - 输出到dashboard
+
+
+
+
+**2. Alibaba Sentinel**
 
 TBD
 
-#### Resilience4j
+**3. Resilience4j**
 
 TBD
 
@@ -2933,147 +3117,157 @@ TBD
 
 ## || 高性能
 
-### 手段
+手段
 
-#### 池化
+**1. 池化**
 
-**连接池**
-
-- 注意池中连接的维护问题
-  - 用一个线程定期检测池中连接的可用性：C3P0
-  - 获取到连接之后先校验可用性：DBCP testOnBorrow
-
-**线程池**
-
-- 优先放入队列暂存，而不是开启新线程，适用于CPU型任务
-  - IO型任务更适合直接创建线程，例如tomcat线程池即是如此。
-
-- 要监控线程池队列的堆积量
-
-- 不能使用无界队列！会触发Full GC
+- **连接池**
+  - 注意池中连接的维护问题
+    - 用一个线程定期检测池中连接的可用性：C3P0
+    - 获取到连接之后先校验可用性：DBCP testOnBorrow
 
 
+- **线程池**
 
-#### 读写分离
+  - 优先放入队列暂存，而不是开启新线程，适用于CPU型任务
+    - IO型任务更适合直接创建线程，例如tomcat线程池即是如此。
 
-**主从复制**
 
-- binlog
+  - 要监控线程池队列的堆积量
+
+
+  - 不能使用无界队列！会触发Full GC
 
 
 
-**如何解决复制延迟问题**
 
-- 使用缓存
-  - 适合新增数据的场景
+**2. 读写分离**
 
-- 读主库
+- 主从复制 binlog
+
+- 如何解决复制延迟问题
+
+  - 使用缓存
+    - 适合新增数据的场景
 
 
-
-**如何屏蔽底层访问方式**
-
-- 植入应用程序内部
-  - TDDL
-
-- 单独部署代理层
-  - Mycat
+  - 读主库
 
 
 
-#### 分库分表
 
-**垂直拆分**
+- 如何屏蔽底层访问方式
 
-- 专库专用
+  - 植入应用程序内部
+    - TDDL
 
 
-
-**水平拆分**
-
-- 按哈希值拆分
-
-- 按字段区间拆分
+  - 单独部署代理层
+    - Mycat
 
 
 
-**引入的问题**
 
-- 引入了分区键，所有查询都要带上这个字段
+**3. 分库分表**
 
-- 跨库Join
-
-- 主键的全局唯一性问题
-
-  > 单库单表 一般用自增字段作为主键。
-  - UUID
-
-    - 不递增，不有序
-    - 不具备业务含义
-    - 耗费空间
-
-  - **Snowflake**
-
-    - 算法：时间戳 + 机器ID + 序列号
-
-      >  如果独立主备部署（而不是分布在业务代码中），则机器ID可省略
-
-    - id偏斜问题
-
-      > 问题：qps不高时，比如每毫秒只发一个id，id末位永远是1；则表库分配不均匀。
-      >
-      > 思路：
-      >
-      > - 时间戳不记录毫秒，而是记录秒。
-      > - 序列号起始号做随机，这秒是21，下秒是30
-
-    - 时钟不准问题
-
-      > 可让发号器暂时拒绝发号。
-
-  - 百度 UidGenerator https://github.com/baidu/uid-generator/
-
-  - 美团 Leaf https://tech.meituan.com/2017/04/21/mt-leaf.html
-
-  -  微信序列号生成器 https://www.infoq.cn/article/wechat-serial-number-generator-architecture
-
-#### 缓存
+- 垂直拆分
+  - 专库专用
 
 
 
-### 指标
 
-#### 吞吐量 Throughput
+- 水平拆分
 
-#### 响应时间 Response Time
+  - 按哈希值拆分
 
-#### 完成时间 Turnaround Time
+
+  - 按字段区间拆分
+
+
+
+
+- 引入的问题
+
+  - 引入了分区键，所有查询都要带上这个字段
+
+
+  - 跨库Join
+
+
+  - 主键的全局唯一性问题
+
+    > 单库单表 一般用自增字段作为主键。
+    - UUID
+
+      - 不递增，不有序
+      - 不具备业务含义
+      - 耗费空间
+
+    - **Snowflake**
+
+      - 算法：时间戳 + 机器ID + 序列号
+
+        >  如果独立主备部署（而不是分布在业务代码中），则机器ID可省略
+
+      - id偏斜问题
+
+        > 问题：qps不高时，比如每毫秒只发一个id，id末位永远是1；则表库分配不均匀。
+        >
+        > 思路：
+        >
+        > - 时间戳不记录毫秒，而是记录秒。
+        > - 序列号起始号做随机，这秒是21，下秒是30
+
+      - 时钟不准问题
+
+        > 可让发号器暂时拒绝发号。
+
+    - 百度 UidGenerator https://github.com/baidu/uid-generator/
+
+    - 美团 Leaf https://tech.meituan.com/2017/04/21/mt-leaf.html
+
+    -  微信序列号生成器 https://www.infoq.cn/article/wechat-serial-number-generator-architecture
+
+
+
+
+**4. 缓存**
+
+
+
+指标
+
+- 吞吐量 Throughput
+
+- 响应时间 Response Time
+
+- 完成时间 Turnaround Time
 
 
 
 ## || 高并发
 
-### 手段
+手段
 
-#### Scale out 横向扩展
+**1. Scale out 横向扩展**
 
-数据库主从
+- 数据库主从
 
-分库分表
+- 分库分表
 
-存储分片
-
-
-
-#### 缓存
-
-CPU 多级缓存
-
-文件 Page Cache 缓存
+- 存储分片
 
 
 
-#### 异步
+**2. 缓存**
+
+- CPU 多级缓存
+
+- 文件 Page Cache 缓存
+
+
+
+**3. 异步**
 
 
 
