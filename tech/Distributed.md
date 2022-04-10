@@ -309,6 +309,81 @@
 
 
 
+## || 架构演进
+
+**1. 原始分布式时代**
+
+- DCE, Distributed Computing Environment 定义了分布式服务规范和参考实现。
+
+
+
+**2. 单体系统**
+
+- 定义：Self-contained，自包含；并非“不可拆分”，而是拆分后欠缺自治与隔离：一个模块故障会影响全局。
+
+
+
+**3. SOA**
+
+- 服务拆分的几种架构
+  - **烟囱式架构：Information Silo Architecture**
+    - 各模块完全独立，使用独立的数据库、服务器；
+    - 缺点：不好共享。
+  - **微内核架构：Micro-kernel Architecture**
+    - 公共服务作为核心 Core System；
+    - 其他业务作为插件模块 Plugin Module；
+    - 缺点：假设各插件无直接交互。
+  - **事件驱动架构：Event-Driven Architecture**
+- SOA 缺点：过于严格的规范定义，带来过度的复杂性
+
+
+
+**4. 微服务**
+
+- 特征
+  - **围绕业务能力构建：Organized Around Business Capability**
+    - 康威定律
+  - **分散治理：Decentralized Governance**
+    - Dev ops
+  - **通过服务来实现独立自治的组件： Componentization  via Service**
+    - 通过服务而非类库来构建组件
+  - **产品化思维：Product not Project**
+    - Dev ops，并关注产品的整个方面
+  - **数据去中心化：Decentralized Data Management**
+    - 数据隔离，带来分布式一致性挑战
+  - **强终端弱管道：Smart Endpoint & Dumb Pipe**
+    - 强终端 - Service Mesh, Side car
+  - **容错性设计：Design for Failure**
+    - 快速故障检测、出错时进行隔离
+  - **演进式设计：Evolutionary Design**
+    - 承认服务会被报废淘汰，不要让系统中出现无可替代的服务
+  - **基础设施自动化：Infrastructure Automation**
+    - 例如 CICD，减少构建部署的复杂性
+
+
+
+**5. 云原生时代**
+
+- 又称后微服务时代。
+- 从硬件角度，解决分布式架构中出现的问题。（例如注册发现、跟踪治理、负载均衡、传输通信）
+- 技术
+  - K8S
+  - Service Mesh: Sidecar
+
+
+
+**6. 无服务时代**
+
+- 组件
+  - 后端服务
+  - 函数
+- 愿景
+  - 无需考虑技术组件、部署、算力、运维
+
+
+
+
+
 
 
 ## || 分布式中间件
@@ -1594,10 +1669,29 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 ## RPC
 
-框架
+**进程间通信 - Inter-Process Communication, IPC**
 
-- dubbo
-- gRPC
+- 管道和具名管道 (Named Pipe)
+- 信号 (Signal)
+  - Kill -9 pid
+- 信号量 (Semaphore)
+  - OS 提供的一个特殊变量，程序可以进行 wait notify
+- 消息队列 (Message Queue)
+- 共享内存 (Shared Memory)
+- 本地套接字接口 (IPC Socket)
+
+
+
+**RPC 选型**
+
+- 原则：简单、普适、高性能 无法兼得
+- 简单
+  - 例如 DCE, DOCM, Java RMI
+  - 依赖操作系统，或者依赖特定语言；无法普适
+  - 而例如 WebService 屏蔽了复杂性，却无法高性能
+- 普适
+  - 例如Corba
+  - 复杂性高
 
 
 
@@ -1607,38 +1701,27 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
   
   - 扩展性
 - 协议体、协议头不定长
-  
 - 序列化
 
   - 序列化协议
 
     -  JDK：ObjectOutputStream
-
-    - JSON：
-
-      额外空间开销大
-
-      没有类型，要通过反射，性能不好
-
-    - Hessian
-
-    - Protobuf
-
-      预定义 IDL
-
-    - kryo
-
+- JSON：
+      -  额外空间开销大
+  -  没有类型，要通过反射，性能不好
+    -  Hessian
+-  Protobuf
+      -  预定义 IDL
+-  kryo
   - 选型依据
-    - 性能
+  - 性能
     - 空间开销
-    - 通用性、兼容性
-  
+  - 通用性、兼容性
 - **通信模型**
 
   - 阻塞IO
   - IO多路复用
     - Netty
-
 - **动态代理**
 
 
