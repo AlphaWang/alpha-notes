@@ -1697,26 +1697,24 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 基本流程
 
-- **协议**
-  
+- **协议**：如何传递数据
   - 扩展性
-- 协议体、协议头不定长
-- 序列化
-
-  - 序列化协议
-
-    -  JDK：ObjectOutputStream
-- JSON：
-      -  额外空间开销大
-  -  没有类型，要通过反射，性能不好
-    -  Hessian
--  Protobuf
-      -  预定义 IDL
--  kryo
-  - 选型依据
-  - 性能
-    - 空间开销
-  - 通用性、兼容性
+  - 协议体、协议头不定长
+- **序列化：如何表示数据**
+- 序列化协议
+  
+  -  JDK：ObjectOutputStream
+  - JSON：
+        -  额外空间开销大
+    -  没有类型，要通过反射，性能不好
+      -  Hessian
+  -  Protobuf
+        - 预定义 IDL
+  -  kryo
+    - 选型依据
+    - 性能
+      - 空间开销
+    - 通用性、兼容性
 - **通信模型**
 
   - 阻塞IO
@@ -1748,11 +1746,101 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 
-## 发布订阅
+## REST
+
+**定义**
+
+> REST 只能说是风格，而不是规范/协议。
+>
+> REST 实际上是 HTT (Hypertext Transfer) 的进一步抽象，类似接口与实现类的关系。
+
+- 资源 Resource
+  - 例如要阅读的文章
+- 表征 Representation
+  - 指信息与用户交互时的表示形式，例如 PDF/MD
+- 状态 State
+  - 例如“下一篇”
+- 转移 Transfer
+  - 例如服务通过某种方式，将“当前文档” 转变成 “下一篇文章”
 
 
 
-## 消息队列
+**原则**
+
+理想的满足 REST 风格的系统应该满足六大原则：
+
+- 客户端与服务端分离 （Client-Server）
+- 无状态（Stateless）：服务端不负责维护状态
+- 可缓存（Cacheability）：允许将部分服务端应答缓存起来
+- 分层系统（Layered System）：客户端不需要知道是否连接到了最终服务器，典型例子是 CDN
+- 同一接口（Uniform Interface）：面向资源编程
+- 按需代码（Code-On-Demand）：代码存放在服务端，类似 Applet
+
+
+
+**RMM**
+
+Richardson 成熟度模型
+
+- **Level 0 - The swamp of plain old xml**
+
+  - 完全不 REST
+  - 基于 RPC 风格的服务设计，例如 `POST /appointmentService?action=query`
+
+- **Level 1 - Resource**
+
+  - 引入资源、资源ID；
+  - Endpoint 应该是名词而非动词，例如 `POST /doctors/john`
+
+- **Level 2 - HTTP Verbs**
+
+  - 引入动词。
+  - 解决扩展性问题，否则查询修改要定义不同的接口。例如 `GET /doctors/john/schedule`
+
+- **Level 3 - Hypermedia Controls**
+
+  - HATEOAS，Hypertext As The Engine of Application State.
+
+  - 除了第一个请求，其他请求都应该能够自己描述后续可能发生的状态转移。例如响应：
+
+    ```
+    {
+      links: [
+        {ref: "doctor info", href: "/doctors/john/info"}
+      ],
+      schedules: [
+        {
+          id: 1234, start: "", end: ""
+        }
+      ]
+    }
+    ```
+
+    
+
+**争议**
+
+- 1.面向资源只适合 CRUD，复杂逻辑还是要靠 面向过程、面向对象
+  - 可使用自定义方法，例如 `POST /books/id:undelete`
+  - 或抽象出另一个资源，例如 “回收站”
+- 2.REST 与 HTTP 强绑定，不适合高性能传输场景
+  - HTTP 并非传输层协议，而是应用层协议；将 HTTP 仅用于传输是不恰当的。
+  - 这类场景往往是集群内部节点之间通讯，RPC 更合适？
+- 3.REST 不利于事务支持
+- 4.REST 没有传输可靠性支持
+  - 重试 + 幂等
+- 5.REST 缺乏对资源进行“部分”、“批量”处理
+  - 例如想要只返回用户姓名，而不是完整用户详情
+  - 例如要批量修改一批用户
+  - GraphQL
+
+
+
+## 发布订阅/
+
+
+
+## 消息队列/
 
 
 
@@ -2374,12 +2462,11 @@ public String right2(@RequestParam("id") int id) {
       - 先限流再停止
       - 例如双十一停止退货服务
     
-
-  - **简化功能**
-
-  - **拒绝部分请求** --> 限流？
-
-  - **限流降级、开关降级**
+- **简化功能**
+  
+- **拒绝部分请求** --> 限流？
+  
+- **限流降级、开关降级**
 
 
 
@@ -2913,15 +3000,13 @@ public String right2(@RequestParam("id") int id) {
 
   - 对等节点
     
-
-  - 随机访问另一个即可
+- 随机访问另一个即可
     
-
   - 不对等节点
 
     - 选主：在多个备份节点上达成一致
-    - Poxos，Raft
-
+  - Poxos，Raft
+  
     
 
 
@@ -3005,22 +3090,18 @@ public interface MyService {
 
   - FixedBackOffPolicy：固定时间退避
     
-
-  - sleeper | backOffPeriod
+- sleeper | backOffPeriod
     
-
   - UniformRandomBackOffPolicy：随机时间退避
-    
-
+  
   - sleeper | minBackOffPeriod | maxBackOffPeriod
     
-
-  - ExponentialBackOffPolicy：指数退避策略
-
+- ExponentialBackOffPolicy：指数退避策略
+  
     ```java
-    public static long getWaitTimeExp(int retryCount) {
+  public static long getWaitTimeExp(int retryCount) {
         long waitTime = ((long) Math.pow(2, retryCount) );
-        return waitTime;
+      return waitTime;
     }
     ```
 
