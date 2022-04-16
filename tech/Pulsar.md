@@ -4,6 +4,22 @@
 
 ## || 特点
 
+**Pulsar 要解决的问题**
+
+- 数据规模
+  - 多租户
+  - 百万 Topics
+  - 低延
+- 存算分离
+  - 解决运维痛点：替换机器、服务扩容、**数据 Rebalance**
+- 减少文件系统依赖
+  - **性能难保障**：持久化 fsync、一致性 ack = all、多主题
+  - **IO 不隔离**：消费者读 backlog 会影响其他生产者和消费者
+
+
+
+**特点**
+
 - **云原生**
   - Broker 无状态
   - Bookie 可以水平扩展，新数据存入新的Bookie
@@ -62,7 +78,7 @@
 
 
 
-ZK
+**ZooKeeper**
 
 - 存储元数据
 
@@ -117,7 +133,23 @@ ZK
       tenant/namespace
     ```
 
-    
+
+
+## || 高性能
+
+
+
+**Vs. RocketMQ**
+
+![image-20220416135310696](../img/pulsar/rocketmq-write-flow.png)
+
+- 升级同步双写流程
+  - SendMessageProcessorThread 生成 CompletableFuture；随后即能继续处理下一个新请求；
+  - CompletableFuture 何时完成：slave 复制位点超过消息位点后完成。完成后才响应客户端。
+
+
+
+
 
 
 
