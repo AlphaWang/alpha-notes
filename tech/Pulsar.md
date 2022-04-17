@@ -1022,7 +1022,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-### 组件：Bookie
+### 组件：Bookie 
+
+**概念**
 
 - 而 Bookie 逻辑很轻量化
 - 可当做是一个 KV 存储
@@ -1861,6 +1863,34 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 
 
+## || KOP
+
+> - KoP 介绍 https://streamnative.io/blog/tech/2020-03-24-bring-native-kafka-protocol-support-to-apache-pulsar/ 
+> - 连续偏移量 https://streamnative.io/blog/engineering/2021-12-01-offset-implementation-in-kafka-on-pulsar/ 
+
+如何实现连续 offset
+
+- bookie 存储内容新增 BrokerEntryMetadata 
+
+  ```protobuf
+  message BrokerEntryMetadata {
+    optional uint64 broker_timestamp = 1;
+    optional uint64 index = 2; //offset
+  }
+  ```
+
+- FETCH
+
+  - 直接读 Bookie，解析 BrokerEntryMetadata 即可；-- 二分查找
+
+- PRODUCE
+
+- - Managed Ledger 写入 Bookie 成功后有一个回调 ` public void addComplete(Position pos, ByteBuf entryData, Object ctx)`，可以从 entryData 中解析 BrokerEntryMetadata，返回 index 即可。
+
+- COMMIT_OFFSET
+
+
+
 
 
 ## || 新功能
@@ -1902,8 +1932,6 @@ client.newConsumer()
                                 .build())
   .subscribe();
 ```
-
-
 
 
 
