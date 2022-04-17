@@ -97,6 +97,14 @@
 
 
 
+**流程**
+
+![image-20220416215533390](../img/pulsar/pulsar-rw-flow.png)
+
+![image-20220416220750084](../img/pulsar/pulsar-segment-bookie.png)
+
+
+
 **隔离性**
 
 - BK 读写存储隔离
@@ -1023,6 +1031,8 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 ![image-20220326130700495](../img/pulsar/bk-arch-rw-isolation.png)
 
+![image-20220416233528333](../img/pulsar/bk-arch-rw-isolation2.png)
+
 > Q: 先写Write Cache，再 flush 到 Journal，会不会导致读到脏数据？
 >
 > A: 不会，LAC 之后的都读不到
@@ -1285,9 +1295,16 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 ## || Ledger
 
-> - https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
+> - A Guide to the BookKeeper Replication Protocol 
+>   https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
 >
-> - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 //TODO
+> - Apache BookKeeper Internals — Part 1 — High Level
+>   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-1-high-level-6dce62269125 
+>
+> - Apache BookKeeper Insights Part 2 — Closing Ledgers Safely
+>   https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 //TODO
+>
+>   
 
 
 
@@ -1481,6 +1498,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ## || 读写流程
 
+> - Apache BookKeeper Internals — Part 1 — High Level 
+>   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-1-high-level-6dce62269125
+
 读写概览：
 
 ![image-20211231232219900](../img/pulsar/bookkeeper-read-write-components.png)
@@ -1488,6 +1508,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 ### 写入
+
+> - Apache BookKeeper Internals — Part 2 — Writes 
+>   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-2-writes-359ffc17c497
 
 ![image-20211231232945352](../img/pulsar/bookkeeper-write-overview.png)
 
@@ -1539,6 +1562,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ### 读取
 
+> - Apache BookKeeper Internals — Part 3 — Reads 
+>   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-3-reads-31637b118bf
+
 读请求由 DbLedgerStorage 处理，一般会从缓存读取。
 
 ![image-20220101145034052](../img/pulsar/bookkeeper-read-overview.png)
@@ -1562,6 +1588,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 ## || 背压
+
+> - Apache BookKeeper Internals — Part 4 — Back Pressure
+>   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-4-back-pressure-7847bd6d1257
 
 背压：通过一系列限制，防止内存占用过多。
 
