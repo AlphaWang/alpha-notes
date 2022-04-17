@@ -1226,11 +1226,13 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 ### 外部共识 
 
+> - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
+
 Consensus：一个ledger任何时候都不会有两个broker写入。
 
 
 
-**要点：**
+**要点：客户端决定 WQ/AQ，而 bookie 只单纯存储数据**
 
 - LastAddPushed
 - LastAddConfirmed
@@ -1244,6 +1246,40 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
   - 当broker宕机，新的broker会写入新的ledger，而不会操作老ledger；
   - 即：一个ledger任何时候都不会有两个broker写入。
+- **对比 Kafka ISR**
+  - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。
+  - 还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
+  - 而 Pulsar 的recovery 特别容易。只需开启新的 Ledger segment 并将
+
+
+**复制协议中日志的三种区域**
+
+- **未提交区域**：尚未达到 AQ / Commit Quorum
+- **已提交头部**：已达到 AQ / Commit Quorum，但尚未达到 WQ / Replication Factor。-- 此部分数据对客户可见。
+- **已提交尾部**： 已达到 WQ / Replication Factor
+
+<img src="../img/pulsar/consensus-kafka-3zones.png" alt="img" style="zoom:67%;" />
+*(Kafka 日志的三个区域)*
+
+<img src="../img/pulsar/consensus-bookkeeper-3zones.png" alt="img" style="zoom:67%;" />
+*(Bookkeeper 日志的三个区域)*
+
+
+
+**Emsemble Change**
+
+- 当客户端写入某个 BK 失败，会选择新的 BK 来替代；
+
+- 会创建新 Ledger Segment 并将“未提交区域” 保存到新 Segment。
+
+- 而“已提交头部”、已达到AQ但未达到WQ的 entry 会被保留在原始 Ledger Fragement 中；
+
+  > 这会导致 BK Ledger 中部会包含“已提交头部”；而 Kafka 日志中部全部是“已完全提交数据”
+
+![img](../img/pulsar/consensus-bookkeeper-3zones-move.png)
+*(BookKeeper Emsemble Change)*
+
+
 
 - **Fencing**
 
@@ -1267,15 +1303,12 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
     - 2. Open a new ledger to append. 
 
-  - **对比 Kafka ISR**
-
-    - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。
-    - 还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
-    - 而 Pulsar 的recovery 特别容易。
+  
 
 
 
-**类似 Raft 一致性协议**
+
+**类比 Raft 一致性协议**
 
 ![image-20220326130523922](../img/pulsar/bk-arch-consistency-raft1.png)
 
@@ -1536,17 +1569,17 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - **Write ThreadPool**
   - 先写入 DbLedgerStorage 中的 `write cache`；成功之后再写入 Journal `内存队列`。
   - 默认线程数 = 1
-- **Ledger**
+- **DbLedgerStorage**
   - 实际上有两个 `write cache`，一个接受写入、一个准备flush，两者互切。
-  - `Sync Thread`：定时 checkpoint 刷盘
-  - `DbStorage Thread`：Write thread 写入 cache 时发现已满，则向 DbStorage Thread 提交刷盘操作。
+  - **Sync Thread**：定时 checkpoint 刷盘
+  - **DbStorage Thread**：Write thread 写入 cache 时发现已满，则向 DbStorage Thread 提交刷盘操作。
     - 此时如果 swapped out cache 已经刷盘成功，则直接切换，write thread写入新的cache；
     - 否则 write thread 等待一段时间并拒绝写入请求。
 - **Journal**
-  - `Journal 线程` 循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
+  - **Journal 线程**：循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
   - 定期向 `Force Write Queue` 中添加强制写入请求、触发 fsync；
-  - `Froce Write Thread` ：循环从 froce write queue 中拿取强制写入请求（其中包含entry callback）、在 journal 文件上执行 fsync；
-  - `Journal Callback Thread` ：fsync 成功后，执行 callback，给客户端返回 reesponse
+  - **Froce Write Thread** ：循环从 froce write queue 中拿取强制写入请求（其中包含entry callback）、在 journal 文件上执行 fsync；
+  - **Journal Callback Thread** ：fsync 成功后，执行 callback，给客户端返回 reesponse
 
 
 
