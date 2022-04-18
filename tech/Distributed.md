@@ -85,13 +85,13 @@
 单机系统
 
 - **含义**
-  
+
   - 关注一致性、可用性
-    
+
   - 需要全体一致性协议：例如 2PC
-    
+
   - 不能容忍网络错误：此时整个系统会拒绝写请求，变成只读
-  
+
 - **例子**
 
   - Kafka  --> CP?
@@ -125,7 +125,7 @@
 - Redis --> AP?
   - BookKeeper
 - Kafka 
-    - Unclean 领导者选举，会导致 CP --> AP
+  - Unclean 领导者选举，会导致 CP --> AP
 
 
 
@@ -403,7 +403,7 @@
 |      | RabbitMQ                                                     | RocketMQ                             | Kafka                                                        | Pulsar                           |
 | ---- | ------------------------------------------------------------ | ------------------------------------ | ------------------------------------------------------------ | -------------------------------- |
 | 特点 | 轻量级；Exchange：处于Producer、Queue之间，路由规则灵活      | 时延小；Broker事务反查：支持事务消息 | 集群成员对等，没有中心主节点； 与周边生态系统集成好； 性能好； CA | 存算分离；                       |
-| 功能 |                                                              |                                      |                                                              |                                  |
+| 功能 | 优先级队列、延迟队列                                         | 延迟队列，消息过滤                   |                                                              | 优先级队列、延迟队列             |
 | 问题 | 对消息堆积不友好，会导致性能急剧下降；性能不佳；Erlang语言小众 | 与周边生态系统的集成和兼容不佳       | 异步收发消息时延小，但同步时延高；批量发送，数据量小时反而时延高 | 性能有损失：多一次请求BookKeeper |
 
 
@@ -1115,11 +1115,18 @@ String result = jedis.set(
 
 
 
-### 刚性事务
+### 全局事务
 
-https://matt33.com/2018/07/08/distribute-system-consistency-protocol/ 
+> - https://matt33.com/2018/07/08/distribute-system-consistency-protocol/ 
+> - 在分布式场景下，仍然追求强一致。一般仅用于“单服务多数据源”场景。
+
+
 
 #### XA 协议
+
+> eXtended Architecture.
+>
+> Java JTA 接口
 
 参与者：
 
@@ -1144,21 +1151,27 @@ https://matt33.com/2018/07/08/distribute-system-consistency-protocol/
 ***阶段一：投票 Voting: CanCommit/Log***
 
 - CanCommit 
+  
   - `TM 协调者`：向本地资源管理器发起执行操作的 `CanCommit` 请求；
 - LOG 
-  - `RM 参与者`：收到请求后，执行事务操作，记录日志（`Undo / Redo log`）但不提交；返回操作结果
+  
+  - `RM 参与者`：收到请求后，执行事务操作，记录日志（`Undo / Redo log`）但不提交；返回操作结果。
+  
+    > 即在重做日志中记录内容，但不写入 Commit Record。
 
 
 
 ***阶段二：提交 Commit: DoCommit/DoAbort***
 
 - DoCommit
-  - `TM 协调者`：收到所有参与者的结果，如果全是YES 则发送 `DoCommit` 消息；
+  - `TM 协调者`：收到所有参与者的结果，先在本地持久化事务状态为 Commit；如果全是YES 则发送 `DoCommit` 消息；
   - `RM 参与者`：完成剩余的操作并释放资源，向协调者返回 `HaveCommitted` 消息；
+  
+    > 即写入一条 Commit Record，很轻量。而回滚则比较重量。
   - 如果此时有参与者提交失败
-    - 重试：此阶段不回滚！
+  - 重试：此阶段不回滚！
     - 提交是很轻量的，重试问题不大
-
+  
 - DoAbort
   - `TM 协调者`：如果结果中有 No，则向所有参与者发送 `DoAbort` 消息；
   - `RM 参与者`：之前发送 Yes 的参与者会按照回滚日志进行回滚；返回`HaveCommitted` 消息。（基于 Undo log）
@@ -1173,27 +1186,23 @@ https://matt33.com/2018/07/08/distribute-system-consistency-protocol/
 
 
 
+**前提条件：**
+
+- 假设提交阶段耗时短、不会丢消息。如果提交阶段失败则无法补救！！
+
+
+
 **不足**
 
-- **同步阻塞问题**
-  
+- **单点问题**
+  - 协调者宕机，则所有参与者会一直等待。
+- **性能问题**
+  - 整个过程要经历 两次远程服务调用、三次数据持久化（准备阶段 Redo Log、协调者做状态持久化、提交阶段写入Commit Record）
   - 所有节点都是事务阻塞型的
   - 参与者在等待其他参与者的响应过程中，无法进行其他操作
-- 不适合长事务
-  
-- **单点故障问题**
-  
-- 事务管理器（协调者）是单点
-  
+
 - **数据不一致问题**
-  
-- 协调者发送 `DoCommit` 后如果发生网络局部故障，会导致部分节点无法提交
-  
-- **太过保守**
-  
-  - 任意一个节点的失败 都会导致整个事务的失败
-  
-    > 强一致不都这样么？
+  - 协调者发送 `DoCommit` 后如果发生网络局部故障，会导致部分节点已提交，但部分节点未提交且无法回滚。
 
 
 
@@ -1227,6 +1236,22 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 #### 3PC：三阶段提交
+
+**目的**
+
+- **解决 2PC 准备阶段的性能**
+
+  - 将准备阶段再拆分，先询问是否 `CanCommit`，以免有部分参与者无法完成提交、其他参与者相当于做了无用功。
+
+- **解决 2PC 协调者单点问题**
+
+  - `PreCommit` 之后，如果协调者宕机，参与者没有等到 `DoCommit` 消息的话，默认提交事务，而不是持续等待。 
+
+- **但无法解决数据不一致问题**
+
+  - 最后一步如果出现分区，部分参与者收不到消息、会提交事务；其他参与者收到 Abort、回滚事务。
+
+  
 
 **流程**
 
@@ -1283,22 +1308,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 
-**特点**
 
-- **解决数据不一致问题**
-  
-  - 引入超时机制
-  - 增加PreCommit阶段，在此阶段排除一些不一致的情况
-  - 但仍有风险
-  - 最后一步如果出现分区，部分参与者收不到消息 仍然会提交事务
-  
-- **出现单点故障后，仍然能达成一致**
-
-- **解决同步阻塞问题**
-
-  - 引入 PreCommit 阶段
-
-  
 
 #### Seata
 
@@ -2415,7 +2425,7 @@ public String right2(@RequestParam("id") int id) {
     - **停止次要功能**
       - 先限流再停止
       - 例如双十一停止退货服务
-    
+  
 - **简化功能**
   
 - **拒绝部分请求** --> 限流？
@@ -2953,9 +2963,9 @@ public String right2(@RequestParam("id") int id) {
 - 故障恢复
 
   - 对等节点
-    
+  
 - 随机访问另一个即可
-    
+  
   - 不对等节点
 
     - 选主：在多个备份节点上达成一致
@@ -3043,13 +3053,13 @@ public interface MyService {
   - NoBackOffPolicy：立即重试
 
   - FixedBackOffPolicy：固定时间退避
-    
+  
 - sleeper | backOffPeriod
-    
+  
   - UniformRandomBackOffPolicy：随机时间退避
   
   - sleeper | minBackOffPeriod | maxBackOffPeriod
-    
+  
 - ExponentialBackOffPolicy：指数退避策略
   
     ```java
@@ -3057,7 +3067,7 @@ public interface MyService {
         long waitTime = ((long) Math.pow(2, retryCount) );
       return waitTime;
     }
-    ```
+  ```
 
 
   - ExponentialRandomBackOffPolicy：指数对比策略，并引入随机乘数
