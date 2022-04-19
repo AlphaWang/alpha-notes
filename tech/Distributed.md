@@ -796,8 +796,13 @@ String result = jedis.set(
 
 
 
+## || 分布式共识
 
-## || 分布式共识 -TBD
+> Distributed Consensus. 
+>
+> - 分布式系统内部容忍暂时的不同状态，但最终保证大多数节点状态达成一致；
+>
+> - 同时分布式系统在外部看来始终表现出整体一致的结果。
 
 区块链
 
@@ -814,6 +819,270 @@ String result = jedis.set(
 **3. DPoS: Delegated Proof of Stake**
 
 解决PoS的垄断wen't
+
+
+
+
+
+
+
+### Paxos
+
+- 角色
+  - Proposer
+  - Acceptor
+    - 如果只有一个 Acceptor，一定能保证第一个提案被选定
+    - 但 SPOF：所以肯定需要 一个Acceptor 集合
+  - Learner
+- 约定
+  - P1: 一个Acceptor必须批准它收到的第一个提案
+  - P2: 如果提案 [M0, V0] 被选定，那么所有比编号 M0 更高的、且被选定的提案，其Value必须也是 V0
+    - [M0, V0] 被选定，则所有比 M0 编号更高的、且被Acceptor批准的提案，其Value必须也是V0
+    - [M0, V0] 被选定，则之后任何 Proposer 产生的编号更高的提案，其Value都是 V0
+    - 
+
+**流程**
+
+**1. Proposer 生成提案**
+
+- Prepare 请求
+
+  > Proposer 选择新提案编号 Mn, 向某个 Acceptor 集合发送请求；
+  >
+  > 要求 Acceptor 做出如下回应：
+  >
+  > - 向 Proposer 承诺，不再批准任何编号 < Mn 的提案
+  > - 如果 Acceptor 已批准过其他，则向 Proposer 反馈当前已批准的编号 < Mn 的最大编号
+
+- Accept 请求
+
+  > 如果 Proposer 收到半数以上的 Acceptor 响应结果，则产生 [Mn, Vn] 提案
+  >
+  > - Vn = 响应中编号最大提案的 Value
+  > - 或者响应中无内容，则 Vn = Proposer 任意选择 
+  >
+  > 确认提案后，提交给 某个 Acceptor 集合；
+  >
+  > 只要 Acceptor 没有对 > Mn 的Prepare请求作出响应，则其可以通过该提案
+  >
+  > > 类似两阶段提交，2PC；引入“过半”概念
+
+**2. Acceptor 批准提案**
+
+- 约束
+  - 一个 Acceptor 只要尚未响应过编号 > Mn 的Prepare 请求，则其可接受此编号为 Mn 的提案
+- 优化
+  - 可忽略已批准过的提案的  Prepare 请求
+  - 如果已响应过 > Mn 的Prepare请求，则可忽略 Mn Prepare 请求
+
+**3. Learner 获取提案**
+
+- 流程
+  - Acceptor 将他们对提案的批准情况，发给一个特定的Learner集合；
+  - 该集合中的 Learner 随后通知所有其他 learner
+- 演进
+  - 为什么 Acceptor 不直接通知所有 Leaner?
+    -- 逐一通信，次数M*N 
+  - 为什么 Acceptor 不只发给一个 主Leaner，再由主Leaner通知其他？
+    -- 单点问题
+    	
+
+Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
+
+
+
+### Raft
+
+> 动画：http://thesecretlivesofdata.com/raft/
+>
+> git：https://raft.github.io/ 
+
+
+
+### ZAB
+
+> Zookeeper Atomic Broadcast
+>
+> - CP
+> - 支持崩溃恢复的，原子广播协议
+
+
+
+**保证特性**
+
+- 顺序一致性：同一客户端的事务请求，严格按顺序执行
+
+  > 如何做到？
+  >
+  > - 全局递增的唯一 事务ID：ZXID；类似 Kafka Leader Epoch
+  > - Leader 为每个Follower 维护一个单独的队列，Proposal 放入队列中 FIFO
+
+- 原子性
+
+  - 所有事务请求的处理结果在集群中所有机器上的应用情况是一致的。
+  - 通过version保证 ？
+    	
+
+- 单一视图
+
+  - 客户端无论连接哪个zk服务器，看到的数据模型都是一致的
+    	
+
+- 可靠性
+
+  - 一旦服务端成功应用一个事务，则引起的状态变更会被一致保留下来
+    	
+
+- 实时性
+
+  - 在一定时段内，客户端最终一定能从服务端读取到最新的数据状态
+
+- 强一致性！！C
+
+  
+
+**原理**
+
+- 单一主进程
+
+  - 单一的主进程来接收并处理所有事务请求
+
+  - 对每个事务分配全局唯一的ZXID
+
+    > zxid低32位：单调递增计数器
+    > zxid高32位：Leader周期的epoch编号
+    > 类似 kafka leaderEpoch
+
+  - 数据的状态变更以“事务Proposal”的形式广播到所有副本进程
+
+- 顺序应用
+
+  > 必须能保证一个全局的变更序列被顺序应用，从而能处理依赖关系
+
+  
+
+**角色**
+
+- Leader
+  - 读写
+- Follower
+  - 读
+  - 参与Leader选举、过半写成功
+
+- Observer
+
+  - 读
+  - 可以提升读性能，且不影响写性能
+
+  
+
+**协议：消息广播模式**
+
+> 消息广播：
+>
+> - 所有的事务请求都会转发给Leader，Leader会为事务生成对应的Proposal，并为其分配一个全局单调递增的唯一ZXID。
+>
+> - 当Leader接受到半数以上的Follower发送的ACK投票，它将发送Commit给所有Follower通知其对事务进行提交，Leader本身也会提交事务，并返回给处理成功给对应的客户端。
+
+- Leader
+
+  - 将客户端事务请求转换成一个 事务Proposal，并分发给“所有Follower”
+
+  - 一旦“超过半数Follower”反馈，则Leader向“所有Follower”分发Commit消息
+
+  - 类似 两阶段提交：2PC
+
+    > 区别：只用等待超过半数的反馈，而非所有反馈
+    > 简化版 2PC：移除了中断逻辑
+
+- 流程
+
+  - **1. Proposal**
+
+    - Leader为事务生成对应的 Proposal，分配 全局递增的唯一事务ID： ZXID
+
+      > 必须将每一个事务Proposal按照其ZXID的先后顺序来进行排序与处理。
+
+  - **2. ACK**
+    - 等待半数以上的Follower回复ACK投票
+  - **3. Commit**
+    - Leader发送 Commit给“所有”Follower通知其对事务进行提交
+    - `Commit消息`：消息内容只包含 ZXID；具体事务内容 Follower 上已保存；
+    - `Inform消息`：Leader 发送 Inform 给Observers；Inform 和 Commit的区别：还包含事务内容
+  - **4. 返回给处理成功给对应的客户端**
+
+
+
+**协议：崩溃恢复模式**
+
+- 触发
+
+  - Leader 服务器崩溃
+  - Leader 与超过半数服务器通讯异常
+
+- **1.选举**
+
+  - 要求
+
+    - 对于 Leader 上“已提交”的 Proposal，确保最终被所有服务器都提交；哪怕 Leader 在 发送commit 之前宕机
+    - 对于 Leader 上“已提出 但未提交”的 Proposal，要确保丢弃
+
+  - 解决
+
+    - 选举要保证新选出的Leader拥有最大的ZXID
+
+  - 流程 
+
+    > 1. 服务器状态变更。余下的非Observer机器变为 LOOKING，进入投票环节
+    >
+    > 2. 开始投票
+    >    - 每台机器 投票：(myid, ZXID)
+    >    - PK: ZXID 越大，myid 越大
+    >    - Q：每个 LOOKING 节点两两通讯？通讯量岂不很大？
+    > 3. 变更投票
+    >    PK后更新自己的投票
+    > 4. 确定 Leader
+    >    是否超半数以上 接收到相同的投票信息
+    > 5. 改变服务器状态
+    >    FOLLOWING, LEADING
+
+
+
+- **2.同步**
+
+  -  作用
+
+    - 选举结束，对外提供服务之前，检查是否完成数据同步；
+    - 同步阶段的引入，能有效保证Leader在新的周期中提出Proposal之前，\n所有的进程都已经完成了对之前所有Proposal的提交。
+
+  - 流程
+
+    - 对需要提交的，重新放入Proposal+Commit
+
+      > 1. Leader 为每个 Follower 维护一个队列，将没有被各Follower同步的事务以Proposal消息的形式逐个发给Follower
+      >
+      >  	2. 并在每一个 Proposal消息后紧接着发送一个 Commit消息
+
+    - 对于Follower上尚未提交的Proposal，回退
+
+      > - 首先如果Follower包含上一轮Leader周期的未提交Proposal，则其一定不会被选为新的Leader；因为 一定有 Quorum集合包含更高 epoch 的Proposal；其ZXID更大。
+      > - 这种Follower与 Leader连接后，Leader会比较其最后提交的Proposal，发现改Follower要执行回退操作
+
+
+
+
+
+
+
+
+
+### Multi Paxos
+
+
+
+### Gossip
+
+
 
 
 
@@ -3203,18 +3472,14 @@ do {
 - **VALET**
 
   - Volume - 容量，TPS
-
-
-  - Availability - 可用性
-
-
-  - Latency - 时延
-
-
-  - Errors - 错误率
-
-
-  - Tickets - 人工介入
+  
+    - Availability - 可用性
+  
+    - Latency - 时延
+  
+    - Errors - 错误率
+  
+    - Tickets - 人工介入
 
   
 
