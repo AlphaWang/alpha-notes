@@ -842,6 +842,7 @@ String result = jedis.set(
 > - https://ongardie.net/static/raft/userstudy/ 
 >
 > - https://www.youtube.com/watch?v=JEpsBg0AO6o
+>   https://ongardie.net/static/raft/userstudy/paxos.pdf 
 
 
 
@@ -849,7 +850,7 @@ String result = jedis.set(
   - **Proposer - 提案节点**
     - 提出对某个值进行设置操作的节点
   - **Acceptor - 决策节点**
-    - 一般为奇数个。决定提案是否可被投票、是否可被接受。
+    - 决定提案是否可被投票、是否可被接受。一般为奇数个。 
     - 提案一旦得到过半数决策节点接受，即称该提案被批准，意味着该值不能被更改、也不会丢失，且最终所有节点都会接受它。
   - **Learner - 记录节点**
     - 只单纯从提案节点、决策节点学习已经达成共识的提案。
@@ -858,6 +859,51 @@ String result = jedis.set(
   - P2: 如果提案 [M0, V0] 被选定，那么所有比编号 M0 更高的、且被选定的提案，其Value必须也是 V0
     - [M0, V0] 被选定，则所有比 M0 编号更高的、且被Acceptor批准的提案，其Value必须也是V0
     - [M0, V0] 被选定，则之后任何 Proposer 产生的编号更高的提案，其Value都是 V0
+
+
+
+**方案演进**
+
+**1. Strawman: Single Acceptor**
+
+- 问题：acceptor crashes after choosing
+
+- 解决：**quorum**，Value is **chosen** if accepted by **majority** of acceptors.
+
+  > - Accept: 临时性?
+  > - Chosen: accepted by majority.
+
+<img src="../img/distributed/paxos-1-single-acceptor.png" alt="image-20220422222927122" style="zoom: 30%;" />
+
+**2. Problem: Split Votes**
+
+- 问题：如果 Acceptor 仅接受其收到的**第一个** value？如果并发 proposal，可能任一 proposal 都无法获得多数 quorum，则任一value都无法被 chosen。
+- 解决：Acceptors must sometimes accept multiple (different) values
+
+![image-20220422223341845](../img/distributed/paxos-2-split-votes.png)
+
+**3. Problem: Conflicting Choices**
+
+- 问题：如果 Acceptor 接受其收到的**所有**value？则可能导致 choose 多个值。--> 违反 Safety 要求。
+
+- 解决：Once a value has been chosen, future proposals must propose/choose that same value (**2-phase protocol**)
+
+  > S5 在提交 proposal 之前，要检查当前是否已有其他 proposal已被chosen。S5需要放弃propose blue，而propose red
+
+![image-20220422224035190](../img/distributed/paxos-3-conflicting-choices.png)
+
+- 问题2：即便有 2-phase protocol，还是可能冲突：在 proposal red 未被 majority accept 之前有新的proposal被提出。
+
+- 解决：Must **order** proposals, reject old ones.
+
+  > S3 应该拒绝 S1 的proposal
+
+![image-20220422224559184](../img/distributed/paxos-3-conflicting-choices2.png)
+
+**如何实现 Order Proposal?**
+
+- Unique proposal number: `Round Number` + `Server ID`
+  - Proposer 需要持久化 maxRound，避免宕机后重用以前的 proposal number。
 
 
 
@@ -952,11 +998,11 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 - 如何保证过程是安全的 `Safety`
 
-  > - Safety - 协定性：所有的坏事都不会发生。
+  > - **Safety - 协定性**：所有的坏事都不会发生。
   >   例如，选主的结果一定且只有唯一的一个主节点。
   >
-  > - Liveness - 终止性：所有的好事都终将发生，但不知道是什么时候发生
-  >   例如，选主过程一定可以在某个时刻结束。
+  > - **Liveness - 终止性**：所有的好事都终将发生，但不知道是什么时候发生
+  >   例如，选主过程一定可以在某个时刻结 束。
 
 
 
@@ -1998,7 +2044,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 # | 分布式通信
 
-## RPC
+## || RPC
 
 **进程间通信 - Inter-Process Communication, IPC**
 
@@ -2077,7 +2123,7 @@ https://github.com/Apress/practical-microservices-architectural-patterns/tree/ma
 
 
 
-## REST
+## || REST
 
 **定义**
 
@@ -2180,6 +2226,12 @@ Richardson 成熟度模型
 - 例如想要只返回用户姓名，而不是完整用户详情
 - 例如要批量修改一批用户
 - GraphQL
+
+
+
+## || 服务发现
+
+ 
 
 
 
@@ -2365,7 +2417,7 @@ Richardson 成熟度模型
 
 ## || 分布式数据库
 
-### 方案演进
+**方案演进**
 
 **1. 客户端组件 + 单体数据库**
 
