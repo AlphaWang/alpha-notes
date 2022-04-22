@@ -91,7 +91,19 @@
 
 
 
-**对比**
+**设计对比**
+
+> https://www.confluent.io/blog/okay-store-data-apache-kafka/
+
+One way to think about the relationship between messaging systems, storage systems, and Kafka is the following. 
+
+- **Messaging systems** are all about propagating *future* messages: when you connect to one you are waiting for new messages to arrive. 
+- **Storage systems** such as a filesystem or a database are all about storing past writes: when you query or read from them you get results based on the updates you did in the past. 
+- The essence of **stream processing** is being able to combine these two—being able to process from the past, and continue processing into the future as the future occurs. 
+
+
+
+**产品对比**
 
 |              | Components                                                   | Pros                                                         | Cons                                                         |
 | ------------ | ------------------------------------------------------------ | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -4757,8 +4769,12 @@ kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
   > Kafka Streams 在底层大量使用 Kafka 事务机制和幂等性 Producer 来实现多分区的原子性写入，又因为它只能读写 Kafka，因此 Kafka Streams 很容易地就实现了端到端的 EOS。
   - Kafka 事务机制
   - 幂等性 Producer
+  
+- 
 
+## || KSQL
 
+> https://www.confluent.io/blog/ksql-streaming-sql-for-apache-kafka/
 
 
 
