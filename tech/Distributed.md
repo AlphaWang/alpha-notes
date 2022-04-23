@@ -878,7 +878,7 @@ String result = jedis.set(
 **2. Problem: Split Votes**
 
 - 问题：如果 Acceptor 仅接受其收到的**第一个** value？如果并发 proposal，可能任一 proposal 都无法获得多数 quorum，则任一value都无法被 chosen。
-- 解决：Acceptors must sometimes accept multiple (different) values
+- 解决：**Acceptors must sometimes accept multiple (different) values**
 
 ![image-20220422223341845](../img/distributed/paxos-2-split-votes.png)
 
@@ -900,34 +900,60 @@ String result = jedis.set(
 
 ![image-20220422224559184](../img/distributed/paxos-3-conflicting-choices2.png)
 
-**如何实现 Order Proposal?**
+**4. 如何实现 Order Proposal?**
 
 - Unique proposal number: `Round Number` + `Server ID`
   - Proposer 需要持久化 maxRound，避免宕机后重用以前的 proposal number。
 
 
 
+
+
+
+
 **流程**
 
-**1. Proposer 生成提案**
+**Phase 1: broadcast `Prepare` RPCs**
 
-- `Prepare 请求`：相当于抢占锁。
+- 目的
 
-  > Proposer 选择新提案编号 Mn, 向某个 Acceptor 集合发送请求；
-  >
+  - Find out about any chosen values;  --> 如果有，则用它，而放弃自己的proposal
+  - Block older proposals that have not yet completed;
+  - 相当于抢锁。
+
+- **流程**
+
+  - 1）*Proposer*：选择 proposal number = n；
+  - 2）*Proposer*：广播 `Prepare(n)`；
+  - 3）*Acceptor*：响应 `Prepare(n)`，
+    - 如果 n > **minProposal**，则重设 minProposal = n；
+    - 返回已接受的最高 proposal `(acceptedProposal, acceptedValue)`；
+  - 4）*Proposer*：收到majority响应后，将提案值改为 `value = max(acceptedValue)`；
+
   > Acceptor 给予提案节点**两个承诺**：
   >
-  > - 承诺不再接受 ID <= n 的 Prepare 请求；
-  > - 承诺不再接受 ID < n 的 Accept 请求。
+  > - 承诺以后不再接受 ID <= n 的 Prepare 请求；--> 通过 minProposal 实现
+  > - 承诺以后不再接受 ID < n 的 Accept 请求。
   >
   > Acceptor 返回**一个应答**：
   >
-  > - 如果满足上述两承诺，则返回已批准过的最大ID 提案中的值、和提案 ID；
-  > - 否则忽略该 Prepare 请求。
+  > - 在满足承诺的前提下，返回已批准过的最大ID 提案中的值、和提案 ID；
+  > - 否则忽略该 Prepare 请求。-- ?
 
-  
+**Phase 2: boardcast `Accept` RPCs**
 
-- `Accept 请求`
+- 目的
+
+  - Ask acceptors to accept a specific value. 
+
+- **流程**
+
+  - 5）*Proposer*：广播 `Accept(n, value)`；
+  - 6）*Acceptor*：响应 `Accept(n, value)`，
+    - 如果 n < minProposal，则拒绝；
+    - 如果 n >= minProposal，则接受，设置 **acceptedProposal** = minProposal = n，**acceptedValue** = value；
+    - 返回 `minProposal`
+  - 7）*Proposer*：如果有任何拒绝 ( `result > n`)，则证明有最新的提交，goto step-1；否则表明 value 被 **chosen**. 
 
   > 如果 Proposer 收到半数以上的 Acceptor 响应结果，则产生 [Mn, Vn] 提案
   >
@@ -937,18 +963,19 @@ String result = jedis.set(
   > 确认提案后，提交给 某个 Acceptor 集合；
   >
   > 只要 Acceptor 没有对 > Mn 的Prepare请求作出响应，则其可以通过该提案
-  >
-  > > 类似两阶段提交，2PC；引入“过半”概念
 
-**2. Acceptor 批准提案**
 
-- 约束
-  - 一个 Acceptor 只要尚未响应过编号 > Mn 的Prepare 请求，则其可接受此编号为 Mn 的提案
-- 优化
-  - 可忽略已批准过的提案的  Prepare 请求
-  - 如果已响应过 > Mn 的Prepare请求，则可忽略 Mn Prepare 请求
 
-**3. Learner 获取提案**
+![image-20220423123307623](../img/distributed/paxos-propose-accept-flow.png)
+
+- Acceptor 必须持久化存储如下值：
+  - **minProposal**：acceptor以后能接受的最小 proposal
+  - acceptedProposal
+  - acceptedValue
+
+
+
+**Optional：Learner 获取提案**
 
 - 流程
   - Acceptor 将他们对提案的批准情况，发给一个特定的Learner集合；
