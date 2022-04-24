@@ -813,6 +813,16 @@ String result = jedis.set(
 
 
 
+属性
+
+- **Safety - 协定性**：所有的坏事都不会发生。
+  - 例如，选主的结果一定且只有唯一的一个主节点。
+
+- **Liveness - 终止性**：所有的好事都终将发生，但不知道是什么时候发生
+  - 例如，选主过程一定可以在某个时刻结 束。
+
+
+
 
 
 区块链
@@ -991,11 +1001,61 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 
 
+**Competing Proposer 案例**
+
+**案例1：Previous value already chosen**
+
+- S3 在收到 `P4.5` prepare 请求后，返回 acceptedProposal = `P3.1`, acceptedValue = `X`；
+- S5 收到响应后，放弃自己的propose value `Y` 并改为 `X`，再广播给 acceptors. 
+- 结果：新 proposer 会发现 previous value 已被 chosen，并继续使用它.
+
+![image-20220423143321362](../img/distributed/paxos-case-1.png)
+
+**案例2：Previous value not chosen, but new proposer sees it**
+
+- 同案例1
+- 结果：新 proposer 会使用已有值，新旧 proposer 均将成功 并使用同一值。
+
+![image-20220423144748276](../img/distributed/paxos-case-2.png)
+
+**案例3：Previous value not chosen, new propose does NOT see it**
+
+- S3 在收到 `P4.5` prepare 请求后，成功；S5 收到响应后，继续自己的propose value `Y` ，广播给 acceptors. 
+- S3 后续收到 `A3.1` accept 请求后，返回 `minProposal = 4.5`；S1 收到响应后重新走 step-1；
+- 结果：新 proposer 成功执行，老 proposer 被block。
+
+![image-20220423145201228](../img/distributed/paxos-case-3.png)
+
+**案例4：活锁，Competing proposers can livelock**
+
+- S3 收到 `A3.1` accept 请求后，返回minProposal = 3.5；S1 收到响应后重新 prepare(4.1)；
+- S3 收到 `A3.5` accept 请求后，返回minProposal = 4.1；S5 收到响应后重新 prepare(5.5)；...
+- 方案一：重新prepare之前加入**随机延迟**。以便让其他 propser 有机会完成先。
+- 方案二：加入 **Leader Election** (Multi-Paxos)
+
+![image-20220423151537467](../img/distributed/paxos-case-4.png)
+
+> Notes:
+>
+> - 只有 proposer 知道哪个值被 chosen；
+> - 如果其他服务器想要知道 chosen value，需要执行 paxos proposal 才行；
+
+
+
+### Multi-Paxos
+
+TODO
+
+
+
 ### Raft
 
-> 动画：http://thesecretlivesofdata.com/raft/
+> - 动画：http://thesecretlivesofdata.com/raft/
 >
-> git：https://raft.github.io/ 
+> - git：https://raft.github.io/ 
+>
+> - https://www.youtube.com/watch?v=YbZ3zDzDnrw
+>   https://ongardie.net/static/raft/userstudy/raft.pdf
 
 
 
@@ -1005,9 +1065,9 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 
 
-思路
+**思路**
 
-- 增加选主过程，在平等节点中挑选意见领袖：希望既不破坏 Paxos ”众节点平等“的原则，又能在提案节点中实现主次之分、限制每个节点都有不受控的提案权利。
+- 增加**选主**过程，在平等节点中挑选意见领袖：希望既不破坏 Paxos ”众节点平等“的原则，又能在提案节点中实现主次之分、限制每个节点都有不受控的提案权利。
 
 - 只有”主提案节点“才能提提案，其他节点收到请求都转发给主。
 
@@ -1020,18 +1080,131 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 达成共识等价于解决一下三个问题：
 
 - 如何选主 `Leader Election`
-
 - 如何把数据复制到各个节点上 `Entity Replication`
-
 - 如何保证过程是安全的 `Safety`
 
-  > - **Safety - 协定性**：所有的坏事都不会发生。
-  >   例如，选主的结果一定且只有唯一的一个主节点。
+
+
+**概念**
+
+- **节点类型**
+  - Leader -- Candidate -- Follower
+  - 状态机
+    ![image-20220423182344629](../img/distributed/raft-state-machine.png)
+
+- **Term**
+
+  - 把时间划分为不同 Term，每个Term有一个或〇个 Leader。
+
+  - 每个节点都持久化”current term“相关的取值。
+
+    ![image-20220423200954023](../img/distributed/raft-terms.png)
+
+- **Log Structure**
+
+  - Log = entry list
+
+  - Entry = index + term id + command
+
+  - Committed: 被多数节点写入。
+
+    ![image-20220423205618357](../img/distributed/raft-log-structure.png)
+
+
+
+
+
+**Leader Election 流程**
+
+> http://thesecretlivesofdata.com/raft/#election 
+
+> Timeout 设置
+>
+> - `electionTimeout`：follower 等待变成 candidate的时间，随机值。
+> - `heartbeatTimeout`：发送 AppendEntries 消息的时间间隔。
+
+- 当 electionTimeout 到期后，Follower 变成 candidate、开启新一轮选主 `election term`：投票给自己、发送 `RequestVote` RPC 请求给所有其他节点。
+
+- 如果其他节点在本轮尚未做出投票，则投票给该 candidate、并重置 election timeout。当 candidate 收到多数投票后，则成为 Leader。
+
+  > 若出现 **split vote**，例如两个candidate节点均无法获得多数投票，则重试：增加 term id、重新选举。
+
+- Leader 被选出后开始以 heartbeat timeout 时间间隔发送 `AppendEntries` 消息给 follower。
+
+- 当一个 Follower (在election timeout 内？) 未收到 heartbeat 后，变成 candidate、重新触发选主。
+
+> **扩展：Picking the best leader**
+>
+> - 应该选择尽量包含所有已提交 entry 的 candidate 作为新 Leader。
+>   During elections, choose candidate with log most likely to contain all committed entries
+>
+>   - `RequestVote` 请求中包含当前节点 last entry 的 `index & item`；
+>
+>   - Voting 节点对比该值，如果觉得自己更完整则拒绝该 `RequestVote` 请求：
+>
+>     ```
+>     (lastTerm-V > lastTerm-C) || 
+>     (lastTerm-V == lastTerm-C) && (lastIndex-V > lastIndex-C)
+>     ```
+>
+> - For a leader to decide an entry is committed: 
+>
+>   - Must be stored on a majority of servers.
+>   - NEW: At least one new entry from leader’s term must also be stored on majority of servers
+
+
+
+**Log Replication 流程**
+
+> http://thesecretlivesofdata.com/raft/#replication
+
+- Leader 收到客户端请求后，先记入本地 `node log`（未提交，不会即时修改`node value`）；
+
+- Leader 通过 heartbeat  `AppendEntries` 请求将修改复制到 Follower 节点 log；
+
+  > **Consistency Check：**
   >
-  > - **Liveness - 终止性**：所有的好事都终将发生，但不知道是什么时候发生
-  >   例如，选主过程一定可以在某个时刻结 束。
+  > - 保证一个 entry 被接受的话，之前的entry也一定已被接受。
+  >
+  > - AppendEntries 请求会带上 preceding entry，follower 如果不包含该preceding entry 则会拒绝该请求。
+
+- 等待多数返回后，Leader 提交日志并写入 `node value`。
+
+- 然后 Leader 通知 Follower 节点该 entry 已提交，集群达成共识。
+
+**Log Replication 流程（网络分区时）**
+
+- LeaderA 收到客户端请求后， `Append Entries` 请求在分区A内无法获得多数返回，则其 log entry 保持为 uncommitted 状态。
+- 同时另一个 LeaderB 收到另一请求，成功写入，在分区B内达成共识。
+- 网络恢复后，LeaderA 发现有更高的 election term、则分区A内节点会回滚 uncommitted entry，并同步新 LeaderB 的日志。
 
 
+
+**优点：**
+
+- 性能好：只需等待性能最佳的多数节点返回。
+
+
+
+**Repairing Follower Logs 流程**
+
+- 新选出的 Leader 必须把 Follower log 弄成与自己的log一致：
+  - Delete extraneous entries
+  - Fill in missing entries
+- 实现方式
+  - Leader 为每个 follower 维护一个 `nextIndex` ，初始值 = `leader's last index + 1`；表示 Index of next log entry to send to that follower。
+  - 当 `AppendEntries` Consistency Check 失败，`nextIndex`会被往前推并重试。
+    ![image-20220423234758149](../img/distributed/raft-repair-follow-log.png)
+
+
+
+属性
+
+- **Safety**: If a leader has decided that a log entry is **committed**, that entry will be present in the logs of all future leaders. 
+  --> 一旦 log entry apply 到状态机，则其他状态机不会对相同 log entry apply 不同的值。
+  - Leader 永不覆盖其log中的entry；-- append only
+  - 只有 leader log 中存在的 entry 才能被提交；
+  - Entry 必须在被apply到状态机前提交；
 
 
 
