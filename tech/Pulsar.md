@@ -688,20 +688,42 @@ Broker 是 Bookie 的客户端。
 
 ## || 生产消费流程
 
-Broker 端生产流程
+**Broker 端生产流程**
 
-- managedLedger：与BookKeeper打交道。
+- **managedLedger**：与BookKeeper打交道。
 
 ![image-20220404110407223](../img/pulsar/broker-produce-flow.png)
 
 
 
-Broker 端消费流程
+
+
+**Broker 端消费流程**
 
 - handlwFlow：收到消费者的请求
 - 校验unacked消息：如果该消费者接收了很多消息但都没确认，则触发限流。
 
 ![image-20220404110452228](../img/pulsar/broker-consume-flow.png)
+
+
+
+**Dispatcher**
+
+Dispatcher 负责从 bk 读取数据、返回给消费者。
+
+**流程**
+
+- 收到消费者 flowPerm 命令后，循环调用 bk 客户端读取数据；
+- 凑足后，选择一个 Consumer：
+  - Key Shared的情况下
+    - AUTO_SPLIT：新consumer按照一致性哈希环（TreeMap实现）方式进入。
+    - STICKY：加入哈希环时，如果区间有重叠 则报错，拒绝新consumer加入。
+  - 按优先级选择
+- 过滤：延时消息、事务消息
+- 发送给消费者：根据订阅类型不同
+  - 独占：所有entry发送给一个消费者；
+  - 共享：发给多个消费者；
+  - KeyShared：按key选择；
 
 
 
@@ -772,12 +794,21 @@ Schema 存储在 BookKeeper 中。
 
 > `ManagedLedger` 负责消息存储，而不是直接使用 bk client。
 
+- 每个 Topic 都有一个 managedLedger，包装 Ledger + Cursor
+- managedLedger 还管理一个 cache。--> Broker 层的cache ! 
+
+![image-20220424231100770](../img/pulsar/pulsar-managedLedger.png)
+
+
+
 
 
 **存储模型**
 
 - 每个非分区 Topic 都对应一个或多个 Ledger；只有一个Ledger处于OPEN状态。
-- 每个 Ledger 包含多个 Entry，每个 Entry 对应一条或一批消息。
+- 每个 Ledger 有一个或多个 Fragment；
+- 每个 Fragment 包含多个 Entry，每个 Entry 对应一条或一批消息。
+  ![image-20220424231714789](../img/pulsar/pulsar-topic-ledger.png)
 
 
 
@@ -960,24 +991,6 @@ tx.commit().get();
 
 
 
-## || Dispatcher
-
-Dispatcher 负责从 bk 读取数据、返回给消费者。
-
-**流程**
-
-- 收到消费者 flowPerm 命令后，循环调用 bk 客户端读取数据；
-- 凑足后，选择一个 Consumer：
-  - Key Shared的情况下
-    - AUTO_SPLIT：新consumer按照一致性哈希环（TreeMap实现）方式进入。
-    - STICKY：加入哈希环时，如果区间有重叠 则报错，拒绝新consumer加入。
-  - 按优先级选择
-- 过滤：延时消息、事务消息
-- 发送给消费者：根据订阅类型不同
-  - 独占：所有entry发送给一个消费者；
-  - 共享：发给多个消费者；
-  - KeyShared：按key选择；
-
 
 
 # | BookKeeper
@@ -1080,11 +1093,11 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 **三种文件类型**
 
-- Journal：建议用SSD
+- **Journal**：建议用SSD
 
-- Entry log
+- **Entry log**：同一个 Entry log 可能存储多个 Ledger 的 entry
 
-- Index file
+- **Index file**: rocksDB
 
 
 
@@ -1896,12 +1909,12 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 
 
-## || KOP
+## || KoP
 
 > - KoP 介绍 https://streamnative.io/blog/tech/2020-03-24-bring-native-kafka-protocol-support-to-apache-pulsar/ 
 > - 连续偏移量 https://streamnative.io/blog/engineering/2021-12-01-offset-implementation-in-kafka-on-pulsar/ 
 
-如何实现连续 offset
+**如何实现连续 offset**
 
 - bookie 存储内容新增 BrokerEntryMetadata 
 
@@ -1975,6 +1988,51 @@ client.newConsumer()
 ## || 安装
 
 https://pulsar.apache.org/docs/zh-CN/standalone/ 
+
+
+
+## || 性能调优
+
+
+
+
+
+- **Batched Message** 
+  - 一个entry存放一个batch，index 也变小
+  - 读取性能也更好
+- **Producer Partition Switch 频率减少**
+  `clietn.newProducer().roundRobinRouterBatchingPartitionSwitchFrequency()`
+- **Producer pending queue 增大**
+  - 客户端在等待ack过程中有足够buffer继续接受写入
+  - Vs. batched? 
+- **Message Compression**
+- **BK 消息持久化配置**
+  - 增加 E > QW / QA，条带化写入；一个topic使用更多的 bookie
+  - 减少 QA，忽略最慢的 bookie；
+
+- **消息写入优化**
+
+  - Broker configurations
+    ![image-20220425000357783](../img/pulsar/pulsar-perf-tuning-broker.png)
+  - Bookie configurations
+
+  ![image-20220425000507095](../img/pulsar/pulsar-perf-tuning-bookie.png)
+
+- **消息读取优化**
+
+  - Consumer receiver queue 增大
+
+  - Key_Shared 时，dispatcher 可能瓶颈
+
+  - Bookie configurations
+
+    ![image-20220425001420748](../img/pulsar/pulsar-perf-tuning-bookie-read.png)
+
+  - Broker congifurations
+
+    ![image-20220425001555747](../img/pulsar/pulsar-perf-tuning-broker-read.png)
+
+
 
 
 
