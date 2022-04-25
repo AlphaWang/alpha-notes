@@ -51,6 +51,16 @@
 
 
 
+**功能：Event Streaming**
+
+- **Connect**: pub/sub, connectors, protocol handlers. 
+- **Store**: BK, Tiered Storage (HDFS, JCloud --> aws, gcs)
+- **Process**: Pulsar Functionss (etl, routing), Flink, Spark, Presto
+
+
+
+
+
 ## || 架构
 
 > https://pulsar.apache.org/docs/zh-CN/concepts-architecture-overview/
@@ -563,13 +573,17 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
   - 支持单条消息确认、累积消息确认。
 
-  - > ![image-20220322112520553](../img/pulsar/subscription-modes-exclusive.png)
+    > Q: 是partition 维度？- Y！
+    >
+    > ![image-20220322112520553](../img/pulsar/subscription-modes-exclusive.png)
 
 - **Failover**
 
   - 多个消费者可以绑定到当前订阅（而不像 Exclusive 那样直接报错），但只有一个收到消息。
 
-    > ![image-20220322112744805](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-failover.png)
+    > 类似 Kafka。
+    >
+    > ![image-20220322112744805](../img/pulsar/subscription-modes-failover.png)
 
 - **Shared** 
 
@@ -578,9 +592,11 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
   - 限制：
 
     - 不保序、
-  - 无法使用 cumulative ack. 
-  
-- > ![image-20220322113010001](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-shared.png)
+    - 无法使用 cumulative ack. 
+    
+    > 每个consumer 可能消费都 partition 中的**一部分**数据。
+    > ![image-20220322113010001](../img/pulsar/subscription-modes-shared.png)
+    
   
 - **Key_Shared** 
 
@@ -596,7 +612,8 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
     - 消费者无法使用 cumulative ack
     - 生产者必须禁用 batching，或者使用 *key-based batching*
 
-  - > ![image-20220322113231815](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/subscription-modes-key-shared.png)
+    > ![image-20220322113231815](../img/pulsar/subscription-modes-key-shared.png)
+  
 
 
 
@@ -625,7 +642,7 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 **Partitioned Topic**
 
-- 普通 Topic 只对应一个broker，限制了吞吐量；而 Partitioned Topic 则可被多个 broker 处理、分担流量压力；
+- 普通 Topic 只对应一个broker，限制了吞吐量；而 **Partitioned Topic 可被多个 broker 处理**、分担流量压力；
 - 实现：N 个内部主题。
 - routing mode: 决定生产到哪个分区；
   - RoundRobinPartition
@@ -639,6 +656,15 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 - 普通 Topic 存储消息到 bookie，而non-persistent topic则只存到内存
 - 更快
+
+
+
+**消息ID**
+
+- `LedgerId, EntryId, BatchIndex, PartitionIndex`
+- 类似 Kafka offset.
+
+
 
 
 
@@ -830,7 +856,7 @@ Schema 存储在 BookKeeper 中。
 
 **游标**
 
-- 作用：存储当前订阅的消费位置。
+- 作用：存储当前订阅的消费位置。存到一个 log 里，定期compact。
 
 - 存储内容
 
