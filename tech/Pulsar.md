@@ -2017,6 +2017,30 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
 
 
 
+## || 开发调试
+
+启动入口
+
+- bin/pulsar broker --> `PulsarBrokerStarter`
+- Bin/pulsar standalone
+
+服务端请求入口
+
+- `ServerCnx`
+
+客户端请求入口
+
+- `ClientCnx`
+
+控制面入口
+
+- 服务端：pulsar-broker `xx.admin.v2.Brokers`
+- 客户端：pulsar-client-admin
+
+
+
+
+
 ## || 性能调优
 
 
