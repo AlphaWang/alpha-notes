@@ -177,12 +177,21 @@
 
 https://pulsar.apache.org/docs/en/concepts-messaging/
 
-配置
+**消息生产流程**
+
+- Producer：Message Routing 选择分区
+- Topic Discovery (lookup)：跟 Broker 通讯，找到分区对应的Broker
+- Broker：调用bk客户端，并发写入多个副本
+
+
+
+**配置**
 
 - **Synd Mode**
+  
   - `sync send`: waits for an acknowledgement from the broker after sending every message.
-  - `async send`: puts a message in a blocking queue and returns immediately.
-
+- `async send`: puts a message in a blocking queue and returns immediately.
+  
 - **ProducerAccessMode**
 
   - `Shared`: Multiple producers can publish on a topic.
@@ -201,7 +210,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
-实现类
+**实现类**
 
 - **ProducerImpl**
   - HandlerState 状态机
@@ -217,7 +226,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
-功能
+**功能**
 
 - **Batching**
 
@@ -358,7 +367,17 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
+
+
 ## || Consumer
+
+**消息读取流程**
+
+- 消费者订阅的时候，根据订阅策略决定消费哪些分区；经过 topic discovery 长连接到 Owner Brokers
+- Tailing Read：
+  - Broker 存储消息到 bk后，从内存读取，dispatch 到consumer 的 **Recive Queue**.
+- Catch-up Read:
+  - 到 BK 读取数据，可读取任意 bookie
 
 
 
@@ -895,17 +914,40 @@ Schema 存储在 BookKeeper 中。
 
 - 属性值
 
-  - `markDeletePosition`：如果一个Ledger中所有entry都在`markDeletePosition`之前，则这个 Ledger 可被清理。
+  - `markDeletePosition`：如果一个 Ledger 中所有 entry 都在 `markDeletePosition` 之前，则这个 Ledger 可被清理。
 
     > 即，entry被确认后会立即标记为可删除，但并不一定会马上被删除。需要等到Ledger中所有entry都被确认才行。
 
-  - `Retention`：消息被确认后还想保留一段时间。
+  - `Retention`：消息被确认**后**还想保留一段时间。
 
-  - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个Ledger也会自动被确认、让Ledger进入Retention状态。
+  - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个 Ledger 也会自动被确认、让Ledger 进入 Retention 状态。
 
-    > 本质是自动将 `MarkDelete`向前移；解决如果没有订阅时，消息的永远堆积问题。 
+    > 本质是自动将  `MarkDelete` 向前移；解决如果没有订阅时，消息的永远堆积问题。 
 
+- **Data Retention**
 
+  - 只要有 Cursor 存在，则其之后的数据不会被删除；除非ack后达到 `Retention` 
+  - ACKed 数据分为两部分：超过 Retention 的可以被删除，Retention 之内的不可被删除。
+
+  ![image-20220426224056965](../img/pulsar/pulsar-retention.png)
+
+- **TTL**
+
+  - 目的：如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
+  - TTL 到期后自动 ack
+  - Kafka 相当于 TTL = Retention
+
+  ![image-20220426224548840](../img/pulsar/pulsar-ttl.png)
+
+- 相关监控
+
+  - `Msg Backlog`：尚未被 ack 的消息数量；
+
+  - `Storage Size`：所有未被删除的 Segment 的空间大小；
+
+    > 消息删除是基于 Segment 分片的，活跃 Segment 不会被删除，即便其中包含超过retention的entry；
+
+  - 注意：segment标记成可以删除后，是被一个定时后台线程清理；所以有延时。 
 
 
 
@@ -1209,10 +1251,16 @@ tx.commit().get();
 **读写高可用**
 
 - **读高可用：Speculative Reads**
+  
   - 原因：对等副本都可以提供读
   - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
     Q：放大了读取请求数？
+  
+  > Kafka 为什么不能 Speculative Reads？
+  >
+  > - Kafka offset 是基于日志顺序读取，而 BK 底层则并非连续存储，而是基于index
 - **写高可用：Ensemble Change**
+  
   - 最大化数据放置可能性
 
 ![image-20220326130000834](../img/pulsar/bk-arch-rw-ha.png)
