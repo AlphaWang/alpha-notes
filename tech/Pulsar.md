@@ -966,15 +966,17 @@ Schema 存储在 BookKeeper 中。
   - ZK 只保存 Bundle 与 Broker 之间的联系。
   - Topic 归属哪个 broker 是通过一致性哈希动态计算出来的。
 
+  
+
 - **Topic 归属的计算步骤** `ServerCnx#handleLookup`
 
-  - 根据 namespace 找到其所有的 Bundle；
+  - 根据 **namespace** 找到其所有的 Bundle；
 
-  - 计算 Topic 所属的 Bundle：一致性哈希算法；
+  - 计算 Topic 所属的 Bundle：一致性哈希算法；每个 **namespace** 有一个哈希环。
 
-  - 确定 Bundle 归属哪个 Broker，先找到`裁判Broker`，其通过 loadManager 查找负载最低的 Broker 并把Bundle 分配给他
+  - 确定 Bundle 归属哪个 Broker，先找到**裁判Broker**，其通过 `loadManager` 查找负载最低的 Broker 并把 Bundle 分配给他
 
-    > 裁判 Broker:
+    > 如何选择裁判 Broker: 选主
     >
     > - 优先选择 Heartbeat、SLAMonitor 所在的broker；
     > - 如果 loadManager 使用的是中心化策略，则需要 Leader 裁判；
@@ -992,6 +994,16 @@ Schema 存储在 BookKeeper 中。
   - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
     - 支持 split bundle （线上建议关闭）
     - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
+
+
+
+- **客户端如何找到 Topic Owner**
+  - Topic owner == Namespace bundle owner，相关信息记在 zk 中。
+  - 客户端执行 Topic lookup 发送到任意 Broker；Broker 找到 topic 归属哪个 namespace bundle、在从zk 找到bundle对应的 Owner Broker。
+
+> 问题：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
+>
+> --> 改进：增加 read only broker 的概念
 
 
 
@@ -1797,7 +1809,7 @@ https://pulsar.apache.org/docs/en/administration-geo
       us-east
     ```
 
-  - `--allowed-clusters`：配置 tenant，使其有权限使用上述clusters
+  - `--allowed-clusters`：配置 **tenant**，使其有权限使用上述clusters
 
     ```sh
     $ bin/pulsar-admin tenants create my-tenant \
@@ -1805,7 +1817,7 @@ https://pulsar.apache.org/docs/en/administration-geo
       --allowed-clusters us-west,us-east,us-cent
     ```
 
-  - `set-clusters`：在 namespace level 指定 clusters 
+  - `set-clusters`：在 **namespace** level 指定在哪些 clusters 之间复制
 
     ```sh
     # 该namespace下的消息会被复制到所有指定cluster
@@ -1831,17 +1843,21 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 - **原理**
 
-  - **异步复制**
+  - **异步复制** 
+    
+- 如何避免循环复制：消息包含元数据 replicate-from
+    - 如何保证 exact-once 复制：broker 去重 with sequence id。
+  
     ![image-20220331162951691](../img/pulsar/geo-replication-underline.png)
-
+  
   - **Global Config Store**
 
     - replication_clusters
 
     ![image-20220331163143997](../img/pulsar/geo-replication-globalconfigstore.png)
-
+  
   - **Geo-replication without global zk**
-
+  
     - 可以实现自定义的复制策略，例如 Aggregation、Failover冷备
     - TODO
 
