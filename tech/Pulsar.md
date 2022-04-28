@@ -1182,7 +1182,7 @@ tx.commit().get();
 
 ![image-20220326124934997](../img/pulsar/bk-arch-openLedger.png)
 
-- 胖客户端决定：openLedger(`Ensemble`, `Write Quorum`, `Ack Quorum`)
+- 胖客户端决定：openLedger(`Ensemble`,  `Write Quorum`,  `Ack Quorum`)
 
   - **Ensemble**：组内节点数目，用于分散写入数据到多个节点；**控制一个 Ledger 的读写带宽**
 
@@ -1196,15 +1196,14 @@ tx.commit().get();
     - **增加读写带宽**，增加总吞吐量，充分发挥每块磁盘IO性能。
     - 还可以让数据分布更平均，避免某个分区数据倾斜。
   - `WQ = AQ`，等待所有Write Quorum的ack：**提供强一致性保障**
-  - `减少 QA`：**减少长尾时延**
+  - `减少 AQ`：**减少长尾时延**
 
   
 
 - 示例
   
   - E = 5, WQ = 3 条带化写入
-  - 对于指定 entryId，对5取模，决定存到哪三个 bookie；效果是按 Round Robin选择
-  - ![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
+  - 对于指定 entryId，对5取模，决定存到哪三个 bookie；效果是按 Round Robin选择![image-20220326125340028](../img/pulsar/bk-arch-openLedger-eg.png)
 
 
 
@@ -1222,12 +1221,10 @@ tx.commit().get();
   
   > Kafka 为什么不能 Speculative Reads？
   >
-  > - Kafka offset 是基于日志顺序读取，而 BK 底层则并非连续存储，而是基于index
+  > - Kafka offset 是基于日志顺序读取、必须从 Leader读，而 BK 底层则并非连续存储，而是基于index
 - **写高可用：Ensemble Change**
   
   - 最大化数据放置可能性
-
-![image-20220326130000834](../img/pulsar/bk-arch-rw-ha.png)
 
 
 
@@ -1236,8 +1233,6 @@ tx.commit().get();
 > 某个 Bookie 宕机后如何处理。--> Auto Recovery
 >
 > 注意：区别于broker宕机 --> Fencing
-
-
 
 - Auditor
 
@@ -1281,58 +1276,19 @@ tx.commit().get();
 
 Consensus：一个ledger任何时候都不会有两个broker写入。
 
-
-
-**要点：客户端决定 WQ/AQ，而 bookie 只单纯存储数据**
-
-- LastAddPushed
-- LastAddConfirmed
-- Fencing 避免脑裂
-
-![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
-
 **实现：**
 
-- 一个ledger只会由一个broker负责写入、写满即关闭；
+- **一个ledger只会由一个broker负责写入**、写满即关闭；
 
   - 当broker宕机，新的broker会写入新的ledger，而不会操作老ledger；
   - 即：一个ledger任何时候都不会有两个broker写入。
-- **对比 Kafka ISR**
-  - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。
-  - 还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
+
+- 对比 Kafka ISR
+
+  - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
   - 而 Pulsar 的recovery 特别容易。只需开启新的 Ledger segment 并将
 
-
-**复制协议中日志的三种区域**
-
-- **未提交区域**：尚未达到 AQ / Commit Quorum
-- **已提交头部**：已达到 AQ / Commit Quorum，但尚未达到 WQ / Replication Factor。-- 此部分数据对客户可见。
-- **已提交尾部**： 已达到 WQ / Replication Factor
-
-<img src="../img/pulsar/consensus-kafka-3zones.png" alt="img" style="zoom:67%;" />
-*(Kafka 日志的三个区域)*
-
-<img src="../img/pulsar/consensus-bookkeeper-3zones.png" alt="img" style="zoom:67%;" />
-*(Bookkeeper 日志的三个区域)*
-
-
-
-**Emsemble Change**
-
-- 当客户端写入某个 BK 失败，会选择新的 BK 来替代；
-
-- 会创建新 Ledger Segment 并将“未提交区域” 保存到新 Segment。
-
-- 而“已提交头部”、已达到AQ但未达到WQ的 entry 会被保留在原始 Ledger Fragement 中；
-
-  > 这会导致 BK Ledger 中部会包含“已提交头部”；而 Kafka 日志中部全部是“已完全提交数据”
-
-![img](../img/pulsar/consensus-bookkeeper-3zones-move.png)
-*(BookKeeper Emsemble Change)*
-
-
-
-- **Fencing**
+- 同时老 Broker 会被禁止写入老 Ledger：**Fencing**
 
   - 场景：broker1 与zk出现了网络分区，zk把broker2设为新的topic owner，新broker发现ledger处于open状态，则在接管前需要进行 recovery操作。
 
@@ -1354,7 +1310,63 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
     - 2. Open a new ledger to append. 
 
-  
+
+
+
+
+**要点：客户端决定 WQ/AQ，而 bookie 只单纯存储数据**
+
+- **LastAddPushed**：客户端发出去的ID，依次递增
+
+- **LastAddConfirmed**：客户端收到的最后一条应答
+
+  - 不能跳跃修改（收到的LAC = 1, 3时，不能直接改成3，因为2还没收到）；这样才能保证 LAC 之前的 entry 一定都是被确认过的。
+  - LAC 存储在 Entry 元数据里。
+
+  > 示例：LAC ~ LAP 之前的 entry 是正在存储中的数据。
+  >
+  > ![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
+
+
+
+
+
+**复制协议中日志的三种区域**
+
+- **未提交区域**：尚未达到 AQ / Commit Quorum
+- **已提交头部**：已达到 AQ / Commit Quorum，但尚未达到 WQ / Replication Factor。-- 此部分数据对客户可见。
+- **已提交尾部**： 已达到 WQ / Replication Factor
+
+>  <img src="../img/pulsar/consensus-kafka-3zones.png" alt="img" style="zoom:67%;" />
+> *(Kafka 日志的三个区域)*
+> <img src="../img/pulsar/consensus-bookkeeper-3zones.png" alt="img" style="zoom:67%;" />
+> *(Bookkeeper 日志的三个区域)*
+
+
+
+**Ensemble Change**
+
+- 当客户端写入某个 BK 失败，会选择新的 BK 来替代；会创建新 Ledger Segment 并将“未提交区域” 保存到新 Segment、然后继续往后写入。--> **写入可用性很高**。
+
+- 而“已提交头部”、已达到AQ但未达到WQ的 entry 会被保留在原始 Ledger Fragement 中；
+
+  > 这会导致 BK Ledger 中部会包含“已提交头部 + 尾部”；而 Kafka 日志中部全部是“已完全提交数据” (已提交尾部)
+  >
+  > ![img](../img/pulsar/consensus-bookkeeper-3zones-move.png)
+  > *(BookKeeper Emsemble Change)*
+
+- 同时宕机 BK 上的原有数据会被慢慢修复：
+
+  - TODO。
+
+- Q：客户端访问的时候如何知道对应entry究竟存在哪些 bk？
+  --> Ledger 元数据包含 Ensemble 信息，Ensemble change 发生会增加一条记录
+
+  ```
+  0: B1, B2, B3, B4, B5
+  7: B1, B2, B3, B6, B5 // entryId=7之后，写入到新 ensemble
+  ```
+
 
 
 
@@ -1365,11 +1377,9 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 日志复制过程：
 
-- Q: Writer 相当于 Leader?
+- Q: Writer/Broker 相当于 Leader?
 
 ![image-20220326130610241](../img/pulsar/bk-arch-consistency-raft2.png)
-
-
 
 
 
@@ -1526,7 +1536,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 读取流程：
 
-- 根据 LedgerId + EntryId
+- 根据 LedgerId + EntryId，先找到 ensemble BK 列表、计算出存储在哪些 BK。
 
 - 读取 `Write Cache`
 
