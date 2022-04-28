@@ -1393,6 +1393,10 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 ![image-20211231232945352](../img/pulsar/bookkeeper-write-overview.png)
 
+**前提**
+
+- 一个 Ledger 只能被一个 broker 写入，这保证了 broker 可以维护严格递增的 EntryId。
+
 
 
 **相关文件**
@@ -1411,30 +1415,45 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 - **Journal**
 
-  - 事务日志文件。在修改 ledger 之前，先记录事务日志。
-    - 所有写操作，先**顺序写入**追加到 Journal，*不管来自哪个 Ledger*。
-    - 写满后，打开一个新的 Journal 
-  - 作用：
+  - 作用：事务日志文件。**在修改 ledger 之前，先记录事务日志**。
+
+    - 所有写操作，先**顺序写入**追加到 Journal，**不管来自哪个 Ledger**。
+    - 写满后，打开一个新的 Journal、继续追加。 
+
+  - 特点：
+
     - 写入速度快（顺序写入一个文件，没有随机访问）、**读写存储隔离**
     - 相当于是个**循环 Buffer**. 
+    - 但查询困难。--> 引入索引，但并不直接在 Journal 上做索引：读写分离。
+
   - 配置：
-    - JournalDirectories: 每个目录对应一个Thread，给多个Ledger开多个directory可提高写入SSD的吞吐。
-  - ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
+
+    - `JournalDirectories`: 每个目录对应一个 Thread，给多个Ledger开多个directory可提高写入SSD的吞吐。
+
+    ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
+
+    
 
 - **Write Cache**
 
-  - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并按 Ledger 进行**排序**（基于 Skiplist），方便读取。
-  - 缓存满后，会被 Flush 到磁盘：写入 Ledger Directory （类比 KV 存储）
-  - Flush 之后，Journal 即可被删除
-  - ![image-20220326234645526](../img/pulsar/bk-arch-comp-writecache.png)
+  - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并**按 Ledger 进行排序**（基于 Skiplist），方便读取。
+
+  - 缓存满后，会被 Flush 到磁盘：写入 `Ledger Directory` （类比 KV 存储）
+
+  - Flush 之后，Journal 即可被删除。
+
+    > 那么 Journal 的作用是什么？仅相当于 循环Buffer、保证更高的可靠性。
+
+    ![image-20220326234645526](../img/pulsar/bk-arch-comp-writecache.png)
+
+    
 
 - **Ledger Directory**
 
   - **Entry log**
 
-    - An entry log file manages the written entries received from BookKeeper clients. 
     - Entries from different ledgers are aggregated and written sequentially, while their offsets are kept as pointers in a ledger cache for fast lookup.
-    - 其实就是 write cache 的内容
+    - **其实就是 write cache 的内容**，从 write cache flush 而来。
 
     > Q：为什么不直接存储 Journal 内容？
     >
@@ -1446,13 +1465,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
     - 每个 ledger 有一个 index 文件
     - entryId --> position 映射
 
-  - ![image-20220326235132492](../img/pulsar/bk-arch-comp-entrylog.png)
-
-
-
-
-
-
+    ![image-20220326235132492](../img/pulsar/bk-arch-comp-entrylog.png)
 
 
 
@@ -1465,24 +1478,22 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 
 
-
+**写入流程 & 线程**
 
 ![image-20211231231801134](../img/pulsar/bookkeeper-write.png)
 
-**写入流程**
-
 - **Netty 线程**
-  - 处理所有 TCP 连接、分发到 write thread pool
+  - 处理所有 TCP 连接、分发到 write threadpool
 - **Write ThreadPool**
   - 先写入 DbLedgerStorage 中的 `write cache`；成功之后再写入 Journal `内存队列`。
   - 默认线程数 = 1
-- **DbLedgerStorage**
+- **1. DbLedgerStorage**
   - 实际上有两个 `write cache`，一个接受写入、一个准备flush，两者互切。
   - **Sync Thread**：定时 checkpoint 刷盘
   - **DbStorage Thread**：Write thread 写入 cache 时发现已满，则向 DbStorage Thread 提交刷盘操作。
     - 此时如果 swapped out cache 已经刷盘成功，则直接切换，write thread写入新的cache；
     - 否则 write thread 等待一段时间并拒绝写入请求。
-- **Journal**
+- **2. Journal**
   - **Journal 线程**：循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
   - 定期向 `Force Write Queue` 中添加强制写入请求、触发 fsync；
   - **Froce Write Thread** ：循环从 froce write queue 中拿取强制写入请求（其中包含entry callback）、在 journal 文件上执行 fsync；
@@ -1515,6 +1526,8 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 读取流程：
 
+- 根据 LedgerId + EntryId
+
 - 读取 `Write Cache`
 
 - 读取 `Read Cache` 
@@ -1534,9 +1547,11 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 > - Apache BookKeeper Internals — Part 4 — Back Pressure
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-4-back-pressure-7847bd6d1257
 
+
+
 背压：通过一系列限制，防止内存占用过多。
 
-> **Backpressure 指的是在 Buffer 有上限的系统中，Buffer 溢出的现象；它的应对措施只有一个：丢弃新事件。**
+> Backpressure 指的是在 Buffer 有上限的系统中，Buffer 溢出的现象；**它的应对措施只有一个：丢弃新事件。**
 >
 > - 在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，这种现象就叫做 Backpressure 出现。
 >
