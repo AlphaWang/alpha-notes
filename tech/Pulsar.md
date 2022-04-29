@@ -1140,35 +1140,40 @@ tx.commit().get();
 
 - 胖客户端：外部共识；
 
-  - 例如 EntryID 是由客户端生成 ，前提：一个 Ledger 只有一个 Writer
+  - 例如 EntryID 是由客户端生成 ，前提：一个 Ledger 只有一个 Writer。
 
 - 功能
 
   - 指定 WQ、AQ
 
-  - 保存 LAP：Last Add Push，发出的请求最大值
+  - 保存 **LAP**：Last Add Push，发出的请求最大值
 
-  - 保存 LAC：Last Add Confirm，收到的应答最大值
+  - 保存 **LAC**：Last Add Confirm，收到的应答最大值
 
-    - 客户端需要保证不跳跃，例如收到 3 的ack、但未收到 2 的ack
+    - 客户端需要保证不跳跃。
 
-      > 如果一直收不到2: timeout，执行 ensemble change、重发2 & 3
+      > 例如收到 3 的ack、但未收到 2 的ack：收到的LAC = 1, 3时，不能直接改成3，因为2还没收到；
+      >
+      > 同时有超时机制，如果长时间不能收到2的确认，则触发 ensemble change，将2/3都再次写入新bk。
 
-    - LAC 之前的 entry 一定已被存储成功。
+    - 因为不跳跃，所以能保证 LAC 之前的 entry 一定已被存储成功。
 
-    - LAC 保存未 entry 的元数据，而不必存到zk 
+    - LAC 保存为 entry 的元数据，而不必存到zk。并定期同步到 bookie！？
 
-  - Ensemble Change
+      > 示例：LAC ~ LAP 之前的 entry 是正在存储中的数据。
+      > ![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
 
-    - 处理当某个bookie宕机：
-      - 新的entry可能存到新的 bookie
-      - 对于已宕机bookie里存储的数据，如何修复：TBD
+  - Ensemble Change，当某个bookie宕机：
+
+    - 新的entry可能存到新的 bookie。
+    - 对于已宕机bookie里存储的数据，如何修复：**TBD**
 
 
 
 > Q: 读取时如何找到entry存在哪个bookie?
 >
 > - 任何一台 bookie 都可以响应？
+> - --> 根据 Ledger ID 从元数据里找到 ensemble list，再计算出存储的 bookies. 
 
 
 
@@ -1274,7 +1279,9 @@ tx.commit().get();
 
 > - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
 
-Consensus：一个ledger任何时候都不会有两个broker写入。
+
+
+Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC 维护在 broker 端。
 
 **实现：**
 
@@ -1314,23 +1321,6 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 
 
-**要点：客户端决定 WQ/AQ，而 bookie 只单纯存储数据**
-
-- **LastAddPushed**：客户端发出去的ID，依次递增
-
-- **LastAddConfirmed**：客户端收到的最后一条应答
-
-  - 不能跳跃修改（收到的LAC = 1, 3时，不能直接改成3，因为2还没收到）；这样才能保证 LAC 之前的 entry 一定都是被确认过的。
-  - LAC 存储在 Entry 元数据里。
-
-  > 示例：LAC ~ LAP 之前的 entry 是正在存储中的数据。
-  >
-  > ![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
-
-
-
-
-
 **复制协议中日志的三种区域**
 
 - **未提交区域**：尚未达到 AQ / Commit Quorum
@@ -1346,7 +1336,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 **Ensemble Change**
 
-- 当客户端写入某个 BK 失败，会选择新的 BK 来替代；会创建新 Ledger Segment 并将“未提交区域” 保存到新 Segment、然后继续往后写入。--> **写入可用性很高**。
+- 当客户端写入某个 BK 失败，会选择新的 BK 来替代；会创建新 Ledger (Segment) 并将“未提交区域” 保存到新 Segment、然后继续往后写入。--> **写入可用性很高**。
 
 - 而“已提交头部”、已达到AQ但未达到WQ的 entry 会被保留在原始 Ledger Fragement 中；
 
@@ -1357,14 +1347,14 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 
 - 同时宕机 BK 上的原有数据会被慢慢修复：
 
-  - TODO。
+  - **TODO**
 
 - Q：客户端访问的时候如何知道对应entry究竟存在哪些 bk？
   --> Ledger 元数据包含 Ensemble 信息，Ensemble change 发生会增加一条记录
 
   ```
-  0: B1, B2, B3, B4, B5
-  7: B1, B2, B3, B6, B5 // entryId=7之后，写入到新 ensemble
+  0: B1, B2, B3, B4, B5 // fragment-1
+  7: B1, B2, B3, B6, B5 // fragment-2: entryId=7之后，写入到新 ensemble
   ```
 
 
@@ -1447,6 +1437,8 @@ Consensus：一个ledger任何时候都不会有两个broker写入。
 - **Write Cache**
 
   - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并**按 Ledger 进行排序**（基于 Skiplist），方便读取。
+
+    > 目前改成了先写 Write Cache，同时写 Journal。--> 因为有 LAC，保证不会读到脏数据。
 
   - 缓存满后，会被 Flush 到磁盘：写入 `Ledger Directory` （类比 KV 存储）
 
