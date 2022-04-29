@@ -1235,27 +1235,32 @@ tx.commit().get();
 
 **Bookie 高可用**
 
-> 某个 Bookie 宕机后如何处理。--> Auto Recovery
->
+某个 Bookie 宕机后如何处理。--> **Auto Recovery**
+
 > 注意：区别于broker宕机 --> Fencing
 
 - Auditor
 
   - 审计集群里是否有 bookie宕机；(ping bookies)
   - 审计某个Ledger是否有entry丢失；
+  - Q：需要选主确定 auditor？
 
 - 流程
 
-  - 如果 bookie1宕机， auditor 找出该bookie存储的所有 ledger；
+  - 如果 bookie1宕机， auditor 找出该bookie1存储的所有 ledger；
 
-  - 新的 bookie 替换原有的 ensembler，复制原ledger entries；
+  - 新的 bookie2 替换原有的 ensembler，从原ensemble复制原 ledger entries；
 
+    > Q：复制过程是否会影响正常读写的性能？
+  
+- Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
 
 
 
 **Broker 高可用**
 
 - 当 Broker 节点宕机，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
+- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：恢复 Ledger。
 
 
 
@@ -1290,34 +1295,33 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
   - 当broker宕机，新的broker会写入新的ledger，而不会操作老ledger；
   - 即：一个ledger任何时候都不会有两个broker写入。
 
-- 对比 Kafka ISR
-
-  - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
-  - 而 Pulsar 的recovery 特别容易。只需开启新的 Ledger segment 并将
-
-- 同时老 Broker 会被禁止写入老 Ledger：**Fencing**
+- 同时宕机后的老 Broker 会被禁止写入老 Ledger：**Fencing**
 
   - 场景：broker1 与zk出现了网络分区，zk把broker2设为新的topic owner，新broker发现ledger处于open状态，则在接管前需要进行 recovery操作。
 
-  - **流程：**
+  - **流程（详见 恢复Ledger）：**
 
-    - 1. Recover Ledger-X
+    - 1. **Recover Ledger-X**
+         并不是直接恢复 LedgerX并继续写入，而是恢复 LAC 之后的数据（尚未被确认的数据），然后直接关闭 LedgerX。
 
       - 1.1 Fence Ledger-X ==> Retrun LAC
 
-        > 新broker对原来的 ensembler 发起 fencing 操作：将bookie状态设为fenced，则往原ledger的新的写入会失败，发生 LedgerFencedException；-- 防止原来的broker1还在继续写。
+        > 新broker2对**原来的 ensembler** 发起 fencing 操作：将bookie状态设为fenced，则往原ledger的后续的写入会失败，发生 LedgerFencedException；-- 原来的broker1 会放弃ownership。
 
       - 1.2 Forward reading from LAC until no entry is found.
 
-        > 尝试找 LAC + 1 的entry，如果其已经写入部分 WQ 但尚未达到 AQ，则进行复制以便达到AQ，修复 LAC + 1。
+        > 恢复 LAC之后的数据：尝试找 LAC + 1 的entry，如果其已经写入部分 WQ 但尚未达到 AQ，则进行复制以便达到AQ，修复 LAC + 1。
 
       - 1.3 Update the ledger metadata.
 
         > 关闭原 Ledger-X
 
-    - 2. Open a new ledger to append. 
+    - 2. **Open a new ledger** to append. 
 
-
+> 对比 Kafka ISR：类似主从
+>
+> - Under min ISR 会导致写入失败，客户端需要等待broker达成一致（主从复制）。还要考虑如果 unclean leader election，会有truncate，可能数据丢失。
+> - 而 Pulsar 的recovery 特别容易。只需开启新的 Ledger segment 并将
 
 
 
@@ -1772,17 +1776,18 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
     - 无需等待所有 bookie 响应，只需保证剩下的未返回 bookie 数 < AQ 即可。这样原客户端一定无法写入 AQ 个节点、亦即无法写入成功。
     - 即，收到的响应数目达到 **Ensemble Coverage** 即可：`EC = (E - AQ) + 1`
 
-> 为什么要找到 LAC？
->
-> The LAC stored in each entry is generally trailing the real LAC and so finding out the highest LAC among all the bookies is the starting point of recovery.
+  > 为什么要找到 LAC？
+  >
+  > The LAC stored in each entry is generally trailing the real LAC and so finding out the highest LAC among all the bookies is the starting point of recovery.
 
 
 
 - **第二步：Recovery reads & writes**
 
-  > Learning the highest LAC is only the first step, now the client must find out if there are more entries that exist beyond this point.
+  > Learning the highest LAC is only the first step, now the client must find out if there are more entries that exist beyond this point. 
   >
-  > 确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
+  > - 找到 LAC 之后的 entry，重新写入新的 ensemble.
+  > - 确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
 
   - 客户端从 LAC + 1 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
   - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定 entry 是否已提交、是否可恢复：
