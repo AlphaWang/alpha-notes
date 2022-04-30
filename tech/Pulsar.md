@@ -451,10 +451,15 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 消费流程
 
 - 同步接收
-  - 直接从 ReciverQueue 中 take()，同步等待
+  
+  - 直接从 RecieverQueue 中 take()，同步等待
 - 异步接收
   - 用户业务线程
   - Netty IO 线程
+  
+    > Q: 如果推送来的消息超过 RecieverQueue 怎么办？
+    >
+    > -- 推送也是消费者触发的？
 
 ![image-20220403134548890](../img/pulsar/consume-flow.png)
 
@@ -772,32 +777,6 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-## || Schema
-
-Schema 存储在 BookKeeper 中。
-
-//TODO
-
-
-
-## || 安全机制
-
-认证授权
-
-- JWT
-- Athenz
-- Kerberos
-- OAuth2.0
-
-
-
-加密
-
-- TLS加密
-- 端到端加密
-
-
-
 ## || 元数据管理
 
 **元数据存储**
@@ -1073,6 +1052,34 @@ tx.commit().get();
 
 
 
+## || Schema
+
+Schema 存储在 BookKeeper 中。
+
+//TODO
+
+
+
+## || 安全机制
+
+认证授权
+
+- JWT
+- Athenz
+- Kerberos
+- OAuth2.0
+
+
+
+加密
+
+- TLS加密
+- 端到端加密
+
+
+
+
+
 # | BookKeeper
 
 > https://www.bilibili.com/video/BV1T741147B6?p=5 
@@ -1098,6 +1105,7 @@ tx.commit().get();
     - State: open/closed
     - Last Entry Id: -1L
     - Ensemble、WriteQuorum、ReadQuorum Size
+  - Ledger 有多个 **Fragment** 组成。每当 bookie failover 时就生成一个新 Fragment。
 - **Bookie**：存储 ledger的服务器。individual servers storing ledgers of entries are called *bookies*
   - 每个 bookie 存储部分 ledger *fragment*, 而非完整ledger
 
@@ -1445,6 +1453,8 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
     > 目前改成了先写 Write Cache，同时写 Journal。--> 因为有 LAC，保证不会读到脏数据。
 
   - 缓存满后，会被 Flush 到磁盘：写入 `Ledger Directory` （类比 KV 存储）
+
+    > Checkpoint 定时刷新？
 
   - Flush 之后，Journal 即可被删除。
 
@@ -2150,15 +2160,36 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
 
 
 - **Batched Message** 
+
   - 一个entry存放一个batch，index 也变小
-  - 读取性能也更好
+  - 读取 性能也更好
+
 - **Producer Partition Switch 频率减少**
-  `clietn.newProducer().roundRobinRouterBatchingPartitionSwitchFrequency()`
+
+  - ```java
+    client.newProducer()
+      .topic("xx")
+      .enableBatching(true)
+      .batchingMaxBytes(128 * 1024 * 1024)
+      .batchingMaxMessages(1000)
+      .batchingMaxPublishDelay(2, MILLISECONDS)
+      .blockIfQueueFull(true)
+      .roundRobinRouterBatchingPartitionSwitchFrequency(10) //切换频率 10ms
+      .batcherBuilder(BatcherBuilder.DEFAULT)
+      .create();
+    ```
+
+  - batch 发送必须 sendAsync()，或者多线程 send()
+
 - **Producer pending queue 增大**
+
   - 客户端在等待ack过程中有足够buffer继续接受写入
   - Vs. batched? 
+
 - **Message Compression**
+
 - **BK 消息持久化配置**
+
   - 增加 E > QW / QA，条带化写入；一个topic使用更多的 bookie
   - 减少 QA，忽略最慢的 bookie；
 
@@ -2166,7 +2197,12 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
 
   - Broker configurations
     ![image-20220425000357783](../img/pulsar/pulsar-perf-tuning-broker.png)
+
   - Bookie configurations
+
+    > Journal sync data: 是否同步刷到磁盘
+    >
+    > Journal group commit: 相当于 batch 
 
   ![image-20220425000507095](../img/pulsar/pulsar-perf-tuning-bookie.png)
 
@@ -2175,6 +2211,10 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
   - Consumer receiver queue 增大
 
   - Key_Shared 时，dispatcher 可能瓶颈
+
+    > 计算hash、group by hash%slots。
+    >
+    > 一批读得越多性能越好。
 
   - Bookie configurations
 
