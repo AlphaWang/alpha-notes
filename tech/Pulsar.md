@@ -1056,9 +1056,94 @@ tx.commit().get();
 
 ## || Schema
 
-Schema 存储在 BookKeeper 中。
+**目的**
 
-//TODO
+- 否则需要代码 encode / decode byte[]，如果数据类型改变不好维护。
+- schema 定义如何序列化反序列化、定义数据格式、处理兼容性。
+- 与 Pulsar SQL 集成后可以映射为字段。
+
+
+
+**Schema 定义格式**
+
+- Type: AVRO / JSON / PROTOBUF
+
+```json
+{
+  "type": "JSON",
+  "properties": {
+    "__alwaysAllowNull": "true",
+    "__jsr310ConversionEnabled": "false"
+  },
+  "schema" : {
+    type: record,
+    name: Person,
+    namespace: xx,
+    fields: [
+      "name": "age",
+      "type": ["null", "string"]
+    ]
+  }
+}
+```
+
+
+
+**Schema 的使用**
+
+```java
+//Static struct schema
+Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
+produer.newMessage()
+  .value(user)
+  .send();
+Consumer<User> consumer = client.newConsumer(Schema.AVRO(User.class)).create();
+consumer.receive();
+
+//Dynamic struct schema: 常用于connector
+RecordSchemaBuilder builder = SchemaBuilder.record("schemaName");
+builder
+  .field("intField")
+  .type(SchemaType.INT32);
+SchemaInfo schemaInfo = builder.build(SchemaType.AVRO);
+
+Producer<GenericRecord> producer = client.newProducer(Schema.generic(schemaInfo)).create();
+producer.newMessage()
+  .value(schema.newRecordBuilder().set("intField", 32).build())
+  .send();
+```
+
+
+
+ **Auto Schema**
+
+- AUTO_PRODUCE：如果生产者发送的bytes不符合topic schema，则拒绝
+- AUTO_CONSUME：反序列化为 GenericRecord，适用于提前不知道schema的情况。
+
+
+
+**Schema 原理**
+
+```java
+Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
+```
+
+- 通过 `Schema.AVRO(User.class)` 创建 SchemaInfo
+- `newProducer` 时连接到 broker，并发送 SchemaInfo；
+- Broker 收到 SchemaInfo 后：
+  - 如果主题没有 schema，则创建；
+  - 如果主题已有 schema，且传入的schemaInfo是新的，且与已有的兼容，则创建新version.
+  - 如果不兼容，则失败。
+- 兼容性检查
+  ![image-20220430205726651](../img/pulsar/pulsar-schema-compatibility.png)
+
+
+
+**Schema 存储**
+
+- Schema 存储在 BookKeeper 中，而不是 zk。
+
+
 
 
 
