@@ -977,12 +977,14 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 - **客户端如何找到 Topic Owner**
+
   - Topic owner == Namespace bundle owner，相关信息记在 zk 中。
   - 客户端执行 Topic lookup 发送到任意 Broker；Broker 找到 topic 归属哪个 namespace bundle、在从zk 找到bundle对应的 Owner Broker。
 
-> 问题：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
->
-> --> 改进：增加 read only broker 的概念
+  > Q：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
+  >
+  > - 改进：增加 readonly broker 的概念 
+  > - https://github.com/apache/pulsar/wiki/PIP-63%3A-Readonly-Topic-Ownership-Support
 
 
 
@@ -1062,16 +1064,33 @@ Schema 存储在 BookKeeper 中。
 
 ## || 安全机制
 
-认证授权
+> https://pulsar.apache.org/docs/en/security-overview/
 
-- JWT
-- Athenz
-- Kerberos
-- OAuth2.0
+**认证授权**
+
+- 支持的 auth provider
+  - JWT
+  - Athenz
+  - Kerberos
+  - OAuth2.0
+- 配置
+  - 客户端：`authPlugin` `authParams`
+  - Broker：`authenticationProvider` `authorizationProvider` `superUserRoles` 
+  - Broker 间通讯配置：`brokerClientAuthenticationPlugin` `brokerClientAuthenticationParameters = superUser token`
+  - Broker-BK间通讯配置：`bookkeeperClientAuth...`
+  - Proxy 配置：
+    - 相当于Broker + Broker间通讯，配置项的并集
+    - `forwardAuthorizationCredential = true/false`：是否转发客户端认证信息。
+  - Function Worker：
+    - 相当于 Broker 的配置：以便客户端/Proxy访问
+    - 也要配置`clientAuthenticationPlugin` `clientAuthenticationParameters`：以便访问 Broker
+  - Pulsar Function：
+    - 继承 Function Worker 权限；可能有风险
+    - 实现 FunctionAuthProvider，自定义
 
 
 
-加密
+**加密**
 
 - TLS加密
 - 端到端加密
