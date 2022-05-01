@@ -593,7 +593,9 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 - **Exclusive**
 
-  - 只有一个消费者绑定到当前订阅。其他消费者需要使用不同的 subscription name，否则报错。
+  - 只有一个消费者绑定到当前订阅。其他消费者需要使用不同的 subscription name，否则报错 ConsumerBusyException: Exclusive consumer is already connected。
+
+  - 有序。
 
   - 支持单条消息确认、累积消息确认。
 
@@ -605,6 +607,8 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
   - 多个消费者可以绑定到当前订阅（而不像 Exclusive 那样直接报错），但只有一个收到消息。
 
+  - 有序。
+
     > 类似 Kafka。
     >
     > ![image-20220322112744805](../img/pulsar/subscription-modes-failover.png)
@@ -615,10 +619,13 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
   - 限制：
 
-    - 不保序、
-    - 无法使用 cumulative ack. 
+    - 无序、
     
-    > 每个consumer 可能消费都 partition 中的**一部分**数据。
+    - 无法使用 cumulative ack，类似kafka . --> 否则可能有误ack的情况
+    
+      用 individual ack时，如果中间有部分msg没有ack，则重启后会重新收到 
+    
+    > 类似传统消息队列模型。每个consumer 可能消费都 partition 中的**一部分**数据。
     > ![image-20220322113010001](../img/pulsar/subscription-modes-shared.png)
     
   
@@ -2254,6 +2261,20 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
 - 客户端：pulsar-client-admin
 
 
+
+## || 监控
+
+**查看主题统计**
+
+```sh
+pulsar-admin topics stats TOPIC_NAME
+pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如ledger,cursor
+```
+
+- backlogSize / storageSize
+- Publishers: 吞吐量，发送速率，地址，producerName
+- Subscriptions: 吞吐量，消费速率，msgBacklog，type，
+  - 该订阅下有哪些consumer、consumerName、lastAckTs、lastConsumeTs
 
 
 
