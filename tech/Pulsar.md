@@ -806,13 +806,24 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 **流程**
 
 - 收到消费者 flowPerm 命令后，循环调用 bk 客户端读取数据；
+
 - 凑足后，选择一个 Consumer：
+
   - Key Shared的情况下
+
     - AUTO_SPLIT：新consumer按照一致性哈希环（TreeMap实现）方式进入。
     - STICKY：加入哈希环时，如果区间有重叠 则报错，拒绝新consumer加入。
-  - 按优先级选择
+
+  - 按优先级选择消费者。
+
+  - 注意：如果是 batch msg，服务端并不知道batch里有多少条消息，可能超发。
+
+    > 新引入 preciseDispatcherFlowControl，根据历史记录估算batch msg count，减少超发过多的情况。
+
 - 过滤：延时消息、事务消息
+
 - 发送给消费者：根据订阅类型不同
+
   - 独占：所有entry发送给一个消费者；
   - 共享：发给多个消费者；
   - KeyShared：按key选择；
