@@ -59,6 +59,15 @@
 
 
 
+**社区发展**
+
+- 常用功能
+  - Pub/Sub
+  - Multi-Tenancy
+  - Functions
+  - Tiered Storage
+  - Connectors
+
 
 
 ## || 架构
@@ -245,9 +254,11 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 - **Chunking**
 
-  - 作用：生产者将大payload拆分、消费者组装
+  > PIP 37: Large message size handling in Pulsar: Chunking Vs Txn https://github.com/apache/pulsar/wiki/PIP-37%3A-Large-message-size-handling-in-Pulsar
 
-  - 1. The producer splits the original message into chunked messages and publishes them with chunked metadata to the broker separately and in order.
+  - 作用：生产者将大payload拆分、消费者组装
+  
+- 1. The producer splits the original message into chunked messages and publishes them with chunked metadata to the broker separately and in order.
     2. The broker stores the chunked messages in one managed-ledger in the same way as that of ordinary messages, and it uses the `chunkedMessageRate` parameter to record chunked message rate on the topic.
 
     3. The consumer buffers the chunked messages and aggregates them into the receiver queue when it receives all the chunks of a message.
@@ -255,7 +266,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
     4. The client consumes the aggregated message from the receiver queue.
 
   - 限制
-
+  
     - 不能同时使用  batching；
     - 仅支持持久化主题；
     - 仅支持 exclusive / failover 订阅模式，要保证消息被同一个消费者消费。
@@ -367,6 +378,27 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 
 
+- **Exclusive Producer**
+
+  - 只有一个 producer 能写入成功。 类似订阅类型。 
+
+  - PIP-68 https://github.com/apache/pulsar/wiki/PIP-68%3A-Exclusive-Producer
+
+    ```java
+    Producer<String> producer = client.newProducer(Schema.STRING)
+          .topic("my-topic")
+          .accessMode(ProducerAccessMode.Exclusive)
+          .create();
+    ```
+
+    
+
+
+
+
+
+
+
 
 
 ## || Consumer
@@ -475,21 +507,24 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
     
   - 累积消息确认：`consumer.acknowledgeCumulative(msg);`
     
-    - 批量消息中的单个消息确认：Broker 配置 `acknowledgementAtBatchIndexLevelEnabled=true`
+    - 批量消息中的单个消息确认：
+
+      - Broker 配置 `acknowledgementAtBatchIndexLevelEnabled=true`
+      - 原理是在客户端重新收到一批后，过滤掉已确认的消息。
 
     - 否定应答: 表示处理失败、稍后重发给其他消费者。`consumer.negativeAcknowledge(msg);`
+
+      > Q: 何时重新deliver、能否指定? 
+    > A: 全局设置延迟时间；如有大量消息延迟消费，可调用 `reconsumerLater` 接口。
     
-    > Q: 何时重新deliver、能否指定? 
-      > A: 全局设置延迟时间；如有大量消息延迟消费，可调用 `reconsumerLater` 接口。
-
-      
-
+    
+    
   - **确认流程**
 
     - 待确认的消息先放入`AcknowledgementsGroupingTracker`缓存，默认每100ms、或大小超过1000则发送一批确认请求；目的是避免broker收到高并发的确认请求。
-    - 对于 ack at batch index level，存储格式为Map<Batch MessageId, `BitSet`>；
-    - 对于 累积消息确认，Tracker 只需保存最新确认位置即可。
-    - 对于否定应答，由 `NegativeAcksTracker`处理，其复用 Pulsar Client 时间轮，定期发送给 Broker。
+    - 对于 **ack at batch index level**，存储格式为Map<Batch MessageId, `BitSet`>；
+    - 对于 **累积消息确认**，Tracker 只需保存最新确认位置即可。
+    - 对于**否定应答**，由 `NegativeAcksTracker`处理，其复用 Pulsar Client 时间轮，定期发送给 Broker。
 
     
 
@@ -1792,6 +1827,24 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
+**Ledger Rollover**
+
+- 目的：只有closed ledger才会被清理。
+
+- 触发：写入的时候发现ledger已满，则打开新Ledger。
+
+  - 问题：如果一个主题的写入停止了，则ledger长时间不被写入、也没办法rollover、空间无法释放。
+
+  - 优化：引入 `maxLedgerRolloverTimeMinutes` ，超时后自动 rollover。
+
+    > 优化后的条件：
+    >
+    > 1）maxRolloverTime 到期
+    >
+    > 2）或者，达到 maxEntries && 达到 minRolloverTime
+
+
+
 ### 写入 ledger
 
 **参数**
@@ -2345,7 +2398,9 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 
     ![image-20220425001420748](../img/pulsar/pulsar-perf-tuning-bookie-read.png)
 
-  - Broker congifurations
+  - Broker congifurations 
+
+    - `managedLedgerNewEntriesCheckDelayInMillis`：broker间隔多久检查一次是否有新entry要push给消费者。
 
     ![image-20220425001555747](../img/pulsar/pulsar-perf-tuning-broker-read.png)
 
