@@ -391,7 +391,23 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
           .create();
     ```
 
-    
+- **Producer Partial RoundRobin**
+
+  - 目的：分区过多时，producer的链接可能非常多。
+
+  ![image-20220330202155910](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/producer-partial-round-robin.png)
+
+  ```java
+  PartitionedProducerImpl<byte[] producer = (PartitionedProducerImpl<byte[]>) pulsarClient.newProducer()
+    .topic("")
+    .enableLazyStartPartitionedProducers(true) //设置1
+    .messageRouter(new PartialRoundRobinMessageRouterImpl(3)) //设置2
+    .messageRouting(MessageRoutingMode.CustomPartition)
+    .enableBatching(false)
+    .create();
+  ```
+
+  
 
 
 
@@ -2200,16 +2216,53 @@ https://pulsar.apache.org/docs/en/administration-geo
 https://pulsar.apache.org/docs/en/schema-get-started/
 
 - 作用
+
   - 消费主题中的数据，进行处理，再写入另一个主题。
   - 输入输出都必须是 Pulsar Topic。
+
 - Runtime
-  - **线程**：ThreadRuntime 将function包装成一个Runnable。
-  - **进程**：ProcessRuntime 调用 Java ProcessBuilder 创建一个进程对象；新进程暴露 gRPC服务，提供健康检查接口。
-  - **K8S**：KubernetesRuntime 创建 Headless Service，为每个Function创建一个StatefulSet，让Function在Pod中运行。
+
+  - **线程**：`ThreadRuntime` 将 java function 包装成一个Runnable。
+  - **进程**：`ProcessRuntime` 调用 Java ProcessBuilder 创建一个进程对象；新进程暴露 gRPC服务，提供健康检查接口。
+  - **K8S**：`KubernetesRuntime` 创建 Headless Service，为每个Function创建一个StatefulSet，让Function在Pod中运行。
+
 - 特点
+
   - 可配置三种语义保障
 
+- 原理：三个内部主题
 
+  - **提交**
+
+    - 构造 FunctionConfig：tenant/ns/name, inputs/output, classsName
+
+    - 可以提交到任意 worker；
+
+    - worker 校验：检查配置、检查代码
+
+    - worker 拷贝代码 jar 到 BookKeeper. 
+
+      >  Q：bk 如何存储？
+      >
+      > Map<FQFN, FunctionMetaData> 存储到元数据 **topic**，也可以作为 audit log。
+
+  - **调度**
+
+    - 只有 Leader worker 才能调度；
+
+      > 选主：failover subscription，订阅 "empty coordination **topic**"
+
+    - 触发调度的时机：Function CRUD 操作、Worker变化：新增、选主、宕机
+
+    - 任务分配：Leader 写入 ”Assignment **Topic**“，是压缩主题 key = FQFN + InstanceId，所有 Worker 订阅该主题。
+
+  - **执行**
+
+    - Worker 监听到 ”Assignment Topic“ 后，由`RuntimeSpawner` 管理Function生命周期。
+
+![image-20220502193156731](../img/pulsar/pulsar-function-flow.png)
+
+- Function Mesh
 
 
 
@@ -2250,49 +2303,30 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 
 
+## || SQL 
 
+> https://pulsar.apache.org/docs/en/sql-overview/
 
-## || 新功能
+查询办法
 
-### Producer Partial RoundRobin
-
-目的：分区过多时，producer的链接可能非常多。
-
-![image-20220330202155910](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/producer-partial-round-robin.png)
-
-```java
-PartitionedProducerImpl<byte[] producer = (PartitionedProducerImpl<byte[]>) pulsarClient.newProducer()
-  .topic("")
-  .enableLazyStartPartitionedProducers(true) //设置1
-  .messageRouter(new PartialRoundRobinMessageRouterImpl(3)) //设置2
-  .messageRouting(MessageRoutingMode.CustomPartition)
-  .enableBatching(false)
-  .create();
-```
+- CLI: `bin/pulsar sql`
+- presto-jdbc
+- Presto HTTP API
+- 工具：Metabase，查询、图表
 
 
 
-### Consumer Redeliver Backoff
+性能调优
 
-```java
-// 反向签收
-client.newConsumer()
-  .negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
-                                .minDelayMs(1000)
-                                .maxDelayMs(60 * 1000)
-                                .build())
-  .subscribe();
+-  增加分区个数，查询时指定分区；类似数据库分表。
+  `where __partition__ = 1`
+- 按发送时间查询：底层使用二分法
+  `where __publish_time__ > timestamp '2020-01-01 09:00:00'`
+- 配置限流，避免影响puslar正常读写 `/conf/presto/catalog/pulsar.properties` `pulsar.bookkeeper-throttle-value=`
 
-client.newConsumer()
-  .ackTimeout(10, TimeUnit.SECOND)
-  .ackTimeoutRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
-                                .minDelayMs(1000)
-                                .maxDelayMs(60 * 1000)
-                                .build())
-  .subscribe();
-```
+监控
 
-
+- 8081 端口提供 dashboard
 
 
 
