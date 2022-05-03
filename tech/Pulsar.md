@@ -966,7 +966,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
     > 即，entry被确认后会立即标记为可删除，但并不一定会马上被删除。需要等到Ledger中所有entry都被确认才行。
 
-  - `Retention`：消息被确认**后**还想保留一段时间。
+  - `Retention`：消息被确认**后**还想保留一段时间/或大小。
 
   - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个 Ledger 也会自动被确认、让Ledger 进入 Retention 状态。
 
@@ -2335,6 +2335,74 @@ https://pulsar.apache.org/docs/en/io-overview/
 ## || 安装
 
 https://pulsar.apache.org/docs/zh-CN/standalone/ 
+
+
+
+Pulsar Manager
+
+- https://pulsar.apache.org/docs/en/administration-pulsar-manager/ 
+
+
+
+**Docker Standalone 部署**
+
+- 仓库：https://hub.docker.com/r/apachepulsar/pulsar
+
+- 注意修改 advertisedAddress为container name，否则默认是主机名
+
+  ```sh
+  $ docker run -it 
+    -p 6650:6650  
+    -p 8080:8080 
+    --mount source=pulsardata,target=/pulsar/data 
+    --mount source=pulsarconf,target=/pulsar/conf 
+    -e advertisedAddress=pulsar-standalone
+    --name pulsar-standalone
+    --hostname pulsar-standalone
+    apachepulsar/pulsar:2.10.0 
+    sh -c "bin/apply-config-from-env.py conf/standalone.conf && bin/pulsar standalone"
+    
+  ```
+
+
+
+**Docker compose 部署**
+
+> https://github.com/apache/pulsar/tree/master/docker-compose/kitchen-sink 
+
+- 部署 zk, bk, broker, proxy, manager
+
+- 注意修改 advertisedAddress
+
+
+
+**K8S 部署**
+
+> https://pulsar.apache.org/docs/en/helm-overview/
+>
+> https://pulsar.apache.org/docs/en/getting-started-helm/ 
+>
+> https://github.com/apache/pulsar-helm-chart
+
+- 安装 helm：
+
+  ```sh
+  helm repo add apache https://pulsar.apache.org/charts
+  helm install pular apache/pulsar --set initialize=true
+  ```
+
+- 可选端口映射到本地，通过本地地址访问
+
+  ```sh
+  kubectl port-forward svc/pulsar-pulsar-manager 9527:9527 -n default
+  ```
+
+- 如何自定义
+
+  - 默认使用 https://github.com/apache/pulsar-helm-chart/blob/master/charts/pulsar/values.yaml 
+  - 可修改 replicaCount, images
+
+- 
 
 
 
