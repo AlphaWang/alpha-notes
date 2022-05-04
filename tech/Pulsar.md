@@ -394,6 +394,9 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 - **Producer Partial RoundRobin**
 
   - 目的：分区过多时，producer的链接可能非常多。
+  - 解决：
+    - Producer 懒加载：只有在用的时候才会真正创建producer实例。
+    - Partial RoundRobin：每个 producer 实例可能只 roundrobin 到一部分分区。
 
   ![image-20220330202155910](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/producer-partial-round-robin.png)
 
@@ -553,6 +556,29 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
       > - Broker RedeliveryTracker 会记录每个消息的投递次数；
       > - 可知如果消费者 ReceiverQueue 设置过大 是会对Broker有影响的。
 
+  - **Consumer Redeliver Backoff**
+
+    - 默认否定应答、或应答超时后，会马上重发。
+    - Backoff 则允许自定义重发的间隔。
+
+    ```java
+    // 反向签收
+    client.newConsumer()
+      .negativeAckRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
+                                    .minDelayMs(1000)
+                                    .maxDelayMs(60 * 1000)
+                                    .build())
+      .subscribe();
+    
+    client.newConsumer()
+      .ackTimeout(10, TimeUnit.SECOND)
+      .ackTimeoutRedeliveryBackoff(MultiplierRedeliveryBackoff.builder()
+                                    .minDelayMs(1000)
+                                    .maxDelayMs(60 * 1000)
+                                    .build())
+      .subscribe();
+    ```
+
   
 
 - **reconsumeLater**
@@ -580,10 +606,13 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
                   .deadLetterPolicy(DeadLetterPolicy.builder()
                         .maxRedeliverCount(maxRedeliveryCount)
                         .deadLetterTopic("your-topic-name")
+                        .initialSubscriptionName("my-sub")
                         .build())
-                  .subscribe();      
+                  .subscribe();     
+  // initialSubscriptionName 的作用:
+    // 否则是懒创建，无法指定retention等参数。
     ```
-
+  
   - 在 negative ack 和 ack timeout 时放入？
 
 
@@ -633,6 +662,16 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
     reader.readNext();
   }
   ```
+
+
+
+**TableView**
+
+- 2.10 新引入，类似 compacted topic
+  `client.newTableViewBuilder()`
+- 客户端内存实现，数据不能太大。
+
+
 
 
 
@@ -696,8 +735,6 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
     > ![image-20220322113231815](../img/pulsar/subscription-modes-key-shared.png)
   
-
-
 
 
 
@@ -2029,7 +2066,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ## || Geo Replication
 
-https://pulsar.apache.org/docs/en/administration-geo
+> - https://pulsar.apache.org/docs/en/administration-geo
 
 *Geo-replication* is the replication of persistently stored message data across multiple clusters of a Pulsar instance.
 
@@ -2102,10 +2139,6 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 
 
-
-
-
-
 **Subscription Replication**
 
 - 要解决的问题：
@@ -2114,7 +2147,7 @@ https://pulsar.apache.org/docs/en/administration-geo
 
     > Message ID = Ledger ID | Entry ID | Partition Index | Batch Index
 
-  - 要复制ack状态：目前只复制 mark delete position（连续ack的最大id）
+  - 要复制ack状态：目前只复制 mark delete position（连续ack的最大id）；切换后可能有重复消费。
 
     > ACK：消费进度会被持久化到 ledger。
     >
@@ -2122,11 +2155,40 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 - 实现
 
-  - **Cursor Snapshot** 定期同步，记录message id 对应关系
+  - **Cursor Snapshot**：定期同步，记录message id 对应关系
 
-    > ClusterA 向B/C发送 `ReplicatedSubscriptionSnapshotRequest`后，会收到响应，包含 ledger_id / entry_id；则ClusterA 会保存本地ledger_id / entry_id，以及其他cluster对应的ledger_id / entry_id
+    > ClusterA 向 B/C 发送 `ReplicatedSubscriptionSnapshotRequest`，收到响应包含 ledger_id / entry_id；则 ClusterA 会保存本地 ledger_id / entry_id，以及其他 cluster对应的 ledger_id / entry_id。
+    >
+    > Cursor mapping 并不能做到精确，因为请求响应会有延时。
     >
     > ![image-20220330094251420](../img/pulsar/subs-replicate-cursor-snapshot.png)
+    >
+    > ```json
+    > {
+    >   "snapshot_id": "444D3632-F96C-48D7-83D8-041C32164EC1",
+    >   "local_message_id": {
+    >     "ledger_id": 192,
+    >     "entry_id": 123123
+    >   },
+    >   "clusters": [
+    >     {
+    >       "cluster": "b",
+    >       "message_id": {
+    >         "ledger_id": 1234,
+    >     		"entry_id": 45678
+    >       }
+    >     }, {
+    >       "cluster": "c",
+    >       "message_id": {
+    >         "ledger_id": 7655,
+    >     		"entry_id": 13421
+    >       }
+    >     }
+    >   ]
+    > }
+    > ```
+    
+  - **Update Remote Cursor**：当 clusterA 的 ack 进度超过之前 snapshot 位置，则发送 `ReplicatedSubscriptionUpdate` 请求通知其他集群更新 mark delete position。
 
 
 
@@ -2136,7 +2198,7 @@ https://pulsar.apache.org/docs/en/administration-geo
 
   - 与正常的消息一样进行跨地域复制：实现跨地域请求响应
 
-  - 副作用 - 影响backlog计算 
+  - 副作用：影响backlog计算；
 
     ```json
     --示例
@@ -2164,21 +2226,25 @@ https://pulsar.apache.org/docs/en/administration-geo
 
 - 配置
 
-  - Broker 启用：enableReplicatedSubscriptions=true (默认true)
+  - Broker 启用：`enableReplicatedSubscriptions=true` (默认true)
+
+  - 可配置参数：多久做一次snapshot、snapshot复制请求的timeout时间、最多缓存多少个snapshot；
 
   - 创建subscription时启用：
-
+  
     ```java
     Consumer<String> consumer = pulsarClient.newConsumer(Schema.STRING)
                   .topic(topic)
                   .subscriptionName("my-subscription")
                   .replicateSubscriptionState(true)
-                  .subscribe();
+                .subscribe();
     ```
 
-  - 可配置参数：多久做一次snapshot、snapshot复制请求的timeout时间、最多缓存多少个snapshot、
-
-
+- 限制
+  - 定期snapshot
+  - 只同步 mark delete position
+  - 仅当所有相关cluster可用时才会snapshot
+  - 影响backlog计算，另外 batch 也会影响backlog 
 
 
 
