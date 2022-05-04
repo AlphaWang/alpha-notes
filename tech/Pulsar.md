@@ -320,63 +320,6 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   
 
-- **Deleyed Message Delivery**
-
-  - 作用：发送时，可以给每个消息配置不同的延迟时间。在一段时间之后消费消息，而不是立即消费。
-
-    ```java
-    // message to be delivered at the configured delay interval
-    producer.newMessage()
-      .deliverAfter(3L, TimeUnit.Minute)
-      .value("Hello Pulsar!")
-      .sendAsync();
-    
-    // message to be delivered at future timestamp
-    producer.newMessage()
-      .deliverAt(long timestamp)
-      .value("Hello Pulsar!")
-      .sendAsync();
-    ```
-
-    
-
-  - **原理：**
-
-    - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在堆外内存**优先级队列**中维护索引 (time -> messageId (LedgerId + EntryId))
-    - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker` 
-
-    ![image-20220327191641313](../img/pulsar/pulsar-delayed-msg.png)
-
-  - 注意：只能作用于 shared mode
-
-  - **限制：**
-
-    - 内存占用：delayed index memory limitation.
-
-    - Broker宕机后需要重建索引、新Broker有一段时间会无响应：rebuilding delayed index. 
-
-      > 增加分区可缓解，让每个分区的数据尽可能小。
-
-    - 索引是在subscription维度，可能有重复：the index only available for a subscription.
-      
-
-  - **优化 - PIP26 Hieraychical Timing Wheels**
-
-    > http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf 
-    >
-    > https://blog.acolyer.org/2015/11/23/hashed-and-hierarchical-timing-wheels/
-
-    - 自定义延迟精度，并分片；只有最近的分片存储在内存、其他的持久化
-      ![image-20220327195558877](../img/pulsar/pulsar-delayed-msg-plan.png)
-    - 取到M9时，会查看时间片 time-partition-0 是否有消息到期。
-
-  - **挑战**
-
-    - 如何清理延时消息？
-    - Safe position for subscription to start read?
-    - 内存里需要维护 too much individual acks, introduced much memory overhead. 
-
-
 
 - **Exclusive Producer**
 
@@ -1626,11 +1569,9 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
 > 三种文件
 >
 > - **Journal**：建议用SSD
->
 > - **Entry log**：同一个 Entry log 可能存储多个 Ledger 的 entry
->
->   Q: 那么 Ledger 是一个逻辑概念？
->
+>   - Q: 那么 Ledger 是一个逻辑概念？
+>   - Q: 必须所有 Ledger 都删除才能真正删除 entry log？--> bookie 异步 compaction：移动ledger到其他entry log
 > - **Index file**: rocksDB
 
 
@@ -2064,6 +2005,67 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 # | 功能
 
+## || Deleyed Message
+
+
+
+-  作用：发送时，可以给每个消息配置不同的延迟时间。在一段时间之后消费消息，而不是立即消费。
+
+  ```java
+  // message to be delivered at the configured delay interval
+  producer.newMessage()
+    .deliverAfter(3L, TimeUnit.Minute)
+    .value("Hello Pulsar!")
+    .sendAsync();
+  
+  // message to be delivered at future timestamp
+  producer.newMessage()
+    .deliverAt(long timestamp)
+    .value("Hello Pulsar!")
+    .sendAsync();
+  ```
+
+  
+
+- **原理：**
+
+  - 消息存储到 BookKeeper后，`DelayedDeliveryTracker` 在堆外内存**优先级队列**中维护索引 (time ->  LedgerId + EntryId)
+  - 当消费时，如果消息为delay，则放入`DelayedDeliveryTracker` ；消费时还会查询 `DelayedDeliveryTracker` 获取到期消息。
+
+  ![image-20220327191641313](../img/pulsar/pulsar-delayed-msg.png)
+
+  - 注意：只能作用于 shared mode
+
+- **限制：**
+
+  - 内存占用；
+
+  - Broker 宕机后需要重建索引、新 Broker 有一段时间会无响应。
+
+    > 增加分区可缓解，让每个分区的数据尽可能小。
+
+  - 索引是在subscription维度，可能有重复；
+
+  
+
+- **优化 - PIP26 Hieraychical Timing Wheels**
+
+  > http://www.cs.columbia.edu/~nahum/w6998/papers/sosp87-timing-wheels.pdf 
+  >
+  > https://blog.acolyer.org/2015/11/23/hashed-and-hierarchical-timing-wheels/
+
+  - 自定义延迟精度，并分片；只有最近的分片存储在内存、其他的持久化
+    ![image-20220327195558877](../img/pulsar/pulsar-delayed-msg-plan.png)
+  - 取到M9时，会查看时间片 time-partition-0 是否有消息到期、读到M8。
+
+- **挑战**
+
+  - 如何清理延时消息？目前必须ack之后才能删
+  - Safe position for subscription to start read? 从哪里开始读既不丢消息、又不影响索引重建？
+  - 内存里需要维护 too much individual acks, introduced much memory overhead. 
+
+
+
 ## || Geo Replication
 
 > - https://pulsar.apache.org/docs/en/administration-geo
@@ -2120,16 +2122,17 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - **原理**
 
   - **异步复制** 
-    
+  
 - 如何避免循环复制：消息包含元数据 replicate-from
     - 如何保证 exact-once 复制：broker 去重 with sequence id。
+    
+    
+  ![image-20220331162951691](../img/pulsar/geo-replication-underline.png)
   
-    ![image-20220331162951691](../img/pulsar/geo-replication-underline.png)
+- **Global Config Store**
   
-  - **Global Config Store**
-
-    - replication_clusters
-
+  - replication_clusters
+  
     ![image-20220331163143997](../img/pulsar/geo-replication-globalconfigstore.png)
   
   - **Geo-replication without global zk**
@@ -2384,11 +2387,15 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 性能调优
 
--  增加分区个数，查询时指定分区；类似数据库分表。
+-  **增加分区个数**，查询时指定分区；类似数据库分表。
   `where __partition__ = 1`
-- 按发送时间查询：底层使用二分法
+- **按发送时间查询**：底层使用二分法
   `where __publish_time__ > timestamp '2020-01-01 09:00:00'`
-- 配置限流，避免影响puslar正常读写 `/conf/presto/catalog/pulsar.properties` `pulsar.bookkeeper-throttle-value=`
+- **配置限流**，避免影响puslar正常读写 `/conf/presto/catalog/pulsar.properties` `pulsar.bookkeeper-throttle-value=`
+- Presto 直接查询 bk 历史数据，是否对消息吞吐量产生影响？
+  - 会。可以 offload 到二级存储，presto查二级存储；或replicate 到历史数据集群。 
+
+
 
 监控
 
@@ -2406,7 +2413,15 @@ https://pulsar.apache.org/docs/zh-CN/standalone/
 
 Pulsar Manager
 
-- https://pulsar.apache.org/docs/en/administration-pulsar-manager/ 
+- https://pulsar.apache.org/docs/en/administration-pulsar-manager/
+
+- 注意容器部署时cluster url：
+
+  ```sh
+  ./pulsar-admin clusters update standalone --url http://docker.for.mac.host.internal:8080 --broker-url pulsar://127.0.0.1:6650
+  ```
+
+   
 
 
 
