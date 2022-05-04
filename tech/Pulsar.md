@@ -1032,7 +1032,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
   > Q：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
   >
-  > - 改进：增加 readonly broker 的概念 
+  > - 改进：增加 **readonly broker** 的概念，同步 cursor.
   > - https://github.com/apache/pulsar/wiki/PIP-63%3A-Readonly-Topic-Ownership-Support
 
 
@@ -1253,7 +1253,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
     - Digest：CRC32
   - Data byte[]
   - Authentication code
-- **Ledger**：一组日志记录，类比一个文件。streams of log entries are called *ledgers*
+- **Ledger** (Segment)：一组日志记录，类比一个文件。streams of log entries are called *ledgers*
   - 打开/关闭 Leger 只是操作`元数据`(元数据存储在zk)：
     - State: open/closed
     - Last Entry Id: -1L
@@ -2278,7 +2278,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-## || Function & Pulsar IO
+## || Function Mesh
 
 **Function**
 
@@ -2295,9 +2295,11 @@ https://pulsar.apache.org/docs/en/schema-get-started/
   - **进程**：`ProcessRuntime` 调用 Java ProcessBuilder 创建一个进程对象；新进程暴露 gRPC服务，提供健康检查接口。
   - **K8S**：`KubernetesRuntime` 创建 Headless Service，为每个Function创建一个StatefulSet，让Function在Pod中运行。
 
-- 特点
+- 特点：可配置三种语义保障
 
-  - 可配置三种语义保障
+  - At Most Once:：收到消息即 ack
+  - At Least Once：Function处理成功才ack
+  - Effectively Once：数据去重
 
 - 原理：三个内部主题
 
@@ -2331,7 +2333,14 @@ https://pulsar.apache.org/docs/en/schema-get-started/
 
 ![image-20220502193156731](../img/pulsar/pulsar-function-flow.png)
 
-- Function Mesh
+**Function Mesh**
+
+- 描述：用 yaml 描述一组 Function 之间的关系。
+- 管理：
+  - 用 pulsar admin 来管理：`./pulsar-admin function-mesh create -f mesh.yaml`
+  - K8S 环境管理：`kubectl apply -f function-mesh.yaml`
+
+- 原理：新增一个 `MeshTopic`，然后基于 Function 已有的三个topic.
 
 
 
@@ -2339,8 +2348,7 @@ https://pulsar.apache.org/docs/en/schema-get-started/
 
 https://pulsar.apache.org/docs/en/io-overview/
 
-- 作用
-  - 数据经过转换之后存入外部数据源。
+- 作用：数据经过转换之后存入外部数据源。
 
 
 
