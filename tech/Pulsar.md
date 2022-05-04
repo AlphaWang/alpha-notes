@@ -2352,6 +2352,38 @@ https://pulsar.apache.org/docs/en/io-overview/
 
 
 
+## || Transactions
+
+> - https://pulsar.apache.org/docs/en/txn-how/
+> - PIP-31 Transactional Streaming https://docs.google.com/document/d/145VYp09JKTw9jAT-7yNyFU255FptB2_B2Fye100ZXDI/edit#heading=h.bm5ainqxosrx
+
+目的
+
+- 在原子性事务里消费、处理、生产。
+
+原理
+
+- 概念
+  - **Transaction Coordinator**：broker内部运行的一个模块，负责管理tx生命周期、处理tx超时。
+  - **Transaction Log**：底层是 pulsar topic，存储 tx 状态。
+  - **Transaction Buffer**：生产的消息先放到相应主题分区的 buffer、只有提交后才对消费者可见。
+  - **Transaction ID**：高16位 = TC id，低 112 位 = 自增ID。
+- 数据流程
+  - 启动事务
+    - Pulsar 客户端找到 TC，请求创建tx；TC 创建事务日志，返回 tx ID；
+  - 生产消息
+    - 先发送 topic partition 到TC；TC 写入事务日志；
+  - Ack 消息
+    - 先通过 TC 记录事务日志；再发送ack 到broker；
+    - Broker 检查是否属于某个事务，标记为 PENDING_ACK；
+  - 结束事务
+    - 先通过 TC 记录事务日志：COMMITING / ABORTING
+    - 负责生产的 Broker 写入 committed markers
+    - 负责ack的Broker 将 PENDING_ACK 置为 ACK 或 UNACK
+    - TC 最后将结果写入事务日志：COMMITTED / ABORTED
+
+
+
 ## || KoP
 
 > - KoP 介绍 https://streamnative.io/blog/tech/2020-03-24-bring-native-kafka-protocol-support-to-apache-pulsar/ 
