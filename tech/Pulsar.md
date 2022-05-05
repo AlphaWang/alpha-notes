@@ -2567,7 +2567,9 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 
 ## || 性能调优
 
-
+> - https://mp.weixin.qq.com/s/MSPVfH085qTlwqk2IWEBjA
+> - https://mp.weixin.qq.com/s/R87gFB8tG92i6uvIPU3pOg 
+> - https://mp.weixin.qq.com/s?__biz=MzUyMjkzMjA1Ng==&mid=2247485229&idx=1&sn=7c60cb714e7583f1c292bf40558145f3&chksm=f9c51d1aceb2940cb35c75c801a2f5b08e1bf82739fbc9ee0b49856126e4dc8e13d0854855c3&scene=21#wechat_redirect
 
 
 
@@ -2608,15 +2610,32 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 - **消息写入优化**
 
   - Broker configurations
-    ![image-20220425000357783](../img/pulsar/pulsar-perf-tuning-broker.png)
-
+    
+  ```
+    0. 增加 bk flush 间隔（memtable定期flush到 Entry log的间隔）：`dbStorage_writeCacheMaxSizeMb / flushInterval`
+    1. managedLedgerDefaultEnsembleSize
+    2. managedLedgerDefaultWriteQuorum
+    3. managedLedgerDefaultAckQuorum
+    4. managedLedgerNumWorkerThreads
+    5. numIOThreads
+    6. Dorg.apache.bookkeeper.conf.readsystemproperties=true -DnumIOThreads=8
+    ```
+    
   - Bookie configurations
 
-    > Journal sync data: 是否同步刷到磁盘
-    >
-    > Journal group commit: 相当于 batch 
-
-  ![image-20220425000507095](../img/pulsar/pulsar-perf-tuning-bookie.png)
+    ```
+    0. Journal 目录和 Entry 目录存储到不同磁盘，利用多个磁盘的 IO 并行性；
+    1. Journal Directories: 指定多个 Journal 目录，否则bk使用单线程处理每个journal目录；
+    2. Ledger Directories
+    3. Journal sync data // 禁用同步刷盘 `journalSyncData=false`，entry 写入page cache后即返回。
+    4. Journal group commit // 启用组提交机制：`journalAdaptiveGroupWrites=true`
+    5. Write cache
+    6. Flush interval
+    7. Add worker threads and max pending add requests
+    8. Journal pagecache flush interval
+    ```
+    
+    
 
 - **消息读取优化**
 
@@ -2630,13 +2649,32 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 
   - Bookie configurations
 
-    ![image-20220425001420748](../img/pulsar/pulsar-perf-tuning-bookie-read.png)
-
+    ```
+  1. dbStorage_rocksDB_blockCacheSize
+    2. dbStorage_readAheadCacheMaxSizeMb
+  3. dbStorage_readAheadCacheBatchSize
+    4. Read worker threads
+  ```
+  
   - Broker congifurations 
-
+  
+    ```
+  1. Managed ledger cache
+    2. Dispatcher max read batch size
+    3. Bookkeeper sticky reads
+    ```
+    
+    
+    
     - `managedLedgerNewEntriesCheckDelayInMillis`：broker间隔多久检查一次是否有新entry要push给消费者。
-
-    ![image-20220425001555747](../img/pulsar/pulsar-perf-tuning-broker-read.png)
+    
+  - 优化追尾读：设置缓存大小、缓存逐出策略
+  
+  - 优化追赶度：
+  
+    - bk 使用单线程读取同一个 Ledger，可设置 worker 线程池 `numReadWorkerThreads` `maxPendingReadRequestsPerThread`
+    - 设置 RocksDB 块缓存 `dbStorage_rockDB_blockCacheSize`
+    - 设置 Entry 预读缓存：`dbStorage_readAheadCacheMaxSizeMb / BatchSize`
 
 
 
