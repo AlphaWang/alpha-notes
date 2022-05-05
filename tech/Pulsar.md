@@ -2567,9 +2567,9 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 
 ## || 性能调优
 
-> - https://mp.weixin.qq.com/s/MSPVfH085qTlwqk2IWEBjA
-> - https://mp.weixin.qq.com/s/R87gFB8tG92i6uvIPU3pOg 
-> - https://mp.weixin.qq.com/s?__biz=MzUyMjkzMjA1Ng==&mid=2247485229&idx=1&sn=7c60cb714e7583f1c292bf40558145f3&chksm=f9c51d1aceb2940cb35c75c801a2f5b08e1bf82739fbc9ee0b49856126e4dc8e13d0854855c3&scene=21#wechat_redirect
+> - Penghui https://mp.weixin.qq.com/s/MSPVfH085qTlwqk2IWEBjA
+> - Penghui https://mp.weixin.qq.com/s/R87gFB8tG92i6uvIPU3pOg 
+> - BIGO 调优实战 https://mp.weixin.qq.com/s/mJViU-elhBwHMDiius2b8g
 
 
 
