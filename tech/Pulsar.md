@@ -1324,10 +1324,12 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
       > 示例：LAC ~ LAP 之前的 entry 是正在存储中的数据。
       > ![image-20220326130309827](../img/pulsar/bk-arch-consistency.png)
 
-  - Ensemble Change，当某个bookie宕机：
+  - Ensemble Change，当某个bookie宕机（Q：写入失败即认为宕机？）：
 
     - 新的entry可能存到新的 bookie。
-    - 对于已宕机bookie里存储的数据，如何修复：**TBD**
+    - 对于已宕机bookie里存储的数据，如何修复：
+    
+      > **TBD**: Auto Recovery https://bookkeeper.apache.org/docs/admin/autorecovery 
 
 
 
@@ -1360,6 +1362,8 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
   - `增加 Emsemble (E > WQ)`：“条带化” 读写bk
     - **增加读写带宽**，增加总吞吐量，充分发挥每块磁盘IO性能。
+    
+      > Q: 但是会影响读取性能？https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
     - 还可以让数据分布更平均，避免某个分区数据倾斜。
   - `WQ = AQ`，等待所有Write Quorum的ack：**提供强一致性保障**
   - `减少 AQ`：**减少长尾时延**
@@ -1396,25 +1400,49 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 **Bookie 高可用**
 
-某个 Bookie 宕机后如何处理。--> **Auto Recovery**
+某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery**
 
-> 注意：区别于broker宕机 --> Fencing
+> - https://bookkeeper.apache.org/docs/admin/autorecovery
+>
+> - https://www.youtube.com/watch?v=w14OoOUkyvo
+>
+> 注意：区别于broker宕机 --> Fencing 
 
 - Auditor
 
   - 审计集群里是否有 bookie宕机；(ping bookies)
   - 审计某个Ledger是否有entry丢失；
-  - Q：需要选主确定 auditor？
+  - Q：需要选主确定 auditor？--> YES. 
 
 - 流程
 
-  - 如果 bookie1宕机， auditor 找出该bookie1存储的所有 ledger；
-
-  - 新的 bookie2 替换原有的 ensembler，从原ensemble复制原 ledger entries；
-
-    > Q：复制过程是否会影响正常读写的性能？
+  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描 Ledger list 找出该bookie1存储的所有 ledger；
+- Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
+  - Replication worker 监听该节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
+- Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
   
+- 配置
+
+  ```properties
+  #bookkeeper.conf - 可并行复制的entry个数
+  rereplicationEntryBatchSize=100
+  ```
+
+  
+
 - Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
+
+  > Q：会影响写入吗？--> 也不会，写入是写新的 Segment、往新的 Ensemble 中。
+
+- 还可以手工 Recover
+
+  ```sh
+  bookkeeper shell ledgermetadata -l LEDGER_ID #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
+  bookkeeper shell recover FAILED_BOOKIE_ID 
+  bookkeeper shell ledgermetadata -l LEDGER_ID #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
+  ```
+
+  
 
 
 
@@ -1785,7 +1813,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
 > - A Guide to the BookKeeper Replication Protocol 
 >   https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
 >
-> - Apache BookKeeper Internals — Part 1 — High Level
+> - Apache BookKeeper Internals — Part 1 — High Level: 读写流程 & 线程模型
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-1-high-level-6dce62269125 
 >
 > - Apache BookKeeper Insights Part 2 — Closing Ledgers Safely
@@ -1806,6 +1834,18 @@ Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 
 ### Ledger 生命周期
 
 Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger、读写 entry。
+
+- 什么时候会新建 Ledger?
+
+  - 1. 写满了；
+
+  - 2. Owner broker 故障后，会关闭老 ledger；
+
+  - 3. Topic offload：关闭主题并reload，会触发 Ledger Rollover.
+
+    > 注意，Bookie 故障后触发 Ensemble Change，只会新增 Fragment。
+
+  
 
 ![image-20220101224253890](../img/pulsar/bookkeeper-ledger-lifecycle.png)
 
@@ -2562,6 +2602,22 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 - Publishers: 吞吐量，发送速率，地址，producerName
 - Subscriptions: 吞吐量，消费速率，msgBacklog，type，
   - 该订阅下有哪些consumer、consumerName、lastAckTs、lastConsumeTs
+
+
+
+**查看 BK**
+
+```sh
+bookkeeper shell listledgers
+bookkeeper shell ledgermetadata -l LEDGER_ID
+
+```
+
+- ensembleSize / writeQuorunSize / ackQuorunSize
+- ensembles : bk 节点列表
+- lastEntryId 
+- state
+- managed-ledger: topic name -base64编码
 
 
 
