@@ -620,6 +620,10 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 ## || Subscription
 
+ The subscriptions do not contain the data, only meta-data and a cursor.
+
+
+
 **订阅类型**
 
 ![image-20220322112234641](../img/pulsar/subscription-modes.png)
@@ -657,6 +661,8 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
     - 无法使用 cumulative ack，类似kafka . --> 否则可能有误ack的情况
     
       用 individual ack时，如果中间有部分msg没有ack，则重启后会重新收到 
+      
+    - 不过可以 **[batch ack](https://pulsar.apache.org/api/client/org/apache/pulsar/client/api/ConsumerBuilder.html#acknowledgmentGroupTime-long-java.util.concurrent.TimeUnit-)**，提高吞吐量。
     
     > 类似传统消息队列模型。每个consumer 可能消费都 partition 中的**一部分**数据。
     > ![image-20220322113010001](../img/pulsar/subscription-modes-shared.png)
@@ -888,7 +894,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 **存储流程**
 
 - **创建 Ledger**
-  - 创建 Topic 时，向 ZK 写入 Ledger 元数据；当Producer或Consumer连接到broker上的某个主题时，才会真正创建对应 Topic 的 Ledger。
+  - 创建 Topic 时，仅向 ZK 写入 Ledger 元数据；当Producer或Consumer连接到broker上的某个主题时，才会真正创建对应 Topic 的 Ledger。
   - 创建 `ManagedLedger`，获取元数据、决定是否创建新 Ledger。
 - **写入 Ledger**
   - `ManagedLedger` 封装 OpAddEntry 对象。
@@ -944,9 +950,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
   - `markDeletePosition`：如果一个 Ledger 中所有 entry 都在 `markDeletePosition` 之前，则这个 Ledger 可被清理。
 
-    > 即，entry被确认后会立即标记为可删除，但并不一定会马上被删除。需要等到Ledger中所有entry都被确认才行。
+    > 即，entry 被确认后会立即标记为可删除，但并不一定会马上被删除。需要等到Ledger中所有entry 都被确认才行。
 
-  - `Retention`：消息被确认**后**还想保留一段时间/或大小。
+  - `Retention`：消息**被 ACK 后**还想保留一段时间/或大小。
 
   - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个 Ledger 也会自动被确认、让Ledger 进入 Retention 状态。
 
@@ -955,15 +961,17 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 - **Data Retention**
 
   - 只要有 Cursor 存在，则其之后的数据不会被删除；除非ack后达到 `Retention` 
-  - ACKed 数据分为两部分：超过 Retention 的可以被删除，Retention 之内的不可被删除。
+  - **ACK过的数据分为两部分**：超过 Retention 的可以被删除，Retention 之内的不可被删除。
 
   ![image-20220426224056965](../img/pulsar/pulsar-retention.png)
 
 - **TTL**
 
   - 目的：如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
-  - TTL 到期后自动 ack
-  - Kafka 相当于 TTL = Retention
+  - TTL 到期后，相当于自动 ack
+
+    > Q: TTL 是 subscription level 的配置？！
+  - Kafka 相当于 `TTL = Retention`
 
   ![image-20220426224548840](../img/pulsar/pulsar-ttl.png)
 
@@ -975,7 +983,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
     > 消息删除是基于 Segment 分片的，活跃 Segment 不会被删除，即便其中包含超过retention的entry；
 
-  - 注意：segment标记成可以删除后，是被一个定时后台线程清理；所以有延时。 
+  - 注意：Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。 
+  
+  - 注意：数据清理的单位是 Ledger.
 
 
 
@@ -1406,7 +1416,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 >
 > - https://www.youtube.com/watch?v=w14OoOUkyvo
 >
-> 注意：区别于broker宕机 --> Fencing 
+> 注意：区别于broker宕机后的 **Ledger Recovery** --> Fencing 
 
 - Auditor
 
@@ -1416,9 +1426,9 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 - 流程
 
-  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描 Ledger list 找出该bookie1存储的所有 ledger；
+  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描zk Ledger list 找出该bookie1存储的所有 ledger；
 - Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
-  - Replication worker 监听该节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
+  - Replication worker 监听该zk节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
 - Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
   
 - 配置
@@ -1596,7 +1606,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
 
 > 三种文件
 >
-> - **Journal**：建议用SSD
+> - **Journal**：相当于 WAL；建议用SSD
 > - **Entry log**：同一个 Entry log 可能存储多个 Ledger 的 entry
 >   - Q: 那么 Ledger 是一个逻辑概念？
 >   - Q: 必须所有 Ledger 都删除才能真正删除 entry log？--> bookie 异步 compaction：移动ledger到其他entry log
@@ -1835,7 +1845,7 @@ Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 
 
 Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger、读写 entry。
 
-- 什么时候会新建 Ledger?
+- **Ledger Rollover：什么时候会新建 Ledger?**
 
   - 1. 写满了；
 
@@ -1845,7 +1855,12 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
     > 注意，Bookie 故障后触发 Ensemble Change，只会新增 Fragment。
 
-  
+- **什么时候会新建 Fragment ？**
+
+  - 1. 新建 Ledger 时；
+  - 2. 写入 Bookie 失败时（Ensemble Change）；
+
+
 
 ![image-20220101224253890](../img/pulsar/bookkeeper-ledger-lifecycle.png)
 
@@ -1987,9 +2002,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - **第一步：Fencing**
 
-  > 将 Ledger 设为 fence 状态，并找到 LAC。
+  > 将 Ledger 设为 fence 状态（OPEN --> IN_RECOVERY），并找到 LAC。
 
-  - 新客户端发送 Fencing 请求：Ensemble Coverage 的 LAC 读取请求，请求中带有 fencing 标志位。
+  - 新客户端 Broker2 发送 Fencing LAC 读请求：Ensemble Coverage 的 LAC 读取请求，请求中带有 fencing 标志位。
   - Bookie 收到这个 fencing 请求后，将 ledger 状态设为 fenced，并返回当前 bookie 上对应 ledger 的 LAC。
   - 一旦新客户端收到足够多的响应，则执行下一步。
     - 无需等待所有 bookie 响应，只需保证剩下的未返回 bookie 数 < AQ 即可。这样原客户端一定无法写入 AQ 个节点、亦即无法写入成功。
@@ -2003,12 +2018,12 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - **第二步：Recovery reads & writes**
 
-  > Learning the highest LAC is only the first step, now the client must find out if there are more entries that exist beyond this point. 
+  > Broker2 takes the highest LAC response and then starts performing recovery reads from the LAC + 1. 
   >
-  > - 找到 LAC 之后的 entry，重新写入新的 ensemble.
-  > - 确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
+  > It ensures that all entries from that point on (which may not have been previously acknowledged to the Pulsar broker) get replicated to QW bookies. Once B2 cannot read and replicate any more entries, the ledger is fully recovered.
 
-  - 客户端从 LAC + 1 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
+  - **目的**：确保 LAC 之后的 entry，重新写入新的 ensemble QW。确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
+  - 客户端Broker2从 **LAC + 1** 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
   - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定 entry 是否已提交、是否可恢复：
     - 已提交 = Ack Quorum 返回存在响应
     - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1`
