@@ -239,9 +239,11 @@
 - 还可以手工 Recover
 
   ```sh
-  bookkeeper shell ledgermetadata -l LEDGER_ID #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
+  #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
+  bookkeeper shell ledgermetadata -l LEDGER_ID 
   bookkeeper shell recover FAILED_BOOKIE_ID 
-  bookkeeper shell ledgermetadata -l LEDGER_ID #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
+  #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
+  bookkeeper shell ledgermetadata -l LEDGER_ID 
   ```
 
   
@@ -1092,9 +1094,12 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
     > 消息删除是基于 Segment 分片的，活跃 Segment 不会被删除，即便其中包含超过retention的entry；
 
-  - 注意：Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。 
+    
   
-  - 注意：数据清理的单位是 Ledger.
+- **数据清理的单位是 Ledger！**
+
+  - 注意：Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。
+  - 注意：Ledger 标记成可删除后，并不表明对应 Entry Log 可以被删除，因为 Entry Log 可能还包含其他 Ledger 数据。
 
 
 
@@ -1426,9 +1431,9 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
   - 指定 WQ、AQ
 
-  - 保存 **LAP**：Last Add Push，发出的请求最大值
+  - 保存 **LAP**：Last Add Push，发出的请求最大值，LAC~LAP 之间的数据正在存储中；
 
-  - 保存 **LAC**：Last Add Confirm，收到的应答最大值
+  - 保存 **LAC**：Last Add Confirm，收到的应答最大值，LAC 之前的数据一定已被持久化；
 
     - 客户端需要保证不跳跃。
 
@@ -1448,7 +1453,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
     - 新的entry可能存到新的 bookie。
     - 对于已宕机bookie里存储的数据，如何修复：
     
-      > **TBD**: Auto Recovery https://bookkeeper.apache.org/docs/admin/autorecovery 
+      > Auto Recovery https://bookkeeper.apache.org/docs/admin/autorecovery 
 
 
 
@@ -1498,11 +1503,14 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 ### 外部共识 
 
-> - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
+> - External Consensus: https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
+> - BK LAC & 可视化 & compare with Raft: https://www.youtube.com/watch?v=7etLdsC-qbM
+> - https://www.slideshare.net/hustlmsp/apache-bookkeeper-a-high-performance-and-low-latency-storage-service
+> - Scaling Out Total Order Atomic Broadcast with Apache BookKeeper https://www.splunk.com/en_us/blog/it/scaling-out-total-order-atomic-broadcast-with-apache-bookkeeper.html
 
 
 
-Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC 维护在 broker 端。
+外部共识：一个ledger任何时候都不会有两个broker写入、LAP / LAC 维护在 broker 端（bk客户端）。
 
 **实现：**
 
@@ -1619,15 +1627,22 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
 
 
 
-**相关文件**
+**三种文件**
 
-> 三种文件
->
 > - **Journal**：相当于 WAL；建议用SSD
-> - **Entry log**：同一个 Entry log 可能存储多个 Ledger 的 entry
+>- **Entry log**：同一个 Entry log 可能存储多个 Ledger 的 entry
 >   - Q: 那么 Ledger 是一个逻辑概念？
 >   - Q: 必须所有 Ledger 都删除才能真正删除 entry log？--> bookie 异步 compaction：移动ledger到其他entry log
 > - **Index file**: rocksDB
+
+
+
+**两个存储模块：**
+
+> - **Journal**
+>   - 数据写入 Journal 后，触发 fsync，并返回客户端
+> - **Ledger**
+>   - 以异步方式批量刷盘
 
 
 
@@ -1636,7 +1651,7 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
   - 作用：事务日志文件。**在修改 ledger 之前，先记录事务日志**。
 
     - 所有写操作，先**顺序写入**追加到 Journal，**不管来自哪个 Ledger**。
-    - 写满后，打开一个新的 Journal、继续追加。 
+    - 写满后，打开一个新的 Journal、继续追加。 默认保存5个备份 file，老的被清理。
 
   - 特点：
 
@@ -1688,15 +1703,12 @@ Consensus：一个ledger任何时候都不会有两个broker写入、LAP / LAC �
     - entryId --> position 映射
 
     ![image-20220326235132492](../img/pulsar/bk-arch-comp-entrylog.png)
+    
+  - **数据清理**的问题：一个 Ledger 被删后，Entry Log 不会马上删除！！
+  
+    - 因为对应的 Entry Log 可能还包含其他 Ledger 的数据。
 
 
-
-**写入两个存储模块：**
-
-- **Journal**
-  - 数据写入 Journal 后，触发 fsync，并返回客户端
-- **Ledger**
-  - 以异步方式批量刷盘
 
 
 
@@ -1860,47 +1872,16 @@ Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 
 
 ### Ledger 生命周期
 
+> - 可视化：https://runway.systems/?model=github.com/salesforce/runway-model-bookkeeper# 
+
 Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger、读写 entry。
 
-- **Ledger Rollover：什么时候会新建 Ledger?**
-
-  - 1. 写满了；
-
-  - 2. Owner broker 故障后，会关闭老 ledger；
-
-  - 3. Topic offload：关闭主题并reload，会触发 Ledger Rollover.
-
-    > 注意，Bookie 故障后触发 Ensemble Change，只会新增 Fragment。
-
-- **什么时候会新建 Fragment ？**
-
-  - 1. 新建 Ledger 时；
-  - 2. 写入 Bookie 失败时（Ensemble Change）；
-
-
+**Ledger 状态机**
 
 ![image-20220101224253890](../img/pulsar/bookkeeper-ledger-lifecycle.png)
 
 - 创建 ledger 的客户端（Pulsar broker）即为这个 ledger 的 owner；**只有owner 可以往 ledger 写入数据**。
 - 如果 owner 故障，则另一个客户端会接入并接管。修复 under-replicated entry、关闭 ledger. —— open ledger 会被关闭，并重新创建新 ledger
-
-
-
-> 对于 Pulsar，
->
-> - 每个 topic 有一个 broker 作为 owner（注册于 zk）。该 broker 调用 BookKeeper 客户端来创建、写入、关闭 broker 所拥有的 topic 的 ledger。
-> - 如果该 owner broker 故障，则ownership 转移给其他 broker；新 broker 负责关闭该topic最后一个ledger、创建新 ledger、负责写入该topic。
->
-> ![image-20220102204423380](../img/pulsar/broker-failure-ledger-segment.png)
-
-
-
-**Ledger 状态**
-
-![image-20220101225318769](../img/pulsar/bookkeeper-ledger-status.png)
-
-- **Pulsar 一个主题只有一个 open 状态的 ledger；**
-- 所有写操作都写入 open ledger；读操作可读取任意 ledger；
 
 
 
@@ -1922,7 +1903,37 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
+**对比**
+
+- **Ledger Rollover：什么时候会新建 Ledger?**
+
+  - 1. 写满了；
+
+  - 2. Owner Broker 故障、owner 转移，会关闭老 ledger；
+
+  - 3. Topic offload：关闭主题并 reload，会触发 Ledger Rollover.
+
+    > 注意，Bookie 故障后触发 Ensemble Change，只会新增 Fragment。
+
+- **什么时候会新建 Fragment ？**
+
+  - 1. 新建 Ledger 时；
+  - 2. 写入 Bookie 失败时 `Ensemble Change`；
+
+
+
+
+
 ### 写入 ledger
+
+
+
+![image-20220101225318769](../img/pulsar/bookkeeper-ledger-status.png)
+
+- **Pulsar 一个主题只有一个 open 状态的 ledger；**
+- 所有写操作都写入 open ledger；读操作可读取任意 ledger；
+
+
 
 **参数**
 
@@ -1998,6 +2009,15 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 ### Ledger Recovery
 
 > https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 
+
+
+
+> 对于 Pulsar，
+>
+> - 每个 topic 有一个 broker 作为 owner（注册于 zk）。该 broker 调用 BookKeeper 客户端来创建、写入、关闭 broker 所拥有的 topic 的 ledger。
+> - 如果该 owner broker 故障，则ownership 转移给其他 broker；新 broker 负责关闭该topic最后一个ledger、创建新 ledger、负责写入该topic。
+>
+> ![image-20220102204423380](../img/pulsar/broker-failure-ledger-segment.png)
 
 
 
