@@ -2000,6 +2000,71 @@ https://time.geekbang.org/column/article/110482
 
 
 
+## || 高可用
+
+副本配置
+
+- `unclean.leader.election.enable = false`
+- `replication.factor >= 3`
+- `min.insync.replicas > 1` `ack = all`
+- `replication.factor > min.insync.replicas`
+
+
+
+
+网络分区
+
+- **场景1：Follower 与 Leader 断联，但与 zk 正常**
+
+  - 该 Follower 在 `replica.lag.time.max.ms` 到期后会被清出 ISR
+  - 网络分区修复后，继续 fetch，当赶上后重新加入 ISR.
+
+- **场景2：Leader 与所有 Follower 断联，但与 zk 正常**
+
+  - ISR 缩减为 1
+
+- **场景3：Follower 与 zk 断联，但与 Leader 正常**
+
+  - 该 Follower 继续fetch，并处于 ISR
+  - ZK 认为节点宕机，但因为只是 follower，不做处理。
+
+- **场景4：Leader 与 zk 断联，但与 Follower 正常**
+
+  - ZK 感知到 Leader 宕机，通知 Controller、触发选主；
+
+  - 原 Leader 尝试缩减 ISR = 1，但是会失败，拒绝新的请求；
+
+  - 客户端探测到 Leader 改变、开始写入到新 Leader；
+
+  - 网络分区解决后，原 Leader 变为 Follower：truncate log 到新 Leader 的 HW、发送 Fetch 请求。
+
+    > 写入原 Leader 但是尚未同步到其他 Follower的消息会丢失。
+
+- **场景5：Follower 与 Leader & zk 断联**
+
+  - 被移除 ISR，同场景1
+
+- **场景6：Leader 与 Follower & zk 断联**
+
+  - 原 Leader 在 `replica.lag.time.max.ms`到期后，尝试缩减 ISR = 1，但是会失败，拒绝新的请求；
+  - 可能短暂脑裂：`acks=1`  `min.insync.replicas=1` 时；
+  - 其他同场景4？
+
+- **场景7：Controller 节点与其他节点断联**
+
+  - 可能短暂脑裂
+
+- **场景8：Controller 节点与 zk 断联**
+
+  - 
+
+> - Follower 网络分区不会导致消息丢失；
+> - Leader / ZK 断联，在`acks=1`时会导致数据丢失，会短时脑裂；
+
+
+
+
+
 # | 设计思路
 
 ## || 事务消息
@@ -2287,6 +2352,10 @@ Transaction 保证消息原子性地写入到多个分区，要么全部成功�
 
 ## || 消息丢失
 
+> https://jack-vanlightly.com/blog/2018/9/2/rabbitmq-vs-kafka-part-6-fault-tolerance-and-high-availability-with-kafka
+
+
+
 Q: 什么情况下消息不丢失
 
 - 已提交的消息
@@ -2410,15 +2479,14 @@ Q: 什么情况下消息不丢失
 
 - `min.insync.replicas > 1`
 
-  > 写入多少个副本才算已提交
+  > 写入多少个副本才算已提交，min.insync.replicas保证的写入副本的下限。broker宕机过多后会报  NotEnoughReplicas。
   >
-  > min.insync.replicas保证的写入副本的下限。
+  > 副作用是会增加延时，受控于 `replica.lag.time.max.ms`。
 
 - `replication.factor > min.insync.replicas`
 
-  > 否则，只要一个副本挂了，整个分区就挂了
+  > 否则，只要一个副本挂了，整个分区就挂了；还要考虑可用性
   >
-  > 还要考虑可用性
 
 
 
