@@ -176,6 +176,104 @@
 
 
 
+## || 高可用
+
+> - https://jack-vanlightly.com/blog/2018/10/21/how-to-not-lose-messages-on-an-apache-pulsar-cluster
+
+
+
+**读写高可用**
+
+- **读高可用：Speculative Reads**
+
+  - 原因：对等副本都可以提供读
+  - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
+    Q：放大了读取请求数？
+
+  > Kafka 为什么不能 Speculative Reads？
+  >
+  > - Kafka offset 是基于日志顺序读取、必须从 Leader读，而 BK 底层则并非连续存储，而是基于index
+
+- **写高可用：Ensemble Change**
+
+  - 最大化数据放置可能性
+
+
+
+**Bookie 高可用**
+
+某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery**
+
+> - https://bookkeeper.apache.org/docs/admin/autorecovery
+>
+> - https://www.youtube.com/watch?v=w14OoOUkyvo
+>
+> 注意：区别于broker宕机后的 **Ledger Recovery** --> Fencing 
+
+- Auditor
+
+  - 审计集群里是否有 bookie宕机；(ping bookies)
+  - 审计某个Ledger是否有entry丢失；
+  - Q：需要选主确定 auditor？--> YES. 
+
+- 流程
+
+  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描zk Ledger list 找出该bookie1存储的所有 ledger；
+  - Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
+  - Replication worker 监听该zk节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
+  - Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
+
+- 配置
+
+  ```properties
+  #bookkeeper.conf - 可并行复制的entry个数
+  rereplicationEntryBatchSize=100
+  ```
+
+  
+
+- Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
+
+  > Q：会影响写入吗？--> 也不会，写入是写新的 Segment、往新的 Ensemble 中。
+
+- 还可以手工 Recover
+
+  ```sh
+  bookkeeper shell ledgermetadata -l LEDGER_ID #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
+  bookkeeper shell recover FAILED_BOOKIE_ID 
+  bookkeeper shell ledgermetadata -l LEDGER_ID #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
+  ```
+
+  
+
+
+
+**Broker 高可用**
+
+- 当 Broker 节点宕机 / 或者与zk断联自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
+
+  > Q: 花费多少时间？
+
+- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：恢复 Ledger。
+
+
+
+**跨机架高可用**
+
+- BK 客户端的跨区域感知：
+  - 写入时选择bookie节点时，必定包含来自不同机架的节点。
+- 注意
+  - 务必保证每个机架都有足够多节点，否则可能导致找不到足够多不同机架节点。
+  - 同步高可用：同步写入多机架，延迟会增加。
+
+
+
+**跨地域高可用**
+
+- GEO Replication：异步，非强一致
+
+
+
 
 
 
@@ -291,11 +389,13 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
 - **Deduplication**
 
+  > https://github.com/apache/pulsar/wiki/PIP-6:-Guaranteed-Message-Deduplication
+
   - 效果：生产者多次发送同样的消息，只会被保存一次到bookie。
 
   - 实现：
 
-    - 生产者每条消息会设置一个元数据 `sequenceId`，broker遇到比之前小的ID则可过滤掉。
+    - 生产者每条消息会设置一个元数据 `sequenceId`，topic owner broker遇到比之前小的ID则可过滤掉。
     - 生产者重连后，会从Broker拿到当前topic最后的`sequenceId`，继续累加。
     - Broker还会定期将sequenceId快照存储到 BK，防止Broker和客户端同时宕机。
 
@@ -307,7 +407,16 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
     > https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html 
     
-    
+  - **消息重复的场景**
+
+    - Broker Down
+
+      > 1. 生产 N 条消息，并成功写入 BK Ensemble；但在 ack 之前 Broker 宕机。
+      > 2. 新 Broker 触发 Ledger Recovery，恢复之前的消息；
+      > 3. 而客户端重连到新 Broker，又重新发送这 N 条消息；
+
+
+
 
 - **消息顺序**
 
@@ -1387,98 +1496,6 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 
 
-### 高可用
-
-
-
-**读写高可用**
-
-- **读高可用：Speculative Reads**
-  
-  - 原因：对等副本都可以提供读
-  - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
-    Q：放大了读取请求数？
-  
-  > Kafka 为什么不能 Speculative Reads？
-  >
-  > - Kafka offset 是基于日志顺序读取、必须从 Leader读，而 BK 底层则并非连续存储，而是基于index
-- **写高可用：Ensemble Change**
-  
-  - 最大化数据放置可能性
-
-
-
-**Bookie 高可用**
-
-某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery**
-
-> - https://bookkeeper.apache.org/docs/admin/autorecovery
->
-> - https://www.youtube.com/watch?v=w14OoOUkyvo
->
-> 注意：区别于broker宕机后的 **Ledger Recovery** --> Fencing 
-
-- Auditor
-
-  - 审计集群里是否有 bookie宕机；(ping bookies)
-  - 审计某个Ledger是否有entry丢失；
-  - Q：需要选主确定 auditor？--> YES. 
-
-- 流程
-
-  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描zk Ledger list 找出该bookie1存储的所有 ledger；
-- Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
-  - Replication worker 监听该zk节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
-- Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
-  
-- 配置
-
-  ```properties
-  #bookkeeper.conf - 可并行复制的entry个数
-  rereplicationEntryBatchSize=100
-  ```
-
-  
-
-- Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
-
-  > Q：会影响写入吗？--> 也不会，写入是写新的 Segment、往新的 Ensemble 中。
-
-- 还可以手工 Recover
-
-  ```sh
-  bookkeeper shell ledgermetadata -l LEDGER_ID #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
-  bookkeeper shell recover FAILED_BOOKIE_ID 
-  bookkeeper shell ledgermetadata -l LEDGER_ID #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
-  ```
-
-  
-
-
-
-**Broker 高可用**
-
-- 当 Broker 节点宕机，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
-- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：恢复 Ledger。
-
-
-
-**跨机架高可用**
-
-- BK 客户端的跨区域感知：
-  - 写入时选择bookie节点时，必定包含来自不同机架的节点。
-- 注意
-  - 务必保证每个机架都有足够多节点，否则可能导致找不到足够多不同机架节点。
-  - 同步高可用：同步写入多机架，延迟会增加。
-
-
-
-**跨地域高可用**
-
-- GEO Replication：异步，非强一致
-
-
-
 ### 外部共识 
 
 > - https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
@@ -1978,7 +1995,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-### 恢复 ledger
+### Ledger Recovery
 
 > https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 
 
