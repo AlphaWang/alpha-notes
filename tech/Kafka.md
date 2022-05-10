@@ -37,12 +37,6 @@
 
 **Streaming Platform**
 
-发布订阅数据流
-
-存储数据流
-
-处理数据流
-
 **对比**
 
 - vs. 消息系统
@@ -98,7 +92,7 @@
 One way to think about the relationship between messaging systems, storage systems, and Kafka is the following. 
 
 - **Messaging systems** are all about propagating *future* messages: when you connect to one you are waiting for new messages to arrive. 
-- **Storage systems** such as a filesystem or a database are all about storing past writes: when you query or read from them you get results based on the updates you did in the past. 
+- **Storage systems** such as a filesystem or a database are all about storing *past* writes: when you query or read from them you get results based on the updates you did in the past. 
 - The essence of **stream processing** is being able to combine these two—being able to process from the past, and continue processing into the future as the future occurs. 
 
 
@@ -111,7 +105,7 @@ One way to think about the relationship between messaging systems, storage syste
 | **RabbitMQ** | - Exchange (forwarding agent),  Queue.<br />**- Disk node vs. Memory node**: disk node - configuration information and meta-information are stored<br/>**- HA**: queue mirroring. | - Operations firstly applied on master then propagated to mirrors.<br />- Supports **priority queuing, delay queuing**. | - **Poor scalability**: complete replication design.<br />- **Not fast**: sync mechanism.<br />- **No ordering.** |
 | **RocketMQ** | - **Master-slave** mode. Slave read only<br />- **NameServers**: topic routing registration center.<br />-  **queue** in each topic, like partition. | - Supports **delay queuing**, batch processing, msg filtering<br />- **Low latency**: gc, lock, page cache |                                                              |
 | **ActiveMQ** | - **Master-slave** mode. <br /><br />- ZK: master election   | - Supports both point-to-point (Queue) & pub sub (Topic) mode. <br /> - Supports **priority queuing**. | - No sharding.                                               |
-| **Pulsar**   | - **Broker**: compute; <br />- BookKeeper / **Bookie**: storage.<br /> - **Segment**: 物理存储单元，存储在不同 Bookie；每个分区有多个Segment | - **Scalability**: seprate compution & storage. Broker 宕机可以快速被替换。<br /> - 支持所有三种消息保证，支持 **Priority queuing、delay queuing**. | -                                                            |
+| **Pulsar**   | - **Broker**: compute; <br />- **BookKeeper**: storage.<br /> - **Segment**: 物理存储单元，存储在不同 Bookie；每个分区有多个Segment | - **Scalability**: seprate compution & storage. Broker 宕机可以快速被替换。<br /> - 支持所有三种消息保证，支持 **Priority queuing、delay queuing**. | -                                                            |
 
 
 
@@ -127,13 +121,12 @@ One way to think about the relationship between messaging systems, storage syste
 
 **定义**
 
-- 集群中的某一个Broker会作为控制器
-- 唯一。在zk的帮助下，管理和协调“整个”kafka集群
+- 集群中的某一个Broker会作为控制器。唯一。在zk的帮助下，管理和协调“整个”kafka集群
 
-重度依赖 ZK 
+**重度依赖 ZK** 
 
 - 写入临时节点 `/controller`
-- 选出新 controller后，会分配更高的 “controller epoch”；如果broker收到了来自老epoch的消息，则会忽略
+- 选出新 controller后，会分配更高的 “controller epoch”；如果broker收到了来自老epoch的消息，则会忽略。
 
 
 
@@ -152,8 +145,8 @@ One way to think about the relationship between messaging systems, storage syste
   >
   > 当有Broker加入
   >
-  > 1. 控制器根据 Broker ID 检查新 broker 是否已有 repilcas
-  > 2. 如果已有，则通知 brokers，新 broker 则会从已有的 leader 处复制消息
+  > 1. 控制器根据 Broker ID 检查新 broker 是否已有 repilcas；
+  > 2. 如果已有，则通知 brokers，新 broker 则会从已有的 leader 处复制消息；
 
 - **主题管理**
 
@@ -196,17 +189,17 @@ One way to think about the relationship between messaging systems, storage syste
 
 ### 协调者 
 
-GroupCoordinator 
+Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 **作用**
 
-- **为consumer group 执行 Rebalance**
+- **为 Consumer group 执行 Rebalance**
 
   > 协调者对应一个 Group！
 
 - **位移管理**
 
-  > 消费者提交位移时，是向Coordinator所在的Broker提交
+  > 消费者提交位移时，是向 Coordinator 所在的 Broker 提交
 
 - **组成员管理**
 
@@ -214,15 +207,15 @@ GroupCoordinator
 
 
 
-**消费者如何找到Coordinator？**--> 分区Leader副本所在的Broker
+**消费者如何找到Coordinator？**--> 分区 Leader 副本所在的 Broker
 
-- Step-1: 找到由位移主题的哪个分区来保存该 Group 数据
+- Step-1: 找到由位移主题的**哪个分区**来保存该 Group 数据
 
   ```java
   partitionId = Math.abs(groupId.hashCode % offsetsTopicPartitionCount)
   ```
 
-- Step-2: 找到该分区的 Leader 副本所在的 Broker
+- Step-2: 找到该**分区的 Leader 副本**所在的 Broker
 
 
 
@@ -232,19 +225,28 @@ GroupCoordinator
 
 **准备**
 
-- 0. **创建 KafkaProducer** 
+- **0. 创建 KafkaProducer** 
 
-- 1. **创建 ProducerRecord**
+- **1. 创建 ProducerRecord**
 
   > 必选：Topic / Value
   >
   > 可选：Key / Partition
+  >
+  > - Batch 批量发送：权衡吞吐量 vs. 延时
+  > - 元数据
+  >   - key：可选，消息分区的依据
+  >   - offset：分区内唯一
+  >
+  > - Schemas
+  >
+  >   - JSON, XML, Avro
 
 
 
 **send()**
 
-- 2. **Seriazlier 序列化**
+- **2. Seriazlier 序列化**
 
   > 将 key/value 序列化为字节数组；
   >
@@ -257,7 +259,7 @@ GroupCoordinator
   >
   > 注意：不是序列化整个 ProducerRecord对象？ NO，**序列化的是 value 对象**
 
-- 3. **Partitioner 确定分区** 
+- **3. Partitioner 确定分区** 
 
   > 分区机制
   >
@@ -271,7 +273,7 @@ GroupCoordinator
   >   ```
   >
   >   - 使用 Kafka 自己特定的散列算法
-  >   - 如果增加 Partition，相同 key 可能会分到另一个Partition --> 建议提前规划，不要增加分区
+  >   - 如果增加 Partition，相同 key 可能会分到另一个Partition --> 建议提前规划，不要随意增加分区
   >
   > - 自定义分区器：场景 - 某个 key 数据量超大，需要写入专门的分区；
   >
@@ -282,17 +284,17 @@ GroupCoordinator
   >
   > - key == null && 没有分区器，则 Round-robin 平衡
 
-- 4. **记录到 batch** 
+- **4. 记录到 batch** 
 
   > 同一个batch的记录，会发送到相同的Topic / Partition
 
-- 5. **单独 Sender 线程 发送batch 到相应的 Broker** 
+- **5. 单独 Sender 线程 发送batch 到相应的 Broker** 
 
-  > **Sender线程**：new KafkaProducer时会创建“并启动”Sender线程，该线程在开始运行时会创建与`bootstrap.servers`的连接。
+  > **Sender 线程**：new KafkaProducer 时会创建“并启动” Sender 线程，该线程在开始运行时会创建与`bootstrap.servers`的连接。
   > 
   >三种发送方式
   > 
-  >- Fire-and-forget：`send(record)`
+  >- fire-and-forget：`send(record)`
   > - 同步发送： `send(record).get()` 获取 RecordMetadata
   > - 异步发送：`send(record, Callback)`
 
@@ -300,30 +302,17 @@ GroupCoordinator
 
 **Response**
 
-- 6. **Broker 回复 Response** 
+- **6. Broker 回复 Response** 
 
-  > 成功：返回 RecordMetadata，包含topic / partition / offset
+  > 成功：返回 RecordMetadata，包含 topic / partition / offset
   >
   > 失败：返回 Error，生产者决定是否重试
 
-- 7. **close** 
+- **7. close** 
 
   > 可用 try-with-resource
 
 
-
-### 消息
-
-- Batch 批量发送：权衡吞吐量 vs. 延时
-- 元数据
-  - key：可选，消息分区的依据
-  - offset：分区内唯一
-
-- Schemas
-
-  - JSON, XML, Avro
-
-  
 
 ### 拦截器
 
@@ -364,9 +353,8 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 - 解决1：`enable.idempotence=true` 
 
-  > - Broker此时会多保存一些字段，用于判断消息是否重复，自动去重
-  > - Kafka 发送时自动去重
-
+  > - Broker 此时会多保存一些字段，用于判断消息是否重复，自动去重
+  
 - 解决2：`max.in.flight.requests.per.connection=1` ，一次只能发送一个请求；
 
   > 保证消息顺序，并允许重试错误消息；
@@ -383,8 +371,6 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 ## || 消费者
 
-### 消费者组
-
 **定义**
 
 - 组内所有消费者协调在一起来消费订阅主题的所有分区
@@ -396,9 +382,9 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 **模型**
 
-- 消息队列模型：所有实例都属于同一个group
+- 消息队列模型：所有实例都属于同一个 group
 
-- 发布订阅模型：所有实例分别属于不同group
+- 发布订阅模型：所有实例分别属于不同 group
 
 
 
@@ -426,14 +412,14 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 **准备**
 
-- 0. **创建 kafkaConsumer** 
+- **0. 创建 kafkaConsumer** 
 
-- 1. **subscribe(topics)** 
+- **1. subscribe(topics)** 
 
   > 参数：Topic 列表
   >
-  > - 参数可以是正则表达式
-  > - 同时注册多个主题，如果有新主题匹配，会触发 Rebalance
+  > - 参数可以是正则表达式；
+  > - 同时注册多个主题，如果有新主题匹配，会触发 Rebalance；
   >
 
 或者作为 standalone 消费者 `consumer.assign(partitions)`
@@ -442,49 +428,48 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 **轮询**
 
-- 2. **poll()** 
+- **2. poll()** 
 
   > 第一次 poll 时
   >
-  > - 找到 GroupCoordinator
-  > - 加入 Consumer Group
-  > - 收到 Partition 指派
-  >
+  > - 找到 GroupCoordinator、加入 Consumer Group、收到 Partition 指派
+  > 
   > 
   >
   > 返回值 ConsumerRecords
   >
-  > - 是 ConsuemrRecord的集合
-  > - 包含 topic / partition / offset / key / value
+  > - 是 ConsuemrRecord的集合；包含 topic / partition / offset / key / value
   >
   > 
-  >
-  > Deserializer
-  >
-  > - 不推荐自定义
+  > 
+  >Deserializer
+  > 
+  >- 不推荐自定义
   > - Avro
-  >   - 引入 Schema Registry
+  >  - 引入 Schema Registry
   >   - Q: 如何关联到 Schema ID / version ??
 
 
 
 **关闭**
 
-- 3. **consumer.wakeup()** 
+- **3. consumer.wakeup()** 
 
-  > 从另一个线程调用，例如 addShutdownHook() 中调用；
+  > 从另一个线程调用，例如 `addShutdownHook()` 中调用；
   >
-  > 然后 poll() 会抛出 WakeupException，该异常无需处理；--> Q：wakeup() 用户在其他线程中关闭一个 Consumer
+  > 然后 poll() 会抛出 WakeupException，该异常无需处理；
+  >
+  > --> Q：wakeup() 用户在其他线程中关闭一个 Consumer
 
-- 4. **commit / close** 
+- **4. commit / close** 
 
   > 会马上触发 Rebalance，而无需等待 GroupCoordinator  被动发现；
   >
-  > 注意在 finally 中执行
+  > 注意要在 finally 中执行；
 
 
 
-### 编码
+**编码**
 
 - 消费者组 `KafkaConsumer.subscribe()`
 
@@ -580,14 +565,14 @@ while (true)  {
 
 - 缺点
   - 实现难度大：有两组线程
-  - 无法保证分区内消息的顺序性
+  - **无法保证分区内消息的顺序性**
   - **较难正确提交正确的位移**
     - 因为消息消费链路被拉长
     - 可能导致消息重复消费
 
 
 
-## || zookeeper
+## || Zookeeper
 
 节点列表
 
@@ -598,8 +583,8 @@ https://www.jianshu.com/p/da62e853c1ea
 - **Broker 列表** `/brokers/ids/0` 
 
   - 临时节点：如果 broker 宕机，节点删除
-  - 新启动的Broker如果有相同 ID，则无缝继承原Broker的partition和topic
-  - 内容：对应每个在线的Broker，包含：
+  - 新启动的 Broker 如果有相同 ID，则无缝继承原 Broker 的 partition / topic
+  - 内容：对应每个在线的 Broker，包含：
     - Broker 地址、
     - 版本号、
     - 启动时间
@@ -630,8 +615,8 @@ https://www.jianshu.com/p/da62e853c1ea
 - **分区信息** `/brokers/topics/x/partitions/0/state`
 
   - 内容：保存分区信息，包括
-    - 分区的Leader、 
-    - 所有ISR的BrokerID
+    - 分区的 Leader、 
+    - 所有 ISR 的 Broker ID
   
   - 如果该分区的 leader broker 宕机，节点删除
   
@@ -672,7 +657,7 @@ https://www.jianshu.com/p/da62e853c1ea
     "timestamp": "consumer启动时的时间戳"
   }
   
-  Example:
+  ## Example:
   {
     "version": 1,
     "subscription": {
@@ -699,11 +684,11 @@ https://www.jianshu.com/p/da62e853c1ea
 
 **controller**
 
-- 
+- TODO
 
 **config**
 
-- 
+- TODO
 
 
 
@@ -712,12 +697,12 @@ https://www.jianshu.com/p/da62e853c1ea
 **1. 客户端如何找到对应 Broker 地址**
 
 - 先从分区信息 `/brokers/topics/x/partitions/0/state` 中找到分区对应的 brokerID
-- 再从Broker列表 `/brokers/ids` 中找到对应地址
+- 再从 Broker 列表 `/brokers/ids` 中找到对应地址
 
 注意
 
-- 客户端并不直接和 zk 交互，而是和broker交互；
-- 每个broker 都维护了和 zk 数据一样的**元数据缓存**，通过Watcher 机制更新
+- 客户端并不直接和 zk 交互，而是和 broker 交互；
+- 每个broker 都维护了和 zk 数据一样的元数据**缓存**，通过 Watcher 机制更新
 
 
 
@@ -725,7 +710,7 @@ https://www.jianshu.com/p/da62e853c1ea
 
 ## || Rebalance
 
-### 触发条件
+**触发条件**
 
 - **消费者组成员数目变更**
   - 增加、离开、崩溃
@@ -737,18 +722,16 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-### 避免重平衡
+**重平衡的问题**
 
-Rebalance的问题
-
-- **Rebalance过程中，所有consumer停止消费**
+- **Rebalance 过程中，所有 consumer 停止消费**
   - STW
   - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
   
-- **Rebalance是所有消费者实例共同参与，全部重新分配；而不是最小变动**
+- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
   - 未考虑局部性原理
 
-- **Rebalance过程很慢**
+- **Rebalance 过程很慢**
 
 
 
@@ -760,28 +743,26 @@ Rebalance的问题
 
 
 
-**手段**
+**避免不必要的重平衡**
 
 - **避免“未及时发心跳”而导致消费者被踢出**
 
-  - **session.timeout.ms** 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
-  - **heartbeat.interval.ms** 心跳间隔，用于控制重平衡通知的频率；保证在timeout判定前，至少发送3轮心跳 `heartbeat.interval.ms = 2s`
+  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
   
 - **避免“消费时间过长”而导致被踢出**
 
-  - **max.poll.interval.ms** 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
+  - *max.poll.interval.ms* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
   - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
     
 
 - **GC调优**
 
-  - full GC导致长时间停顿，会引发rebalance
+  - Full GC导致长时间停顿，会引发 rebalance
 
   
 
-### 重平衡监听器
-
-ConsumerRebalanceListener
+**重平衡监听器 ConsumerRebalanceListener**
 
 作用
 
@@ -794,7 +775,7 @@ ConsumerRebalanceListener
 接口
 
 - `onPartitionsAssigned(partitions)`
-  - 触发时间：消费者停止消费之后、rebalance开始之前
+  - 触发时间：消费者停止消费之后、rebalance 开始之前
   - 常见操作：清理状态、seek()
 
 - `onPartitionsRevoked(partitions)`
@@ -851,18 +832,13 @@ try {
 
 
 
-### 重平衡流程
+**重平衡原理**
 
 如何通知消费者进行重平衡？
 
-**原理**
-
 - **心跳线程**
-
-  - Consumer 定期发送心跳请求到Broker；
-  - Broker通过心跳线程通知其他消费者进行重平衡；
-  
-  > `heartbeat.interval.ms`：控制重平衡通知的频率
+- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
+  - `heartbeat.interval.ms`：控制重平衡通知的频率
   
 - **Group Coordinator**
 
@@ -870,7 +846,7 @@ try {
 
 
 
-**消费者组状态流转**
+**重平衡过程消费者组状态流转**
 
 - 状态
   - Empty：组内没有任何成员，但可能存在已提交的位移
@@ -899,14 +875,14 @@ try {
 
 
 
-**流程**
+**重平衡流程**
 
-- Consumer 端重平衡流程
+- 场景一：Consumer 端重平衡
 
-  - **JoinGroup请求**
+  - **JoinGroup 请求**
 
     1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
-    2. 选出Leader Consumer
+    2. 选出 Leader Consumer
        - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
        - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
        - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
@@ -920,17 +896,17 @@ try {
 
   - **SyncGroup请求**
   
-    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的SyncGroup请求；
-    2. 协调者将分配方案放入SyncGroup响应中，下发给所有成员；即通过协调者中转；
-    3. 消费者进入Stable状态
+    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
+    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
+    3. 消费者进入 Stable 状态
 
 
 
-- Broker 端重平衡场景
+- 场景二：Broker 端重平衡
 
   - **新成员入组  JoinGroup**
 
-    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡；
 
   - **组成员主动离组 close()： LeaveGroup** 
 
@@ -950,67 +926,57 @@ try {
 
 ## || 主题 / 分区
 
-### Topic
+**Topic - 主题** 
 
 类似数据库里的表
 
 
 
-### Partition
+**Partition - 分区**
 
-**作用：**
+- **作用：**
+  - 实现数据冗余 Redundancy，每个 Partition 可以分布在不同机器上：Replica
 
-- 实现数据冗余 Redundancy
-  - 每个 Partition 可以分布在不同机器上：Replica
+  - 实现伸缩性 Scalability：一个 Topic 包含多个 Partition，类比 Sharding
 
-- 实现伸缩性 Scalability
-  - 一个 Topic 包含多个 Partition
-  - 类比 Sharding
+- **特点**
+  - 分区内保证顺序
 
-**特点**
+  - 每个分区是一组有序的消息日志
 
-- **分区内保证顺序**
-
-- 每个分区是一组有序的消息日志
-
-  - 消息日志的定期回收机制
-  - Log Segment
-
-  
-
-**自定义分区策略**
-
-- 实现Partitioner接口：根据key选择partition
-
-```java
-int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster);
-```
+    - 消息日志的定期回收机制
+    - Log Segment
 
 
 
-**策略**
+- **分区策略**
+  - 轮询策略 Round Robin
 
-- 轮询策略 Round Robin
+  - 随机策略 Randomness
 
-- 随机策略 Randomness
+    ```java
+      List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+      return ThreadLocalRandom.current().nextInt(partitions.size());
+    ```
 
-```java
-  List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
-  return ThreadLocalRandom.current().nextInt(partitions.size());
-```
+  - 按消息键保序策略 Key-Ordering：同一个key的所有消息都进入相同分区
 
-- 按消息键保序策略 Key-Ordering：同一个key的所有消息都进入相同分区
+    ```java
+      List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+      return Math.abs(key.hashCode()) % partitions.size();
+    ```
 
-```java
-  List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
-  return Math.abs(key.hashCode()) % partitions.size();
-```
+  - 自定义分区策略：实现Partitioner接口，根据key选择partition
 
+    ```java
+    int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster);
+    ```
 
+    ​	
 
-### Replica
+## || Replica
 
-**副本作用**
+副本作用
 
 - **Availability**：数据冗余，提升可用性、容灾能力
 - **备份**：同一分区下所有副本保存“相同的”消息序列
@@ -1022,7 +988,7 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 - **Leader Replica**
   
   - **负责读写**
-  - 每个 partition只有一个 leader replica：保证 Consistency
+  - 每个 partition 只有一个 leader replica：保证 Consistency
   - vs. Preferred Replica
     - 最先创建的副本。
     - 如果 `auto.leader.rebalance.enable = true`，如果 Preferred Replica 不是当前 Leader，而它又在 ISR 中；则触发 leader 选举、将 Preferred Replica 选为 Leader
@@ -1037,15 +1003,14 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
     >
     > 2. 异步！
     >
-    > 3. 拉取！
+    > 3. 拉取！发送 Fetch 请求， == Consumer 消费消息
     >
-    >    发送 Fetch 请求， == Consumer 消费消息
     
   - 不对外提供服务
-
-    > 好处：
+  
+  > 好处：
     >
-    > 1. 实现 Read Your Writes：写入后马上读取，没有lag
+    > 1. 实现 Read Your Writes：写入后马上读取，没有 lag
     > 2. 实现单调读 Monotonic Reads：不会看到某条消息一会儿存在一会儿不存在
   
   - 会滞后
@@ -1054,11 +1019,11 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 可优化的点
 
-- 提高伸缩性：让follower副本提供读功能？
+- 提高伸缩性：让 follower 副本提供读功能？
 
   > **没必要。**
   >
-  > - Leader分区已经均匀分布在各Broker上，已有负载均衡；不像MySQL压力都在主上；
+  > - Leader 分区已经均匀分布在各 Broker 上，已有负载均衡；不像 MySQL 压力都在主上；
   > - 而且位移管理会更复杂
 
 - 改善数据局部性：把数据放在与用户地理位置近的地方
@@ -1067,7 +1032,7 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 **副本分类**
 
-- AR: Assigned Replicas - 所有副本集合
+- **AR**: Assigned Replicas - 所有副本集合
 
 - **ISR**: In-Sync Replicas - 只有ISR集合中的副本才可能选为新leader
 
@@ -1077,9 +1042,9 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
   >
   > Kafka在启动的时候会开启两个任务，
   >
-  > - 一个任务用来定期地检查是否需要缩减或者扩大ISR集合，这个周期是`replica.lag.time.max.ms`的一半，默认5000ms。当检测到ISR集合中有失效副本时，就会收缩ISR集合，当检查到有Follower的HighWatermark追赶上Leader时，就会扩充ISR。
+  > - 一个任务用来定期地检查是否需要缩减或者扩大 ISR 集合，这个周期是`replica.lag.time.max.ms`的一半，默认 5000ms。当检测到 ISR 集合中有失效副本时，就会收缩 ISR 集合，当检查到有 Follower 的 HighWatermark 追赶上 Leader 时，就会扩充 ISR。
   >
-  > - 除此之外，当ISR集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个Set，如果发现这个Set中有 ISR 集合的变更记录，那么它会在zk中持久化一个节点。然后Controller通过watch感知到ISR的变化，并向它所管理的broker发送更新元数据的请求。最后删除该路径下已经处理过的节点。
+  > - 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。然后 Controller 通过 watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
 
 - **OSR**: Out-of-Sync Replicas
 
@@ -1088,42 +1053,35 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
   - Improved durability without sacrificing write throughput.
   - Replicates across slower/higher-latency links without falling in and out of sync (also known as ISR thrashing)
   - Complements *Follower Fetching*
-  - **可用于 DR** - 复制到另一个DC中的 Observer
+  - **可用于 DR** - 复制到另一个 DC 中的 Observer
 
 
 
 **副本 Lead Election**
 
 - **正常领导者选举**
-  - 当 Leader 挂了，zk感知，Controller watch，并从 ISR 中选出新 Leader
+  - 当 Leader 挂了，zk 感知，Controller watch，并从 ISR 中选出新 Leader
 
   - 其实并不是选出来的，而是 Controller 指定的
 
-
-
 - **Unclean 领导者选举**
-  - 当ISR全空，如果`unclean.leader.election.enable=true`；从OSR中选出领导者
+  - 当ISR全空，如果 `unclean.leader.election.enable=true`；从 OSR 中选出领导者
 
   - 问题
     - 提高可用性的代价：消息丢失！
     - **CP --> AP**：通过配置参数，实现选择 C vs. A
 
-  
 
 
 
 **副本同步：HWM**
 
 - **高水位 High Watermark**
-  - HWM = ISR集合中最小的 Log End Offset (LEO)
+  - HWM = ISR 集合中最小的 Log End Offset (LEO)
 
     > LEO 日志末端位移: 表示副本写入下一条消息的位移值。
 
-  - 是一个特定的偏移量
-
   - 分区的高水位  == Leader 副本的高水位
-
-
 
 - **HWM 作用**
   - 定义消息可见性：消费者只能拉取高水位之前的消息
@@ -1146,11 +1104,11 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 **思想**
 
-- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
+- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用 ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
 
-  > 同步复制要求所有能工作的follower都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
+  > 同步复制要求所有能工作的 follower 都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
   >
-  > 而异步复制方式下，follower异步的从leader复制数据，数据只要被leader写入log就被认为已经commit，这种情况下如果follower都还没有复制完，落后于leader时，突然leader宕机，则会丢失数据。
+  > 而异步复制方式下，follower 异步的从 leader 复制数据，数据只要被 leader 写入 log 就被认为已经 commit，这种情况下如果 follower 都还没有复制完，落后于 leader 时，突然leader 宕机，则会丢失数据。
 
 - Redis 属于同步复制？
 
@@ -1162,11 +1120,11 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 -  **ISR**
 
-  - 1. Leader收到消息后，写入本地，并等待复制到所有Follower  --> 所有 or 所有 ISR?
+  - 1. Leader收到消息后，写入本地，并等待复制到所有 Follower  --> 所有 or 所有 ISR?
 
     > 靠 Follower 异步拉取
 
-  - 2. 如果某个Follower落后太多，则从ISR中删除
+  - 2. 如果某个 Follower 落后太多，则从 ISR 中删除
 
 - **Leader 副本**
   - 1. 处理生产者写入消息
@@ -1179,21 +1137,21 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
 - **Follower 副本**：异步拉取
 
-  - 1. Leader副本收到一条消息，更新状态
+  - 1. Leader 副本收到一条消息，更新状态
 
        > Leader：`HW = 0`, `LEO = 1`, `RemoteLEO = 0`
        >
        > Follower：`HW = 0`, `LEO = 0`
 
-  - 2. Follower拉取消息（featchOffset = 0）
+  - 2. Follower拉 取消息（featchOffset = 0）
 
        > Follower 本地操作：写入磁盘，更新 LEO，更新 HW = min{Leader HW, 本地LEO}
        >
        > Follwer：`HW = 0`, `LEO=1`
 
-       至此 Leader/Flower的高水位仍然是0，需要在下一轮拉取中被更新。
+       至此 Leader/Flower 的高水位仍然是0，需要在下一轮拉取中被更新。
 
-  - 3. Follower再次拉取消息（featchOffset = 1）
+  - 3. Follower 再次拉取消息（featchOffset = 1）
 
        > Leader：`HW = 1`, ` LEO = 1`,`RemoteLEO = 1`
        >
@@ -1229,12 +1187,8 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
   > 现在是引入了leader epoch之后的情况：B恢复过来，成为了Leader，之后B中写入消息m3，并且将自己的LEO和HW更新为2，注意这个时候LeaderEpoch已经从0增加到1了。
   > 紧接着A也恢复过来成为Follower并向B发送一个OffsetForLeaderEpochRequest请求，这个时候A的LeaderEpoch为0。B根据0这个LeaderEpoch查询到对应的offset为1并返回给A，那么A就要对日志进行截断，删除m2这条消息。然后用FetchRequest从B中同步m3这条消息。这样就解决了数据不一致的问题。
 
-
-
 - **原因**
   - Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
-
-
 
 - **解决： Leader Epoch**
   - 取值
@@ -1245,8 +1199,6 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
 
     - 小版本：起始位移，leader副本在该Epoch值上写入的首条消息的位移
 
-    
-
   - 目的
 
     - 规避高水位可能带来的数据丢失
@@ -1254,7 +1206,7 @@ int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] va
   - 新的流程
 
     - Follower重启后，先向Leader请求Leader的LEO；会发现缓存中没有 > Leader LEO的Epoch；所以不做日志截断
-    - Leader重启后，新的Leader会更新Leader Epoch
+  - Leader重启后，新的Leader会更新Leader Epoch
 
 
 
