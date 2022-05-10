@@ -24,8 +24,13 @@
   - Broker 无状态
   - Bookie 可以水平扩展，新数据存入新的Bookie
 - **支持多租户和海量 Topic**
-  - Tenant + Namespace 逻辑隔离
-  - 便于做共享大集群
+  - Tenant + Namespace 逻辑隔离；便于做共享大集群
+  - 最佳实践：
+    - Access Control
+    - Quota: 
+    - Isolation: 延时、吞吐量、存储、placement policy；不同 tenant 可以是不同的 Cluster。
+    - Tenant：可能对应一个 Team
+    - Namespace：可能对应一个 application。用于通用的主题设置，例如 backlog quota、offload、retention policy； 
 - **平衡消息可靠性与性能**
   - 得益于 Quorum 机制、条带化写入策略
 - **低延迟**
