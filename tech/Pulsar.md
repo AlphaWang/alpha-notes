@@ -207,7 +207,7 @@
 
 **Bookie 高可用**
 
-某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery**
+某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery - Fragment Rollover**
 
 > - https://bookkeeper.apache.org/docs/admin/autorecovery
 >
@@ -259,9 +259,11 @@
 
 - 当 Broker 节点宕机 / 或者与zk断联自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
 
-  > Q: 花费多少时间？
+  > - https://pulsar.apache.org/docs/administration-load-balance/ 
+  >
+  > - Q: 花费多少时间？
 
-- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：恢复 Ledger。
+- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：**Ledger Recovery**。
 
 
 
@@ -1515,7 +1517,17 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 
 
-外部共识：一个ledger任何时候都不会有两个broker写入、LAP / LAC 维护在 broker 端（bk客户端）。
+外部共识：
+
+- 数据复制是由 bk 客户端（Pulsar Broker）执行的。
+
+- 因为复制和协调逻辑由客户端控制，所以客户端可以在故障发生时自由更改 Ledger 成员！
+
+- 条件：一个 ledger 任何时候都不会有两个 bk 客户端写入、LAP / LAC 维护在 bk客户端。
+
+  > LAC 包含在发送到 bk 节点的每个 entry中；存储节点并不使用该 LAC、用于客户端来查询 LAC。
+  >
+  > 客户端 Broker 知道最新的 LAC，而存储节点里的 LAC 可能是旧版。
 
 **实现：**
 
@@ -1575,8 +1587,8 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
   > 这会导致 BK Ledger 中部会包含“已提交头部 + 尾部”；而 Kafka 日志中部全部是“已完全提交数据” (已提交尾部)
   >
-  > ![img](../img/pulsar/consensus-bookkeeper-3zones-move.png)
-  > *(BookKeeper Emsemble Change)*
+  > ![image-20220512100854284](../img/pulsar/consensus-bookkeeper-move-uncommttied-to-new-ledger.png)
+  > *(BookKeeper Emsemble Change: moves uncommitted entries to the next fragment)*
 
 - 同时宕机 BK 上的原有数据会被慢慢修复：
 
@@ -2732,8 +2744,8 @@ bookkeeper shell ledgermetadata -l LEDGER_ID
     4. managedLedgerNumWorkerThreads
     5. numIOThreads
     6. Dorg.apache.bookkeeper.conf.readsystemproperties=true -DnumIOThreads=8
-    ```
-    
+  ```
+  
   - Bookie configurations
 
     ```
@@ -2771,7 +2783,7 @@ bookkeeper shell ledgermetadata -l LEDGER_ID
   
   - Broker congifurations 
   
-    ```
+  ```
   1. Managed ledger cache
     2. Dispatcher max read batch size
     3. Bookkeeper sticky reads
