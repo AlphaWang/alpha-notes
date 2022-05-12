@@ -1151,6 +1151,8 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
   - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
     - 支持 split bundle （线上建议关闭）
     - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
+  - 如何判定负载高？
+    - For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
 
 
 
