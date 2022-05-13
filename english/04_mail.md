@@ -151,6 +151,12 @@ Learning and Development Team Manager
 
 
 
+要求加班
+
+- We are all looking forward to the upcoming Spring Festival holiday **after the incredibly hard work over the past months**. In order to **draw a perfect full stop** to this year's effort, we will xxx. 
+
+
+
 ## || 请教问题
 
 - This is to sincerely **see your expert advice** on xx project. - 开门见山
@@ -162,6 +168,7 @@ Learning and Development Team Manager
 
 ## || 解决抱怨
 
+- 标题 Solving xx Issue. 
 - We were **dismayed to learn** that ... -- 表达抱歉
 - Thank you for **bringing the issue to my attention**. I am sorry that ... -- 表达抱歉
 - We are sure that xxx will only be going on for another three weeks. -- 表达问题很快能结束

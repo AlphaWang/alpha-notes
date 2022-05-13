@@ -34,7 +34,9 @@
 - **平衡消息可靠性与性能**
   - 得益于 Quorum 机制、条带化写入策略
 - **低延迟**
-  - kafka topic 增加，延迟也增加
+  - kafka topic 增加，延迟也增加 
+  - 单个发送线程 TPS 2w？ -- 拉卡拉数据：batchingEnabled, blockIfQueueFull
+  - 
 - **高可靠、分布式**
   - Geo replication
 - **轻量级函数式计算**
@@ -120,12 +122,13 @@
 
 
 
-
 **流程**
+
+![image-20220513165819297](../img/pulsar/pulsar-arch.png)
 
 ![image-20220416215533390](../img/pulsar/pulsar-rw-flow.png)
 
-![image-20220416220750084](../img/pulsar/pulsar-segment-bookie.png)
+（来自拉卡拉分享，Broker cache 的写入时机貌似不对）
 
 
 
@@ -167,7 +170,22 @@
 
 
 
+## || 对比 Kafka
+
+- Kafka 生产数据到 Leader，再同步到 follower；`ack=all`的情况下需要等待所有 ISR follower返回，性能差。Leader 宕机时如果ISR = 1，则可能导致数据丢失。
+- Kafka 分区数据存储到指定的几个 Broker，利用率可能倾斜。
+- Kafka 分区扩容困难，涉及到数据重平衡。
+- Kafka 新增/替换 Follower 需要先fetch lag，同步整个分区数据，新的节点才能serve read/write；Fetch lag 会占用 IO，影响写入性能。
+- Kafka catch-up read会**污染page cache**，影响 tailing read的性能、以及写入性能；
+- Kafka 主题多了之后，也会污染 page  cache
+
+
+
 ## || 高性能
+
+- Tailing Read：读取 Broker Cache
+- Catch-up Read：读取 BK write cache，没有则读取 read cache，最后才会读取 Entry Log
+- Produce：写入 Journal 盘，推荐 SSD
 
 
 
@@ -337,7 +355,10 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
     - 校验并设置元数据，包括 sequenceId
     - 进入批量发送队列
     - Flush：直接触发、或等待
+    
+    > 如果是异步发送，收到ack后跟未决队列进行对比，如果收到 msg-2 ack，但尚未收到 msg-1 ack；则重发 msg1
 - **PartitionedProducerImpl**
+  
   - 内有保存 ProducerImpl List，每个partition对应一个
 
 
@@ -435,7 +456,10 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
   - `发送方式` 的影响：同步 vs 异步
   - `批量发送` 的影响: 一批消息是原子性。但批与批之间的顺序可能乱；
   - `消息key` 的影响：相同key会被发到同一分区，能保证有序性；
-
+- ack 的影响：
+    - 单条确认时，未确认的消息在超时后会重新投递；若要保序，则必须按顺序 ack；
+    - 累积确认时，在超时后会重新投递一批消息；
+  
   
 
 
@@ -1105,8 +1129,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
   
 - **数据清理的单位是 Ledger！**
 
-  - 注意：Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。
-  - 注意：Ledger 标记成可删除后，并不表明对应 Entry Log 可以被删除，因为 Entry Log 可能还包含其他 Ledger 数据。
+  - Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。
+  - Ledger 标记成可删除后，并不表明对应 Entry Log 可以被删除，因为 Entry Log 可能还包含其他 Ledger 数据。
+  - Retention 到期后也不一定马上删除，还需要看 TTL + 有无 ack.
 
 
 
@@ -2634,7 +2659,26 @@ Pulsar Manager
   - 默认使用 https://github.com/apache/pulsar-helm-chart/blob/master/charts/pulsar/values.yaml 
   - 可修改 replicaCount, images
 
-- 
+
+
+
+测试
+
+```shell
+./pulsar-admin clusters list
+./pulsar-admin brokers list my-cluster
+./pulsar-admin topic list public/default
+
+# 生产消费
+./pulsar-client produce my-topic --messages "hello pulsar"
+./pulsar-client consume my-topic -s "my-subscription"
+
+# perf 
+./pulsar-perf produce -r 100 -n 2 -s 1024 my-tpic
+./pulsar-perf consume my-tpic
+```
+
+
 
 
 
@@ -2660,13 +2704,15 @@ Pulsar Manager
 
 
 
+
+
 ## || 监控
 
 **查看主题统计**
 
 ```sh
-pulsar-admin topics stats TOPIC_NAME
-pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如ledger,cursor
+./pulsar-admin topics stats TOPIC_NAME
+./pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如ledger,cursor
 ```
 
 - backlogSize / storageSize
@@ -2679,9 +2725,8 @@ pulsar-admin topics stats-internal TOPIC_NAME #包含更多内部参数，例如
 **查看 BK**
 
 ```sh
-bookkeeper shell listledgers
-bookkeeper shell ledgermetadata -l LEDGER_ID
-
+./bookkeeper shell listledgers
+./bookkeeper shell ledgermetadata -l LEDGER_ID
 ```
 
 - ensembleSize / writeQuorunSize / ackQuorunSize
@@ -2689,6 +2734,26 @@ bookkeeper shell ledgermetadata -l LEDGER_ID
 - lastEntryId 
 - state
 - managed-ledger: topic name -base64编码
+
+
+
+**Pulsar-manager 监控 BookKeeper:**
+
+```
+http://localhost:7750/bkvm/
+```
+
+- Bookie 列表：Usage / 可用空间
+
+- Ledger 列表：大小、age、replication、Ensemble、WQ、AQ
+
+  
+
+
+
+**Dashboard**
+
+- https://github.com/streamnative/apache-pulsar-grafana-dashboard 
 
 
 
@@ -2777,6 +2842,8 @@ bookkeeper shell ledgermetadata -l LEDGER_ID
   - Bookie configurations
 
     ```
+    
+    ```
   1. dbStorage_rocksDB_blockCacheSize
     2. dbStorage_readAheadCacheMaxSizeMb
   3. dbStorage_readAheadCacheBatchSize
@@ -2802,6 +2869,7 @@ bookkeeper shell ledgermetadata -l LEDGER_ID
     - bk 使用单线程读取同一个 Ledger，可设置 worker 线程池 `numReadWorkerThreads` `maxPendingReadRequestsPerThread`
     - 设置 RocksDB 块缓存 `dbStorage_rockDB_blockCacheSize`
     - 设置 Entry 预读缓存：`dbStorage_readAheadCacheMaxSizeMb / BatchSize`
+    ```
 
 
 
