@@ -170,139 +170,6 @@
 
 
 
-## || 对比 Kafka
-
-- Kafka 生产数据到 Leader，再同步到 follower；`ack=all`的情况下需要等待所有 ISR follower返回，性能差。Leader 宕机时如果ISR = 1，则可能导致数据丢失。
-- Kafka 分区数据存储到指定的几个 Broker，利用率可能倾斜。
-- Kafka 分区扩容困难，涉及到数据重平衡。
-- Kafka 新增/替换 Follower 需要先fetch lag，同步整个分区数据，新的节点才能serve read/write；Fetch lag 会占用 IO，影响写入性能。
-- Kafka catch-up read会**污染page cache**，影响 tailing read的性能、以及写入性能；
-- Kafka 主题多了之后，也会污染 page  cache
-
-
-
-## || 高性能
-
-- Tailing Read：读取 Broker Cache
-- Catch-up Read：读取 BK write cache，没有则读取 read cache，最后才会读取 Entry Log
-- Produce：写入 Journal 盘，推荐 SSD
-
-
-
-**Vs. RocketMQ**
-
-![image-20220416135310696](../img/pulsar/rocketmq-write-flow.png)
-
-- 升级同步双写流程
-  - SendMessageProcessorThread 生成 CompletableFuture；随后即能继续处理下一个新请求；
-  - CompletableFuture 何时完成：slave 复制位点超过消息位点后完成。完成后才响应客户端。
-
-
-
-## || 高可用
-
-> - https://jack-vanlightly.com/blog/2018/10/21/how-to-not-lose-messages-on-an-apache-pulsar-cluster
-
-
-
-**读写高可用**
-
-- **读高可用：Speculative Reads**
-
-  - 原因：对等副本都可以提供读
-  - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
-    Q：放大了读取请求数？
-
-  > Kafka 为什么不能 Speculative Reads？
-  >
-  > - Kafka offset 是基于日志顺序读取、必须从 Leader读，而 BK 底层则并非连续存储，而是基于index
-
-- **写高可用：Ensemble Change**
-
-  - 最大化数据放置可能性
-
-
-
-**Bookie 高可用**
-
-某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery - Fragment Rollover**
-
-> - https://bookkeeper.apache.org/docs/admin/autorecovery
->
-> - https://www.youtube.com/watch?v=w14OoOUkyvo
->
-> 注意：区别于broker宕机后的 **Ledger Recovery** --> Fencing 
-
-- Auditor
-
-  - 审计集群里是否有 bookie宕机；(ping bookies)
-  - 审计某个Ledger是否有entry丢失；
-  - Q：需要选主确定 auditor？--> YES. 
-
-- 流程
-
-  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描zk Ledger list 找出该bookie1存储的所有 ledger；
-  - Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
-  - Replication worker 监听该zk节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
-  - Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
-
-- 配置
-
-  ```properties
-  #bookkeeper.conf - 可并行复制的entry个数
-  rereplicationEntryBatchSize=100
-  ```
-
-  
-
-- Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
-
-  > Q：会影响写入吗？--> 也不会，写入是写新的 Segment、往新的 Ensemble 中。
-
-- 还可以手工 Recover
-
-  ```sh
-  #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
-  bookkeeper shell ledgermetadata -l LEDGER_ID 
-  bookkeeper shell recover FAILED_BOOKIE_ID 
-  #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
-  bookkeeper shell ledgermetadata -l LEDGER_ID 
-  ```
-
-  
-
-
-
-**Broker 高可用**
-
-- 当 Broker 节点宕机 / 或者与zk断联自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；让主题转移到新的 Broker 上。
-
-  > - https://pulsar.apache.org/docs/administration-load-balance/ 
-  >
-  > - Q: 花费多少时间？
-
-- 同时与该 Broker 关联的 Ledger 会进入恢复流程，**Fencing** 并重新找 owner Broker。见：**Ledger Recovery**。
-
-
-
-**跨机架高可用**
-
-- BK 客户端的跨区域感知：
-  - 写入时选择bookie节点时，必定包含来自不同机架的节点。
-- 注意
-  - 务必保证每个机架都有足够多节点，否则可能导致找不到足够多不同机架节点。
-  - 同步高可用：同步写入多机架，延迟会增加。
-
-
-
-**跨地域高可用**
-
-- GEO Replication：异步，非强一致
-
-
-
-
-
 
 
 # | 客户端
@@ -1422,6 +1289,12 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 
 
+> Ledger == Segment
+>
+> Fragment == Ensemble
+
+
+
 ### 组件
 
 **1. Metadata Store**
@@ -1556,7 +1429,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
   >
   > 客户端 Broker 知道最新的 LAC，而存储节点里的 LAC 可能是旧版。
 
-**实现：**
+**Ledger Recovery：**
 
 - **一个ledger只会由一个broker负责写入**、写满即关闭；
 
@@ -1595,9 +1468,9 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 **复制协议中日志的三种区域**
 
-- **未提交区域**：尚未达到 AQ / Commit Quorum
-- **已提交头部**：已达到 AQ / Commit Quorum，但尚未达到 WQ / Replication Factor。-- 此部分数据对客户可见。
-- **已提交尾部**： 已达到 WQ / Replication Factor
+- **未提交区域 Uncommitted**：尚未达到 AQ / Commit Quorum
+- **已提交头部 Committed Head**：已达到 **AQ** / Commit Quorum，但尚未达到 WQ / Replication Factor。-- 此部分数据对客户可见。
+- **已提交尾部 Committed Tail**： 已达到 **WQ** / Replication Factor
 
 >  <img src="../img/pulsar/consensus-kafka-3zones.png" alt="img" style="zoom:67%;" />
 > *(Kafka 日志的三个区域)*
@@ -1610,12 +1483,14 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 - 当客户端写入某个 BK 失败，会选择新的 BK 来替代；会创建新 Ledger (Segment) 并将“未提交区域” 保存到新 Segment、然后继续往后写入。--> **写入可用性很高**。
 
-- 而“已提交头部”、已达到AQ但未达到WQ的 entry 会被保留在原始 Ledger Fragement 中；
+- 而“已提交头部”、已达到 AQ 但未达到 WQ 的 entry 会被保留在原始 Ledger Fragement 中；
 
   > 这会导致 BK Ledger 中部会包含“已提交头部 + 尾部”；而 Kafka 日志中部全部是“已完全提交数据” (已提交尾部)
   >
   > ![image-20220512100854284](../img/pulsar/consensus-bookkeeper-move-uncommttied-to-new-ledger.png)
   > *(BookKeeper Emsemble Change: moves uncommitted entries to the next fragment)*
+
+  > 注意：Broker宕机后的 Leadger Recovery 过程，会让 AQ --> WQ，不会出现 Committed Head！！！
 
 - 同时宕机 BK 上的原有数据会被慢慢修复：
 
@@ -1933,7 +1808,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - 目的：只有closed ledger才会被清理。
 
-- 触发：写入的时候发现ledger已满，则打开新Ledger。
+- 触发1：写入的时候发现ledger已满，则打开新Ledger。
 
   - 问题：如果一个主题的写入停止了，则ledger长时间不被写入、也没办法rollover、空间无法释放。
 
@@ -1944,6 +1819,10 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
     > 1）maxRolloverTime 到期
     >
     > 2）或者，达到 maxEntries && 达到 minRolloverTime
+  
+- 触发2：Owner broker 故障
+
+- 触发3：Topic offload
 
 
 
@@ -2001,7 +1880,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - Leger 本身可以分成一个或多个 Fragment。
 - 创建 Ledger 时，包含一个 Fragment，由一组bookie存储（it consists of a single fragment with an ensemble of bookies）
 - 当写入某个 bookie 失败时，客户端用一个新的 bookie 来替代，创建新 Fragment（with a new ensemble）、重新发送未提交 entry 以及后续 entry
-- Fragments 又称为 Ensembles ?
+- Fragments 又称为 Ensembles ?！
 
 
 
@@ -2010,13 +1889,13 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 四种读取类型
 
 - **Regular entry read**
-  - 从任意 bookie 节点读取；如果读取失败，从 ensemble 中换个bookie 继续读取。
+  - 从任意 bookie 节点读取，读到 LAC 为止 ；如果读取失败，从 ensemble 中换个bookie 继续读取。
 - **Long poll LAC read**
   - 读取到 LAC 位置后，即停止读取、并发起 long pool LAC read，等待有新的 entry 被提交。
 - **Quorum LAC read**
-  - 用于恢复
+  - 用于恢复：获取 LAC 值
 - **Recovery read**
-  - 用于恢复
+  - 用于恢复：读取 LAC + 1 之后的 entry
 
 
 
@@ -2026,22 +1905,22 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - **Ack Quorum (AQ)**
 
-  - 主要用于写入
+  - 用于写入
 
 - **Write Quorum (WQ)**
 
-  - 主要用于写入
+  - 用于写入
 
 - **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
 
-  - 主要用于恢复过程
+  - 用于恢复过程
   - QC cohort 是单个 entry 的写入集合，QC 当需要保证单个 entry 时有用。
   - A given property is satisfied by at least one bookie from every possible ack quorum within the cohort.
   - There exists no ack quorum of bookies that do not satisfy the property within the cohort. 
 
 - **Ensemble Coverage (EC)** = `(E - AQ) + 1`
 
-  - 主要用于恢复过程
+  - 用于恢复过程：等待 Fencing 响应的个数
   - EC cohort 是当前fragment的bookie集合，EC 当需要保证整个 fragment 时有用。
 
   
@@ -2056,15 +1935,6 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
-> 对于 Pulsar，
->
-> - 每个 topic 有一个 broker 作为 owner（注册于 zk）。该 broker 调用 BookKeeper 客户端来创建、写入、关闭 broker 所拥有的 topic 的 ledger。
-> - 如果该 owner broker 故障，则ownership 转移给其他 broker；新 broker 负责关闭该topic最后一个ledger、创建新 ledger、负责写入该topic。
->
-> ![image-20220102204423380](../img/pulsar/broker-failure-ledger-segment.png)
-
-
-
 **何时触发  recovery?** 
 
 - 每个 ledger 都有一个客户端作为 owner；如果这个客户端不可用，则另一个客户端会接入执行恢复、并关闭该 ledger。
@@ -2074,24 +1944,32 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 **防止脑裂**
 
-- 恢复过程可能出现脑裂：客户端A (pulsar broker) 与zk断开连接，被认为宕机；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。--> 可能导致数据丢失！
-- **Fencing**: 客户端B 尝试恢复时，先将 ledger 设为 fence 状态，让 ledger 拒绝所有新的写入请求（则原客户端A写入新数据时，无法达到 AQ 设定的副本数）。一旦足够多的 bookie fence了原客户端A，恢复过程即可继续。
+- 恢复过程可能出现脑裂：客户端A (pulsar broker) **与zk断开连接**，被认为宕机；但他可能没有真的宕机、还能与 BK 集群通信、试图操作 Ledger；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。
+- 脑裂的后果：可能导致数据不一致！
+- 脑裂的解决：**Fencing**: 客户端B 尝试恢复时，先将 ledger 设为 fence 状态，让 ledger 拒绝所有新的写入请求（则原客户端A写入新数据时，无法达到 AQ 设定的副本数）。一旦足够多的 bookie fence了原客户端A，恢复过程即可继续。
 
 
 
 **恢复过程**
 
+> - 每个 topic 有一个 broker 作为 owner（注册于 zk）。该 broker 调用 BookKeeper 客户端来创建、写入、关闭 broker 所拥有的 topic 的 ledger。
+> - 如果该 owner broker 故障，则ownership 转移给其他 broker；新 broker 负责关闭该topic最后一个ledger、创建新 ledger、负责写入该topic。
+>
+> ![image-20220102204423380](../img/pulsar/broker-failure-ledger-segment.png)
+
+
+
 - **第一步：Fencing**
 
   > 将 Ledger 设为 fence 状态（OPEN --> IN_RECOVERY），并找到 LAC。
 
-  - 新客户端 Broker2 发送 Fencing LAC 读请求：Ensemble Coverage 的 LAC 读取请求，请求中带有 fencing 标志位。
+  - 新客户端 Broker2 发送 Fencing LAC 读请求：**Ensemble Coverage LAC Reads**，请求中带有 fencing 标志位。
   - Bookie 收到这个 fencing 请求后，将 ledger 状态设为 fenced，并返回当前 bookie 上对应 ledger 的 LAC。
-  - 一旦新客户端收到足够多的响应，则执行下一步。
-    - 无需等待所有 bookie 响应，只需保证剩下的未返回 bookie 数 < AQ 即可。这样原客户端一定无法写入 AQ 个节点、亦即无法写入成功。
+  - 一旦新客户端收到足够多的响应，则执行下一步。何谓”足够多“？
+    - 无需等待所有 bookie 响应，只需保证`剩下的未返回 bookie 数 < AQ` 即可。这样原客户端将一定无法写入 AQ 个节点、亦即无法写入成功。
     - 即，收到的响应数目达到 **Ensemble Coverage** 即可：`EC = (E - AQ) + 1`
 
-  > 为什么要找到 LAC？
+  > Q: 为什么要找到 LAC？
   >
   > The LAC stored in each entry is generally trailing the real LAC and so finding out the highest LAC among all the bookies is the starting point of recovery.
 
@@ -2099,28 +1977,24 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - **第二步：Recovery reads & writes**
 
-  > Broker2 takes the highest LAC response and then starts performing recovery reads from the LAC + 1. 
-  >
-  > It ensures that all entries from that point on (which may not have been previously acknowledged to the Pulsar broker) get replicated to QW bookies. Once B2 cannot read and replicate any more entries, the ledger is fully recovered.
-
-  - **目的**：确保 LAC 之后的 entry，重新写入新的 ensemble QW。确保在关闭 ledger之前，任何已提交 entry 都被完整复制。
-  - 客户端Broker2从 **LAC + 1** 处开发发送 `recovery 读请求`，读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到客户端读不到任何 entry。
-  - `recovery 读请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求决定 entry 是否已提交、是否可恢复：
-    - 已提交 = Ack Quorum 返回存在响应
-    - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1`
+  - **目的**：LAC 之后的 entry 有可能尚未 ack 给 Broker，需要重新复制到 ensemble **WQ**。确保在关闭 ledger之前，任何已提交 entry 都被完整复制：**AQ --> WQ**。
+  - **流程**：客户端 Broker2 获知 LAC 后，从 **LAC + 1** 处开发发送 `Recovery Read 请求` 给所有的写入集合（区别与regular read！），读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到 Broker2 读不到任何 entry。
+  - `Recovery Read 请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求需要明确 entry 是否已提交、是否可恢复：
+  - 已提交 = Ack Quorum 返回存在响应
+    - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1` --> 此部分数据会由 Broker2 重新提交？不会！见下图例子。
     - 如果所有响应都已收到，但以上两个阈值都未达到，则无法判断是否已提交；这时会重复执行恢复过程，直至明确状态。
-
+  
   > 1. 可否完全不等待 bookie 响应？
   >
   > NO，否则会导致 ledger truncation：Last Entry Id 设置得过低，导致已提交的 entry 无法被读取。
-  >
+>
   > 2. AQ = 1 带来的问题
   >
   > - 存储 entry 时没有冗余；
   > - 导致 recovery 过程卡住：必须等待所有 bookie 返回
-
   
-
+  
+  
   ![image-20220102184102357](../img/pulsar/bookkeeper-recovery-readwrite.png)
 
 
@@ -2129,11 +2003,181 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
   > 一旦所有已提交 entry 都被识别并被修复，客户端会关闭 ledger；
 
-  - 更新 zk 上的 ledger 元数据，将状态设为 CLOSED、将 `Last Entry Id` 设为最高的已提交 entry id。
+  - 更新 zk 上的 ledger 元数据：将状态设为 CLOSED、将 `Last Entry Id` 设为最高的已提交 entry id。
+  - 在 bookie ensemble 中找到已提交的最高 entry id，确保每个 entry 已被复制到 Write Quorum。
+    - 新客户端关闭 ledger，将状态置为 CLOSED，将 Last Entry ID 设置为最高的已提交 entry（即 `LAC，Last Added Confirmed`）；`Last Entry ID` 表示 Ledger 的结尾，其他客户端来读取时，永远不会超过此 Last Entry Id。之后的数据应该到新 Ledger 读取。
+  - 元数据的更新是 CAS 操作，防止多个客户端同时对 Ledger 进行修复。
+  
+  
 
-  - 在 bookie ensemble 中找到一起交的最高 entry id，确保每个 entry 已被复制到 Write Quorum。
+# | ZooKeeper
 
-  - 新客户端关闭 ledger，将状态置为 CLOSED，将 Last Entry ID 设置为最高的已提交 entry（即 `LAC，Last Added Confirmed`）；`Last Entry ID` 表示ledger的结尾，其他客户端来读取时，永远不会超过此 Last Entry Id。
+**存储 BookKeeper 相关信息**
+
+- Ledger - bookie 对应关系：Broker 创建ledger的时候写入该元数据
+
+  ```yaml
+  Ledger-1: 
+  	- Fragment-1, E0: {B1, B2, B3}
+  	- Fragment-2, E1000: {B1, B2, B4}
+  ```
+
+- Ledger last entry 信息
+
+  ```yaml
+  Ledger-1:
+    Last Entry: E5000
+  ```
+
+  Q: 异步定时更新？
+
+- 
+
+
+
+**存储 Broker 相关信息**
+
+- Bundle - owner broker 对应关系
+- 
+
+
+
+# | 设计
+
+
+
+## || 对比 Kafka
+
+- Kafka 生产数据到 Leader，再同步到 follower；`ack=all`的情况下需要等待所有 ISR follower返回，性能差。Leader 宕机时如果ISR = 1，则可能导致数据丢失。
+- Kafka 分区数据存储到指定的几个 Broker，利用率可能倾斜。
+- Kafka 分区扩容困难，涉及到数据重平衡。
+- Kafka 新增/替换 Follower 需要先fetch lag，同步整个分区数据，新的节点才能serve read/write；Fetch lag 会占用 IO，影响写入性能。
+- Kafka catch-up read会**污染page cache**，影响 tailing read的性能、以及写入性能；
+- Kafka 主题多了之后，也会污染 page  cache
+
+
+
+## || 高性能
+
+- Tailing Read：读取 Broker Cache
+- Catch-up Read：读取 BK write cache，没有则读取 read cache，最后才会读取 Entry Log
+- Produce：写入 Journal 盘，推荐 SSD
+
+
+
+**Vs. RocketMQ**
+
+![image-20220416135310696](../img/pulsar/rocketmq-write-flow.png)
+
+- 升级同步双写流程
+  - SendMessageProcessorThread 生成 CompletableFuture；随后即能继续处理下一个新请求；
+  - CompletableFuture 何时完成：slave 复制位点超过消息位点后完成。完成后才响应客户端。
+
+
+
+## || 高可用
+
+> - https://jack-vanlightly.com/blog/2018/10/21/how-to-not-lose-messages-on-an-apache-pulsar-cluster
+
+
+
+**读写高可用**
+
+- **读高可用：Speculative Reads**
+
+  - 原因：对等副本都可以提供读
+  - 通过Speculative 减少长尾时延：同时发出两个读，哪个先返回用哪个
+    Q：放大了读取请求数？
+
+  > Kafka 为什么不能 Speculative Reads？
+  >
+  > - Kafka offset 是基于日志顺序读取、必须从 Leader读，而 BK 底层则并非连续存储，而是基于index
+
+- **写高可用：Ensemble Change**
+
+  - 最大化数据放置可能性
+
+
+
+**Bookie 高可用**
+
+某个 Bookie 宕机后如何处理。--> **Bookie Auto Recovery - Fragment Rollover**
+
+> - https://bookkeeper.apache.org/docs/admin/autorecovery
+> - TGI Pulsar 011: BookKeeper AutoRecovery: https://www.youtube.com/watch?v=w14OoOUkyvo
+> - Jack: A Guide to the BookKeeper Replication Protocol https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395
+>
+> 注意：区别于broker宕机后的 **Ledger Recovery** --> Fencing 
+
+- Auditor
+
+  - 审计集群里是否有 bookie宕机；(ping bookies)
+  - 审计某个Ledger是否有entry丢失；
+  - Q：需要选主确定 auditor？--> YES. 
+
+- 流程
+
+  - 如果 bookie1宕机， Auditor 通过 ZK 感知到，扫描zk Ledger list 找出该bookie1存储的所有 ledger；
+  - Auditor 在 `/underreplicated/` znode 下发布 rereplication 任务，每个任务对应一个 Ledger、等待一个 worker 认领。
+  - Replication worker 监听该zk节点，如有新任务则加锁、从原ensemble复制原 ledger entries 到新 bookie2；
+  - Replication worker 复制结束后，更新 Ledger metadata、修改原始的 Ensemble、剔除 bookie1 替换为 bookie2。
+
+  > Q：Ensemble Change 后需要把未提交的 entry 重发到新 bookie；Auto Recovery 也会重新提交吧？
+
+- 配置
+
+  ```properties
+  #bookkeeper.conf - 可并行复制的entry个数
+  rereplicationEntryBatchSize=100
+  ```
+
+  
+
+- Auto recovery 过程中并不会影响读取，因为 ensemble 中的其他 bookie 可以用于读取。
+
+  > Q：会影响写入吗？--> 也不会，写入是写新的 Segment、往新的 Ensemble 中。
+
+- 还可以手工 Recover
+
+  ```sh
+  #查看 Ledger metadata，BK fail之后，会产生新的 ensemble，但老的ensemble里还包含 FAILED_BK
+  bookkeeper shell ledgermetadata -l LEDGER_ID 
+  bookkeeper shell recover FAILED_BOOKIE_ID 
+  #再次查看 ledger metadata，会发现老的ensembles bk列表剔除掉了FAILED_BOOKIE_ID，数据拷贝到了新BK.
+  bookkeeper shell ledgermetadata -l LEDGER_ID 
+  ```
+
+  
+
+
+
+**Broker 高可用**
+
+- 当 Broker 节点宕机 / 或者与zk断联自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
+
+  > - https://pulsar.apache.org/docs/administration-load-balance/ 
+  >
+  > - Q: 花费多少时间？
+
+- 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
+
+
+
+**跨机架高可用**
+
+- BK 客户端的跨区域感知：
+  - 写入时选择bookie节点时，必定包含来自不同机架的节点。
+- 注意
+  - 务必保证每个机架都有足够多节点，否则可能导致找不到足够多不同机架节点。
+  - 同步高可用：同步写入多机架，延迟会增加。
+
+
+
+**跨地域高可用**
+
+- GEO Replication：异步，非强一致
+
+
 
 
 
