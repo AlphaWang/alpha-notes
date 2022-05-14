@@ -1412,8 +1412,8 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 > - External Consensus: https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21 
 > - BK LAC & 可视化 & compare with Raft: https://www.youtube.com/watch?v=7etLdsC-qbM
-> - https://www.slideshare.net/hustlmsp/apache-bookkeeper-a-high-performance-and-low-latency-storage-service
-> - Scaling Out Total Order Atomic Broadcast with Apache BookKeeper https://www.splunk.com/en_us/blog/it/scaling-out-total-order-atomic-broadcast-with-apache-bookkeeper.html
+> - Siji's BookKeeper Slides: https://www.slideshare.net/hustlmsp/apache-bookkeeper-a-high-performance-and-low-latency-storage-service
+> - //TODO: Scaling Out Total Order Atomic Broadcast with Apache BookKeeper https://www.splunk.com/en_us/blog/it/scaling-out-total-order-atomic-broadcast-with-apache-bookkeeper.html 
 
 
 
@@ -1770,14 +1770,13 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 > - A Guide to the BookKeeper Replication Protocol 
 >   https://medium.com/splunk-maas/a-guide-to-the-bookkeeper-replication-protocol-tla-series-part-2-29f3371fe395 
->
-> - Apache BookKeeper Internals — Part 1 — High Level: 读写流程 & 线程模型
+>- Apache BookKeeper Internals Part 1 — High Level: 读写流程 & 线程模型
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-1-high-level-6dce62269125 
->
+> - Apache BookKeeper Insights Part 1 — External Consensus and Dynamic Membership
+>  https://medium.com/splunk-maas/apache-bookkeeper-insights-part-1-external-consensus-and-dynamic-membership-c259f388da21
 > - Apache BookKeeper Insights Part 2 — Closing Ledgers Safely
->   https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 //TODO
+>   https://medium.com/splunk-maas/apache-bookkeeper-insights-part-2-closing-ledgers-safely-386a399d0524 
 >
->   
 
 
 
@@ -1797,7 +1796,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 **Ledger 状态机**
 
-![image-20220101224253890](../img/pulsar/bookkeeper-ledger-lifecycle.png)
+![image-20220514145231433](../img/pulsar/bookkeeper-ledger-lifecycle.png)
+
+
 
 - 创建 ledger 的客户端（Pulsar broker）即为这个 ledger 的 owner；**只有owner 可以往 ledger 写入数据**。
 - 如果 owner 故障，则另一个客户端会接入并接管。修复 under-replicated entry、关闭 ledger. —— open ledger 会被关闭，并重新创建新 ledger
@@ -1911,17 +1912,38 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
   - 用于写入
 
-- **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
-
-  - 用于恢复过程
-  - QC cohort 是单个 entry 的写入集合，QC 当需要保证单个 entry 时有用。
-  - A given property is satisfied by at least one bookie from every possible ack quorum within the cohort.
-  - There exists no ack quorum of bookies that do not satisfy the property within the cohort. 
-
 - **Ensemble Coverage (EC)** = `(E - AQ) + 1`
 
-  - 用于恢复过程：等待 Fencing 响应的个数
-  - EC cohort 是当前fragment的bookie集合，EC 当需要保证整个 fragment 时有用。
+  - 用于恢复过程：LAC Read 时等待 Fencing 响应的个数
+  
+- 定义：
+  
+    - ”*a given bookie is fenced*“ is satisfied by at least one bookie from every possible Ack Quorum within the "*current ensemble*". 
+  
+      > AQ 中至少有一个 bookie 已被 fence。
+  
+    - There exists no Ack Quorum of bookies that do not satisfy ”*a given bookie is fenced*“ within the "*current ensemble*". 
+  
+      > 当前 Ensemble 中不存在一个 AQ 未被 fence。 
+  
+  
+  
+- **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
+
+  - 用于恢复过程：
+
+    - Recovery Read 时等待询问 ”LAC + X 的entry 是否已提交“的响应个数；
+    - QC = The bar to close a ledger，用来决定 Entry 是否可以恢复。
+
+  - 定义：
+
+    - ”*a given bookie does not have the entry*“ is satisfied by at least one bookie from every possible Ack Quorum within the "*writeset of the entry*".
+
+      > AQ 中至少有一个 bookie 不包含该 entry。
+
+    - There exists no Ack Quorum of bookies that do not satisfy ”*a given bookie does not have the entry*“ within the "*writeset of the entry*".  
+
+      > 当前 Ensemble 中不存在一个 AQ 包含该 entry。
 
   
 
@@ -1945,7 +1967,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 **防止脑裂**
 
 - 恢复过程可能出现脑裂：客户端A (pulsar broker) **与zk断开连接**，被认为宕机；但他可能没有真的宕机、还能与 BK 集群通信、试图操作 Ledger；触发恢复过程，由另一个客户端B来接管 ledger并恢复ledger；则有两个客户端同时操作一个 ledger。
-- 脑裂的后果：可能导致数据不一致！
+- 脑裂的后果：可能导致数据不一致/丢失！
 - 脑裂的解决：**Fencing**: 客户端B 尝试恢复时，先将 ledger 设为 fence 状态，让 ledger 拒绝所有新的写入请求（则原客户端A写入新数据时，无法达到 AQ 设定的副本数）。一旦足够多的 bookie fence了原客户端A，恢复过程即可继续。
 
 
@@ -1977,16 +1999,16 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 - **第二步：Recovery reads & writes**
 
-  - **目的**：LAC 之后的 entry 有可能尚未 ack 给 Broker，需要重新复制到 ensemble **WQ**。确保在关闭 ledger之前，任何已提交 entry 都被完整复制：**AQ --> WQ**。
-  - **流程**：客户端 Broker2 获知 LAC 后，从 **LAC + 1** 处开发发送 `Recovery Read 请求` 给所有的写入集合（区别与regular read！），读到之后将其重新写入 bookie ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到 Broker2 读不到任何 entry。
-  - `Recovery Read 请求`：与regular读不同，需要 **quorum**；每个 recovery 读请求需要明确 entry 是否已提交、是否可恢复：
-  - 已提交 = Ack Quorum 返回存在响应
-    - 未提交 = **Quorum Coverage** 返回不存在响应：`QC = (WQ - AQ) + 1` --> 此部分数据会由 Broker2 重新提交？不会！见下图例子。
+  - **目的**：BK 存储的 LAC 可能比真实的要落后，BK LAC 之后的 entry 有可能尚未 ack 给 Broker；需要找到实际已被提交的entry 重新复制到 ensemble **WQ**。确保在关闭 ledger之前，任何已提交 entry 都被完整复制：**AQ --> WQ**。
+  - **流程**：客户端 Broker2 获知 LAC 后，从 **LAC + 1** 处开发发送 `Recovery Read 请求` 给所有的写入集合（区别与regular read！），读到之后将其重新写入 ensemble（写操作是幂等的，不会造成重复）。重复这个过程，直到 Broker2 读不到任何 entry。
+  - **判断Ledger是否可以关闭的条件要严格**：`Recovery Read 请求` 的响应个数要超过 quorum，Broker 对每个 recovery 读请求需要明确该 entry 是否可恢复（已提交的才能恢复）：
+  - 可恢复：positive 响应的个数超过 Ack Quorum 
+    - 不可恢复： negative 响应的个数超过**Quorum Coverage** `QC = (WQ - AQ) + 1` 
     - 如果所有响应都已收到，但以上两个阈值都未达到，则无法判断是否已提交；这时会重复执行恢复过程，直至明确状态。
   
   > 1. 可否完全不等待 bookie 响应？
   >
-  > NO，否则会导致 ledger truncation：Last Entry Id 设置得过低，导致已提交的 entry 无法被读取。
+  > NO，否则会导致 ledger truncation：Last Entry Id 设置得过低，导致已提交的 entry 无法被读取、数据丢失！
 >
   > 2. AQ = 1 带来的问题
   >
@@ -2179,7 +2201,21 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
+**对于 BookKeeper 开发者，要避免发生 entry 丢失：**
 
+- 对之前确认过的 entry，后续的所有响应都不能是 NoSuchEntry 或 NoSuchLedger。否则会导致 Ledger Recovery 过程中的 Ledger 截断（LastEntryId 被设置到 NoSuchEntry 的前一个 entry，导致后续的 entry都丢失）
+
+- 恢复一个宕机的 bookie，如果id不变，但磁盘空了；默认会拒绝加入，但可以通过 CLI 删除 zk cookie 强制加入。这可能导致 Ledger 截断。 
+
+  > **推荐用 decommission 删除宕机的 bookie**，再 bring back the bookie with empty disks and add it back to the cluster.
+  >
+  > 安全的做法是，先迁移数据，再下线 bookie。
+  >
+  > https://bookkeeper.apache.org/docs/admin/decomission
+
+- 索引文件损坏后，手工重建索引前应该保证 bk 离线后出入只读模式；否则新添加的 entry 不会加入 index。
+
+- 
 
 
 
