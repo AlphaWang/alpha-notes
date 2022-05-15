@@ -326,7 +326,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 - ack 的影响：
     - 单条确认时，未确认的消息在超时后会重新投递；若要保序，则必须按顺序 ack；
     - 累积确认时，在超时后会重新投递一批消息；
-  
+
   
 
 
@@ -799,8 +799,6 @@ Broker 是 Bookie 的客户端。
 
 
 
-
-
 **Broker 端消费流程**
 
 - handlwFlow：收到消费者的请求
@@ -997,6 +995,10 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 - **数据清理的单位是 Ledger！**
 
   - Ledger (Segment) 标记成可以删除后，是被一个定时后台线程清理；所以有延时。
+  
+    > GC 的处理方式为依次读取 entry log 文件中每一个 entry，判断 entry 是否过期。如果已经过期，则直接丢弃，否则将其写入新 entry log 文件中，并更新 entry 在 RocksDB 中的索引信息。
+    >
+    > 配置 `minorCompaction` 和 `majorCompaction`
   - Ledger 标记成可删除后，并不表明对应 Entry Log 可以被删除，因为 Entry Log 可能还包含其他 Ledger 数据。
   - Retention 到期后也不一定马上删除，还需要看 TTL + 有无 ack.
 
@@ -1045,8 +1047,14 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
   - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
     - 支持 split bundle （线上建议关闭）
     - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
-  - 如何判定负载高？
-    - For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
+
+- **Shedder 策略：**如何判定负载高？
+
+  - For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
+    - 默认阈值比较难达到，容易导致大部分流量集中在几个 broker；
+    - 阈值调整标准难以确定，受其他因素影响较大，特别是这个节点上部署有其他服务的情况下；
+    - broker 重启后，长时间没有流量均衡到该 broker 上，因为其他 broker 节点均没有达到 bundle unload 阈值。
+  - **ThresholdShedder**：基于均值的负载均衡策略，并支持 CPU、Memory、Direct Memory、BindWith In、BindWith Out 权重配置
 
 
 
@@ -1538,6 +1546,19 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 > - Apache BookKeeper Internals — Part 2 — Writes 
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-2-writes-359ffc17c497
 
+
+
+> BIGO:
+>
+> - 1.将 entry 放入 Netty 线程处理队列中，等待 Netty 线程进行处
+> - 2.Netty 线程会依次从队列中获取每一个 entry，根据该 entry 的 ledgerId 进行取模，选择写入的目标磁盘（ledger 盘）。取模算法为：ledgerId % numberOfDirs，其中 numberOfDirs 表示 bookie 进程配置的 ledger 目录的个数。
+> - 3.选择目标磁盘对象后，将索引写入 cache 和 rocksDB 进行持久化存储，将 payload 写入 memtable（这是一个内存双缓冲），等待排序和回刷。
+> - 4.当 memtable 的一个缓冲存满之后，会触发 flush，将 payload flush 到 PageCache 中，再由 PageCache 回刷到 disk 中。
+>
+> ![image-20220515004756607](../img/pulsar/bk-bigo-write-flow.png)
+
+
+
 ![image-20211231232945352](../img/pulsar/bookkeeper-write-overview.png)
 
 **前提**
@@ -1670,6 +1691,16 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 > - Apache BookKeeper Internals — Part 3 — Reads 
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-3-reads-31637b118bf
+
+> BIGO:
+>
+> - 1.从 ZooKeeper 中获取 entry 所在 ledger 的 metadata。metadata 存储该 ledger 副本所在的 bookie 节点地址，如：Ensembles: [bookie1, bookie2]。
+> - 2.向其中一个 bookie 发送 entry 读取请求（为了叙述方便，此处省略客户端执行的一系列容错、熔断策略）。
+> - 3.bookie1 收到 read entry 请求后，根据 ledgerId 进行 hash，选择对应的 readerThread，并将请求放入该 readerThread 的请求处理队列
+> - 4.readerThread 依次从请求队列中取出请求，根据 ledgerId 取模，选择该 ledger 所在的磁盘。
+> - 5.选择目标磁盘对象后，首先检查 memtable、readAheadCache 中是否已经缓存目标 entry。如果有，则直接返回。否则，读取 rocksDB 索引，进而读取磁盘上的目标数据，并将读取到的数据加载到 readAheadCache 中。
+>
+> ![image-20220515004638490](../img/pulsar/bk-bigo-read-flow.png)
 
 读请求由 DbLedgerStorage 处理，一般会从缓存读取。
 
@@ -1919,15 +1950,15 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - 定义：
   
     - ”*a given bookie is fenced*“ is satisfied by at least one bookie from every possible Ack Quorum within the "*current ensemble*". 
-  
+    
       > AQ 中至少有一个 bookie 已被 fence。
-  
+    
     - There exists no Ack Quorum of bookies that do not satisfy ”*a given bookie is fenced*“ within the "*current ensemble*". 
-  
+    
       > 当前 Ensemble 中不存在一个 AQ 未被 fence。 
+
   
-  
-  
+
 - **Quorum Coverage (QC)** = `(WQ - AQ) + 1`
 
   - 用于恢复过程：
@@ -2014,9 +2045,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
   >
   > - 存储 entry 时没有冗余；
   > - 导致 recovery 过程卡住：必须等待所有 bookie 返回
+
   
-  
-  
+
   ![image-20220102184102357](../img/pulsar/bookkeeper-recovery-readwrite.png)
 
 
@@ -2082,6 +2113,8 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 ## || 高性能
 
 - Tailing Read：读取 Broker Cache
+
+  > 写入时，只有当有 durable cursor，并且 cursor lag < managedLedgerCursorBackloggedThreshold 时才会写入 Broker cache。
 - Catch-up Read：读取 BK write cache，没有则读取 read cache，最后才会读取 Entry Log
 - Produce：写入 Journal 盘，推荐 SSD
 
@@ -2784,6 +2817,10 @@ Pulsar Manager
 
 
 
+**问题排查**
+
+
+
 
 
 ## || 监控
@@ -2824,10 +2861,36 @@ http://localhost:7750/bkvm/
 ```
 
 - Bookie 列表：Usage / 可用空间
-
 - Ledger 列表：大小、age、replication、Ensemble、WQ、AQ
 
-  
+
+
+
+**Broker 指标**
+
+- jvm heap/gc
+- bytes in per broker
+- message in per broker
+- loadbalance
+- broker 端 Cache 命中率
+- bookie client quarantine ratio
+- bookie client request queue
+
+**BookKeeper 指标**
+
+- bookie request queue size
+- bookie request queue wait time
+- add entry 99th latency
+- read entry 99th latency
+- journal create log latency
+- ledger write cache flush latency
+- entry read throttle
+
+**ZooKeeper 指标**
+
+- local/global ZooKeeper read/write request latency
+
+
 
 
 
@@ -2844,6 +2907,8 @@ http://localhost:7750/bkvm/
 > - BIGO 调优实战 https://mp.weixin.qq.com/s/mJViU-elhBwHMDiius2b8g
 
 
+
+**生产者调优**
 
 - **Batched Message** 
 
@@ -2874,84 +2939,113 @@ http://localhost:7750/bkvm/
 
 - **Message Compression**
 
+
+
+**存储配置**
+
 - **BK 消息持久化配置**
 
   - 增加 E > QW / QA，条带化写入；一个topic使用更多的 bookie
   - 减少 QA，忽略最慢的 bookie；
 
-- **消息写入优化**
+- Broker 负载均衡：ThresholdShedder
 
-  - Broker configurations
-    
-  ```
-    0. 增加 bk flush 间隔（memtable定期flush到 Entry log的间隔）：`dbStorage_writeCacheMaxSizeMb / flushInterval`
-    1. managedLedgerDefaultEnsembleSize
-    2. managedLedgerDefaultWriteQuorum
-    3. managedLedgerDefaultAckQuorum
-    4. managedLedgerNumWorkerThreads
-    5. numIOThreads
-    6. Dorg.apache.bookkeeper.conf.readsystemproperties=true -DnumIOThreads=8
-  ```
+- Bookie 负载均衡
+
+  > Bookie client 每分钟会统计各 bookie 写入的失败率（包括写超时等各类异常）。默认情况下，当失败率超过 5 次/分钟时，这台 bookie 将会被关入小黑屋 30 分钟，避免持续向出现异常的 bookie 写入数据，从而保证 message 写入成功率。
+  >
+  > 问题：所有 bookie client 会同时把某台 bookie 关入小黑屋 30 分钟，等到 30 分钟之后又同时加入可写入列表中。这就导致了这台 bookie 的负载周期性上涨和下降。--> BookKeeper PR-2327 
+
+- Broker 限流，否则可能 broker direct memory OOM --> PR-6178
+
+
+
+
+
+
+
+**消息写入优化**
+
+- Broker configurations
   
-  - Bookie configurations
-
-    ```
-    0. Journal 目录和 Entry 目录存储到不同磁盘，利用多个磁盘的 IO 并行性；
-    1. Journal Directories: 指定多个 Journal 目录，否则bk使用单线程处理每个journal目录；
-    2. Ledger Directories
-    3. Journal sync data // 禁用同步刷盘 `journalSyncData=false`，entry 写入page cache后即返回。
-    4. Journal group commit // 启用组提交机制：`journalAdaptiveGroupWrites=true`
-    5. Write cache
-    6. Flush interval
-    7. Add worker threads and max pending add requests
-    8. Journal pagecache flush interval
-    ```
-    
-    
-
-- **消息读取优化**
-
-  - Consumer receiver queue 增大
-
-  - Key_Shared 时，dispatcher 可能瓶颈
-
-    > 计算hash、group by hash%slots。
-    >
-    > 一批读得越多性能越好。
-
-  - Bookie configurations
-
-    ```
-    
-    ```
-  1. dbStorage_rocksDB_blockCacheSize
-    2. dbStorage_readAheadCacheMaxSizeMb
-  3. dbStorage_readAheadCacheBatchSize
-    4. Read worker threads
-  ```
+  >   0. 增加 bk flush 间隔（memtable定期flush到 Entry log的间隔）：`dbStorage_writeCacheMaxSizeMb / flushInterval`
+  >   1. managedLedgerDefaultEnsembleSize
+  >   2. managedLedgerDefaultWriteQuorum
+  >   3. managedLedgerDefaultAckQuorum
+  >   4. managedLedgerNumWorkerThreads
+  >   5. numIOThreads
+  >   6. Dorg.apache.bookkeeper.conf.readsystemproperties=true -DnumIOThreads=8
   
-  - Broker congifurations 
+  - 关闭 auto bundle split `loadBalancerAutoBundleSplitEnabled`
+
+- Bookie configurations
+
+  > 0. Journal 目录和 Entry 目录存储到不同磁盘，利用多个磁盘的 IO 并行性；
+  > 1. Journal Directories: 指定多个 Journal 目录，否则bk使用单线程处理每个journal目录；
+  > 2. Ledger Directories
+  > 3. Journal sync data // 禁用同步刷盘 `journalSyncData=false`，entry 写入page cache后即返回。
+  > 4. Journal group commit // 启用组提交机制：`journalAdaptiveGroupWrites=true`
+  > 5. Write cache
+  > 6. Flush interval
+  > 7. Add worker threads and max pending add requests
+  > 8. Journal pagecache flush interval
   
-  ```
-  1. Managed ledger cache
-    2. Dispatcher max read batch size
-    3. Bookkeeper sticky reads
-    ```
-    
-    
-    
-    - `managedLedgerNewEntriesCheckDelayInMillis`：broker间隔多久检查一次是否有新entry要push给消费者。
-    
-  - 优化追尾读：设置缓存大小、缓存逐出策略
   
-  - 优化追赶度：
+
+**消息读取优化**
+
+- Consumer receiver queue 增大
+
+- Key_Shared 时，dispatcher 可能瓶颈
+
+  > 计算hash、group by hash%slots。
+  >
+  > 一批读得越多性能越好。
+
+- Bookie configurations
+
+  > 1. dbStorage_rocksDB_blockCacheSize
+  > 2. dbStorage_readAheadCacheMaxSizeMb
+  > 3. dbStorage_readAheadCacheBatchSize
+  > 4. Read worker threads
   
+  - 
+- Broker congifurations 
+
+  > 1. Managed ledger cache
+  > 2. Dispatcher max read batch size
+  > 3. Bookkeeper sticky reads
+  > 3. `managedLedgerNewEntriesCheckDelayInMillis`：broker间隔多久检查一次是否有新entry要push给消费者。
+
+  - **优化追尾读**：设置缓存大小、缓存逐出策略
+
+    > managedLedgerCacheSizeMB
+
+  - **优化追赶读**：
+
+    - 每次向 bk 读取的batchSize调大`dispatcherMaxReadBatchSize`
     - bk 使用单线程读取同一个 Ledger，可设置 worker 线程池 `numReadWorkerThreads` `maxPendingReadRequestsPerThread`
     - 设置 RocksDB 块缓存 `dbStorage_rockDB_blockCacheSize`
     - 设置 Entry 预读缓存：`dbStorage_readAheadCacheMaxSizeMb / BatchSize`
-    ```
 
 
+
+**部署调优**
+
+- Bookie Journal/Ledger 目录放在独立磁盘上
+
+- 当 Journal/Ledger 目录的磁盘为 HDD 时，ZooKeeper dataDir/dataLogDir 不要和 Journal/Ledger 目录放在同一块磁盘上
+
+- 内存分配策略
+
+  > - OS: 1 ~ 2 GB
+  >
+  > - JVM: 1/2
+  >
+  > - - heap: 1/3
+  >   - direct memory: 2/3
+  >
+  > - PageCache: 1/2  --> 为何要考虑 pagecache?
 
 
 
