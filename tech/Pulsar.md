@@ -292,22 +292,28 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
 
   - 实现：
 
-    - 生产者每条消息会设置一个元数据 `sequenceId`，topic owner broker遇到比之前小的ID则可过滤掉。
-    - 生产者重连后，会从Broker拿到当前topic最后的`sequenceId`，继续累加。
-    - Broker还会定期将sequenceId快照存储到 BK，防止Broker和客户端同时宕机。
+    - 生产者每条消息会设置一个元数据 `sequenceId`，topic owner broker 遇到比之前小的ID则可过滤掉。
+  
+    - 生产者重连后，会从 Broker 拿到当前 topic 最后的`sequenceId`，继续累加。
+
+    - Broker 还会定期将 sequenceId 快照存储到 BK，防止Broker和客户端同时宕机。
+
+      > 快照总有延迟，那么 Broker 重启后上次快照之后的消息还是可能重复。
+      >
+      > 解决：新Broker 会从 Ledger 读取最近的 N 条 entry 并写入内存。
 
   - 配置：`brokerDeduplicationEnabled=true`
-
+  
     > https://pulsar.apache.org/docs/en/cookbooks-deduplication/ 
-    
+  
   - 可用于 effectively-once  语义
 
     > https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html 
     
   - **消息重复的场景**
-
+  
     - Broker Down
-
+  
       > 1. 生产 N 条消息，并成功写入 BK Ensemble；但在 ack 之前 Broker 宕机。
       > 2. 新 Broker 触发 Ledger Recovery，恢复之前的消息；
       > 3. 而客户端重连到新 Broker，又重新发送这 N 条消息；
@@ -2040,7 +2046,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
   > 1. 可否完全不等待 bookie 响应？
   >
   > NO，否则会导致 ledger truncation：Last Entry Id 设置得过低，导致已提交的 entry 无法被读取、数据丢失！
->
+  >
   > 2. AQ = 1 带来的问题
   >
   > - 存储 entry 时没有冗余；
@@ -2202,19 +2208,40 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
   bookkeeper shell ledgermetadata -l LEDGER_ID 
   ```
 
-  
+- **Bookie 与 ZK 断联**
+
+  - 应该毫无影响，因为 BK 在读写过程中不依赖于 ZK。
+
+    > BK 需要使用 ZK 的地方：注册元数据、GC、Auto Recovery 
+
+  - 但测试发现有数据重复。
+
+    > Q: 为什么数据重复？
+
+    
 
 
 
 **Broker 高可用**
 
-- 当 Broker 节点宕机 / 或者与zk断联自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
+- **Broker 宕机**
 
-  > - https://pulsar.apache.org/docs/administration-load-balance/ 
-  >
-  > - Q: 花费多少时间？
+  - 当 Broker 宕机 / 或者与 ZK 断联并自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
 
-- 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
+    > - https://pulsar.apache.org/docs/administration-load-balance/ 
+    >
+    > - Q: 花费多少时间？
+
+  - 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
+
+  - Broker 宕机，producer 会出现连接问题并重连；这期间的 in-flight 消息会 neg ack。
+    --> Q: 会丢吗？
+
+- **Broker 与 ZK 断联**
+
+  - 原 Broker 还会继续接受写入、直到发现断联并重启自己。此时可能会有消息重复。
+  - --> Q: 为什么重复？
+  - A：Ensemble 写入成功、Broker 在 ack 之前发现与 zk 断联并重启；之后 客户端重连、重新发送上一次的消息。即这一批消息被 Broker1 写入 Ledger1，之后又被 Broker2 写入 Ledger2.
 
 
 
