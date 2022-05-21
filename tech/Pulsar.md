@@ -1545,7 +1545,13 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 ![image-20211231232219900](../img/pulsar/bookkeeper-read-write-components.png)
 
+线程模型概览
 
+- Read Threadpool：正常读取不会与其他线程交互；
+- Long Poll Threadpool：被 write thread 通知写入事件；
+- Write path 则涉及多个线程。
+
+![image-20220521100714544](../img/pulsar/bookkeeper-read-write-thread-model.png)
 
 ### 写入
 
@@ -1594,10 +1600,10 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 - **Journal**
 
-  - 作用：事务日志文件。**在修改 ledger 之前，先记录事务日志**。
+  - 作用：**WAL**。在修改 ledger 之前，先记录事务日志。
 
     - 所有写操作，先**顺序写入**追加到 Journal，**不管来自哪个 Ledger**。
-    - 写满后，打开一个新的 Journal、继续追加。 默认保存5个备份 file，老的被清理。
+    - 写满后，打开一个新的 Journal、继续追加。 默认保存 5 个备份 file，老的被清理。
 
   - 特点：
 
@@ -1607,15 +1613,22 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
   - 配置：
 
-    - `JournalDirectories`: 每个目录对应一个 Thread，给多个Ledger开多个directory可提高写入SSD的吞吐。
+    - `journalDirectories`: **每个目录对应一个 Thread**，给多个Ledger开多个directory可提高写入SSD的吞吐。
 
-    ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
+      > Journal / Ledger 都可以通过设置多个目录，提高并行度！
+    >
+      > - A separate **Journal instance** is created for each configured journal directory. Each journal instance has its own internal **threading model** for writing to disk and calling the write request callbacks for sending the write responses.
+      >   ![image-20220521103629430](../img/pulsar/bk-journal-directories.png)
+      > - 而每个 **Ledger Directory** 会对应一个`SingleDirectoryDbLedgerStorage`，有自己独立的 Write Cache、Read Cache。
+      >   ![image-20220521103553929](../img/pulsar/bk-ledger-directories.png)
 
-    
+  ![image-20220326234533697](../img/pulsar/bk-arch-comp-journal.png)
+
+  
 
 - **Write Cache**
 
-  - JVM 写缓存，写入 Journal 之后将Entry放入缓存，并**按 Ledger 进行排序**（基于 Skiplist），方便读取。
+  - JVM 写缓存，写入 Journal 之后将 Entry 放入缓存，并**按 Ledger 进行排序**（基于 Skiplist），方便读取。
 
     > 目前改成了先写 Write Cache，同时写 Journal。--> 因为有 LAC，保证不会读到脏数据。
 
@@ -1658,28 +1671,50 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 
 
-**写入流程 & 线程**
+**写入线程模型**
+
+![image-20220521104127025](../img/pulsar/bk-write-thread-model.png)
 
 ![image-20211231231801134](../img/pulsar/bookkeeper-write.png)
 
 - **Netty 线程**
-  - 处理所有 TCP 连接、分发到 write threadpool
+  - 处理所有 TCP 连接、分发到 Write Threadpool
+  - 请求中包含要写入的 entry，以及返回response的回调。
 - **Write ThreadPool**
   - 先写入 DbLedgerStorage 中的 `write cache`；成功之后再写入 Journal `内存队列`。
   - 默认线程数 = 1
-- **1. DbLedgerStorage**
-  - 实际上有两个 `write cache`，一个接受写入、一个准备flush，两者互切。
-  - **Sync Thread**：定时 checkpoint 刷盘
-  - **DbStorage Thread**：Write thread 写入 cache 时发现已满，则向 DbStorage Thread 提交刷盘操作。
-    - 此时如果 swapped out cache 已经刷盘成功，则直接切换，write thread写入新的cache；
-    - 否则 write thread 等待一段时间并拒绝写入请求。
-- **2. Journal**
-  - **Journal 线程**：循环读取内存队列，写入磁盘：group commit，而非每个entry都进行一次write系统调用
-  - 定期向 `Force Write Queue` 中添加强制写入请求、触发 fsync；
+
+- **DbLedgerStorage**：异步写入
+
+  - 每个 Ledger 目录实际上有两个 `Write Cache`，一个接受写入、一个准备flush，两者互切。
+
+    > `Write Cache` 默认大小是 直接内存的 25%，可配置共享的 `dbStorage_writeCacheMaxSizeMb`。
+    >
+    > 举例：`dbStorage_writeCacheMaxSizeMb = 1GB`，如果有两个 Ledger 目录，则每个目录 500M 总缓存，每个 Write Cache 250M.
+
+  - 两个刷盘时机：
+
+    - **Sync Thread**：定时 checkpoint 刷盘
+
+      - Flush ledger storage
+      - 清理旧 Journal 文件
+      - 写入 log mark 文件：表示哪些位置已被安全地持久化。
+
+    - **DbStorage Thread**：Write thread 写入 cache 时发现已满，则向 DbStorage Thread 提交刷盘操作。
+
+      - 此时如果 swapped out cache 已经刷盘成功，则直接切换，write thread 写入新的 cache；
+
+      - 否则 write thread 等待一段时间 `dbStorage_maxThrottleTimeMs = 10s`并拒绝写入请求。
+
+        > 此种情况会导致 Write Threadpool 阻塞10s，造成反压。 
+
+- **Journal**：同步写入
+
+  - **Journal 线程**：循环读取其内存队列、写入磁盘。group commit，而非每个 entry 都进行一次 write 系统调用；*定期*向 `Force Write Queue` 中添加强制写入请求、触发 fsync；
   - **Froce Write Thread** ：循环从 froce write queue 中拿取强制写入请求（其中包含entry callback）、在 journal 文件上执行 fsync；
   - **Journal Callback Thread** ：fsync 成功后，执行 callback，给客户端返回 reesponse
 
-
+  
 
 **常见瓶颈**
 
@@ -1701,7 +1736,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 > BIGO:
 >
 > - 1.从 ZooKeeper 中获取 entry 所在 ledger 的 metadata。metadata 存储该 ledger 副本所在的 bookie 节点地址，如：Ensembles: [bookie1, bookie2]。
-> - 2.向其中一个 bookie 发送 entry 读取请求（为了叙述方便，此处省略客户端执行的一系列容错、熔断策略）。
+> - 2.向其中一个 bookie 发送 entry 读取请求。
 > - 3.bookie1 收到 read entry 请求后，根据 ledgerId 进行 hash，选择对应的 readerThread，并将请求放入该 readerThread 的请求处理队列
 > - 4.readerThread 依次从请求队列中取出请求，根据 ledgerId 取模，选择该 ledger 所在的磁盘。
 > - 5.选择目标磁盘对象后，首先检查 memtable、readAheadCache 中是否已经缓存目标 entry。如果有，则直接返回。否则，读取 rocksDB 索引，进而读取磁盘上的目标数据，并将读取到的数据加载到 readAheadCache 中。
@@ -1716,14 +1751,14 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 读取流程：
 
-- 根据 LedgerId + EntryId，先找到 ensemble BK 列表、计算出存储在哪些 BK。
-
+- 根据 LedgerId + EntryId，先找到 ensemble 列表、计算出存储在哪些 Bookie。
+- Bookie 收到 read entry 请求后，根据 ledgerId 进行哈希，选择对应的 readerThread
 - 读取 `Write Cache`
-
 - 读取 `Read Cache` 
-
-  > Read Cache 必须足够大，否则预读的entry会被频繁 evict
-
+  - **Read Cache Thrashing**：Read Cache 必须足够大，否则预读的 entry 会被频繁 evict；另外如果客户端过多，可能导致 cache 互相覆盖。
+  - 推荐：**Sticky reads**，一个client始终从一个 bookie读取，否则 read cache 效率低。
+  - 推荐：**增大Read Cache**，默认总大小是 直接内存的 25%。
+  - 推荐：**减小Read Cache Batch Size**. 减少被多客户端互相覆盖的几率。
 - 读取磁盘：
 
   - 找到位置信息：Entry Location Index (RocksDB)
@@ -1732,7 +1767,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 
 
-## || 背压
+### 背压
 
 > - Apache BookKeeper Internals — Part 4 — Back Pressure
 >   https://medium.com/splunk-maas/apache-bookkeeper-internals-part-4-back-pressure-7847bd6d1257
@@ -1741,15 +1776,25 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 背压：通过一系列限制，防止内存占用过多。
 
-> Backpressure 指的是在 Buffer 有上限的系统中，Buffer 溢出的现象；**它的应对措施只有一个：丢弃新事件。**
+- Back-pressure exerted by a destination will travel back up the chain until it reaches the source.  
+
+- Journal / DbLedgerStorage --> ThreadPool --> Netty --> Client
+
+> Backpressure 指的是在 Buffer 有上限的系统中，Buffer 溢出的现象；在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，这种现象就叫做 Backpressure 出现。
 >
-> - 在数据流从上游生产者向下游消费者传输的过程中，上游生产速度大于下游消费速度，导致下游的 Buffer 溢出，这种现象就叫做 Backpressure 出现。
+> Backpressure 和 Buffer 是一对相生共存的概念，只有设置了 Buffer，才有 Backpressure 出现；只要设置了 Buffer，一定存在出现 Backpressure 的风险。
 >
-> - Backpressure 和 Buffer 是一对相生共存的概念，只有设置了 Buffer，才有 Backpressure 出现；只要设置了 Buffer，一定存在出现 Backpressure 的风险。
+> - 危害：导致系统本身负载过大。
+> - 应对措施：丢弃新事件。== 限流？
 
 
 
 ![image-20220101153046466](../img/pulsar/bookkeeper-backpressure.png)
+
+手段：
+
+- 使用有界数据结构：journal queue size、write cache 大小
+- 或者程序处理：netty pending tasks
 
 
 
@@ -1763,6 +1808,7 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 **2. In-Progress 读取总数**
 
 - 配置 `maxReadsInProgressLimit`
+- 超过后，Netty 线程会被阻塞
 
 
 
@@ -1775,25 +1821,26 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
 **4. 每个 read thread 待处理的读取请求数**
 
-- 同上
+- 同上，`maxPendingReadRequestsPerThread`
 
 
 
 **5. Journal 队列**
 
+- Journal 从一个 blocking queue 获取任务；
 - 队列满之后，写入线程被阻塞
 
 
 
-**6. DbLedgerStorage 拒绝的写入**
+**6. DbLedgerStorage 拒绝写入**
 
-- write cache 已满，同时 swapped out write cache还未完成刷盘；则等待一段时间`dbStorage_maxThrottleTimeMs`，写入请求被拒绝
+- Write cache 已满，同时 swapped out write cache还未完成刷盘；则等待一段时间`dbStorage_maxThrottleTimeMs=10s`，写入请求被拒绝
 
 
 
 **7. Netty 不可写通道**
 
-- 配置 `waitTimeoutOnResponseBackpressureMs`
+- 配置 backoff 机制，防止返回client response 占用过多内存  `waitTimeoutOnResponseBackpressureMs`
 - 当 channel 缓冲区满导致通道不可写入，写入响应会延迟等待 `waitTimeoutOnResponseBackpressureMs`，超时后不会发送响应、而只发出错误 metric；
 - 而如果不配置，则仍然发送响应，这可能到时 OOM （如果通过channel发送的字节过大）
 
@@ -1820,8 +1867,8 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 Pulsar topic 由一系列数据分片（Segment）串联组成，每个 Segment 被称为 `Ledger (日志段)`、并保存在 BookKeeper 服务器 `bookie` 上。
 
 - 每个 ledger 保存在多个 bookie 上，这组 bookie 被称为 ensemble；
-
 - Ledger - Bookie 对应关系存储在 zk；
+- Ledger 是可插拔的，Pulsar 使用的是 DbLedgerStorage。
 
 
 
@@ -3008,8 +3055,8 @@ http://localhost:7750/bkvm/
 - Bookie configurations
 
   > 0. Journal 目录和 Entry 目录存储到不同磁盘，利用多个磁盘的 IO 并行性；
-  > 1. Journal Directories: 指定多个 Journal 目录，否则bk使用单线程处理每个journal目录；
-  > 2. Ledger Directories
+  > 1. **Journal Directories **： `journalDirectories` 指定多个 Journal 目录，否则 bk 使用单线程处理每个journal目录；
+  > 2. **Ledger Directories**： `ledgerDirectories` 每个 ledger 目录有独立的 Write Cache、Read Cache；
   > 3. Journal sync data // 禁用同步刷盘 `journalSyncData=false`，entry 写入page cache后即返回。
   > 4. Journal group commit // 启用组提交机制：`journalAdaptiveGroupWrites=true`
   > 5. Write cache
