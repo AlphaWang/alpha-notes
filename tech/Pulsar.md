@@ -2939,7 +2939,6 @@ http://localhost:7750/bkvm/
 
 
 
-
 **Broker 指标**
 
 - jvm heap/gc
@@ -2950,15 +2949,138 @@ http://localhost:7750/bkvm/
 - bookie client quarantine ratio
 - bookie client request queue
 
+
+
 **BookKeeper 指标**
 
-- bookie request queue size
-- bookie request queue wait time
-- add entry 99th latency
-- read entry 99th latency
-- journal create log latency
-- ledger write cache flush latency
-- entry read throttle
+> https://medium.com/splunk-maas/apache-bookkeeper-observability-part-1-introducing-the-metrics-7f0acb32d0dc
+
+- **Request rate & latency**
+
+  - `bookkeeper_server_ADD_ENTRY_REQUEST`：写入请求时延 ，可通过 label = success 过滤
+  - `bookkeeper_server_ADD_ENTRY_REQUEST_count`：写入请求量  
+  - `bookkeeper_server_READ_ENTRY_REQUEST`：读取请求时延  
+  - `bookkeeper_server_READ_ENTRY_REQUEST_count`：读取请求量  
+
+- **Threadpool 队列**
+
+  > 队列变长意味着 bookie 处理能力跟不上；
+  >
+  > 实际队列长度要么为空，要么满，跳跃很大。如果汇报周期过长，指标可能会被拉平。
+
+  - `bookkeeper_server_BookieWriteThreadPool_queue_0`：写入线程队列大小；可配置 maxPendingAddRequestsPerThread
+  - `bookkeeper_server_BookieWriteThreadPool_task_queued`：写入请求在队列中等待时间 
+  - `bookkeeper_server_BookieWriteThreadPool_task_execution`：写入请求执行时间 
+  - `bookkeeper_server_BookieReadThreadPool_queue_0`读取线程队列大小；可配置 maxPendingReadRequestsPerThread
+  - `bookkeeper_server_BookieReadThreadPool_task_queued`：读取请求在队列中等待时间 
+  - `bookkeeper_server_BookieReadThreadPool_task_execution`：读取请求执行时间 
+
+- **Operation rate & latency** 
+
+  > 如果比 Request rate 小，则可能有请求被拒绝、可能 threadpool 队列已满。
+
+  - `bookkeeper_server_ADD_ENTRY`：写入 entry 时延 
+  - `bookkeeper_server_ADD_ENTRY_count`：写入 entry 计数 
+  - `bookkeeper_server_READ_ENTRY_count`：读取 entry 计数 
+  - `bookie_WRITE_BYTES`：写入字节数 
+  - `bookie_READ_BYTES`：读取字节数 
+
+- 写入 USE 指标 (Utilization, Saturation, Errors)
+
+  - todo
+
+- **Journal 写入指标** 
+  ![image-20220521200114168](../img/pulsar/metrics-journal.png)
+
+  1. `bookie_journal_JOURNAL_QUEUE_SIZE`：Journal queue size，如果 flush / fsync 耗时，则 Journal 队列会增长。  
+  2. `bookie_journal_JOURNAL_QUEUE_LATENCY` ：Journal queue 队列排队时间
+  3. `bookie_journal_JOURNAL_ADD_ENTRY` ：Journal entry 写入延时
+  4. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_WAIT`：Journal 因为达到 max wait time 导致的 flush 次数
+  5. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_OUTSTANDING_BYTES`：Journal 因为达到最大字节数或最大entry个数导致的 flush 次数
+  6. `bookie_journal_JOURNAL_NUM_FLUSH_EMPTY_QUEUE`：Journal 因为清空队列导致的 flush 次数
+  7. `bookie_journal_JOURNAL_FLUSH_LATENCY`：Journal 线程进行 flush 的时延
+  8. `bookie_journal_JOURNAL_WRITE_BYTES`：Journal 写入字节数
+  9. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_BYTES`：Flush 字节数？？
+  10. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_ENTRIES`：Flush 的entry个数
+  11. `bookie_journal_JOURNAL_FORCE_WRITE_QUEUE_SIZE`： force write 队列大小，过大的话会block caller
+  12. `bookie_journal_JOURNAL_FORCE_WRITE_ENQUEUE`：forece write 请求在队列中的等待时间，增大时会导致 force write 队列变大；
+  13. `bookie_journal_JOURNAL_SYNC`：Force Write Thread 执行 fsync 的时延。
+  14. `bookie_journal_JOURNAL_CB_QUEUE_SIZE`：Journal 正在处理的 entry 个数
+
+  > Journal 调优
+  >
+  > - Journal / Ledger 磁盘分离
+  > - 增加 bookie 分担压力
+  > - 配置多个 Journal directory
+  > - 使用 SSD
+
+  
+
+- **DbLedgerStorage 写入指标**
+  ![image-20220521202959479](../img/pulsar/metrics-ledger.png)
+
+  1. `bookie_throttled_write_requests`：写入线程发现 write cache 已满时则 throttle （同时触发 DbLedgerStorage flush）
+  2. `bookie_rejected_write_requests`：写入线程等待 write cache 清空超时、被拒绝写入
+  3. `bookie_write_cache_size`：两个 write cache 总大小，注意不要太接近最大值 （25% 直接内存）
+  4. `bookie_write_cache_count`：两个 write cache 中的entry 个数；不常用。
+  5. `bookie_flush`：DbLedgerStorage flush 的时延，包括 rocksDB + entry log 写入时延
+  6. `bookie_flush_size`：每次 Flush 的字节数，不常用。
+
+  > Ledger 写入调优
+  >
+  > - Journal / Ledger 磁盘分离
+  > - 增加 bookie 分担压力
+  > - 配置多个 Ledger directory
+  > - 增加 write thread 数目
+
+- **DbLedgerStorage 读取指标**
+  ![image-20220521205052850](../img/pulsar/metrics-ledger-read.png)
+
+  1. `bookie_read_cache_hits_count` `bookie_read_cache_misses_count`：Cache 命中率以及时延。包含 read cache + write cache
+
+  2. `bookie_read_cache_size`：Read cache 大小。没有意义，因为是循环buffer；
+
+  3. `bookie_read_cache_count`：Read cache entry 个数。没有意义。
+
+  4. `bookie_readahead_batch_count`：每次 read-ahead 操作读取的 entry 个数；方便排查 *cache thashing*. 
+
+     > 定位 cache thashing：读取磁盘的数目，对比read operation的个数
+     >
+     > `(sum(rate(bookie_readahead_batch_count_count[1m])) by (pod) + sum(rate(bookie_readahead_batch_count_sum[1m])) by (pod))` / `sum(rate(bookie_read_entry_count[1m])) by (pod)`
+     >
+     > ? https://medium.com/splunk-maas/apache-bookkeeper-observability-part-5-read-metrics-in-detail-2f53acac3f7e yin
+
+  5. `bookie_readahead_batch_size`：每次 read-ahead 操作读取的字节大小；
+
+  6. `bookie_read_entry`：entry 读取整体性能。
+
+  > Ledger 读取调优
+  >
+  > - Journal / Ledger 磁盘分离
+  > - 增加 bookie 分担压力
+  > - 配置多个 Ledger directory 分担负载
+  > - 使用 SSD
+  >
+  > Cache Thrashing 调优
+  >
+  > - 增大 bookie 的直接内存、间接提高 read cache 容量
+  > - 增大  `dbStorage_readAheadCacheMaxSizeMb`
+  > - 减少 read-ahead batch size `dbStorage_readAheadCacheBatchSize`，以便 read cahce 能容纳更多消费者的请求。
+
+  
+
+- prom 查询示例
+  - 读取请求量 `sum(irate(bookkeeper_server_READ_ENTRY_REQUEST_count[1m])) by (pod)`
+  - 读取请求失败量 `sum(irate(bookkeeper_server_READ_ENTRY_REQUEST_count{success=”false”}[1m])) by (pod)`
+  - 写入请求失败量 `sum(irate(bookkeeper_server_ADD_ENTRY_REQUEST_count{success=”false”}[1m])) by (pod)`
+  - Read operation rate:  `sum(irate(bookkeeper_server_READ_ENTRY_count[1m])) by (pod)`
+  - Read throughput:  `sum(irate(bookie_READ_BYTES[1m])) by (pod)`
+  - Journal flush latency `sum(bookie_journal_JOURNAL_FLUSH_LATENCY{success=”true”, quantile=”1.0"}) by (pod)`
+  - Journal force write latency: `sum(bookie_journal_JOURNAL_SYNC_LATENCY{success=”true”, quantile=”1.0"}) by (pod)`
+  - Journal queue length:  `sum(bookie_journal_JOURNAL_QUEUE_SIZE) by (pod)`
+  - Journal force write queue lengh: `sum(bookie_journal_JOURNAL_FORCE_WRITE_QUEUE_SIZE) by (pod)`
+
+
 
 **ZooKeeper 指标**
 
