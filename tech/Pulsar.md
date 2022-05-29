@@ -891,7 +891,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 ![image-20220424231100770](../img/pulsar/pulsar-managedLedger.png)
 
-
+ 
 
 
 
@@ -899,8 +899,8 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 - 每个非分区 Topic 都对应一个或多个 Ledger；只有一个Ledger处于OPEN状态。
 - 每个 Ledger 有一个或多个 Fragment；
-- 每个 Fragment 包含多个 Entry，每个 Entry 对应一条或一批消息。
-  ![image-20220424231714789](../img/pulsar/pulsar-topic-ledger.png)
+  - 每个 Fragment 包含多个 Entry，每个 Entry 对应一条或一批消息。
+    ![image-20220424231714789](../img/pulsar/pulsar-topic-ledger.png)
 
 
 
@@ -1029,11 +1029,11 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 - **Topic 归属的计算步骤** `ServerCnx#handleLookup`
 
-  - 根据 **namespace** 找到其所有的 Bundle；
+  - 根据 namespace 找到其所有的 Bundle；
 
   - 计算 Topic 所属的 Bundle：一致性哈希算法；每个 **namespace** 有一个哈希环。
 
-  - 确定 Bundle 归属哪个 Broker，先找到**裁判Broker**，其通过 `loadManager` 查找负载最低的 Broker 并把 Bundle 分配给他
+  - 确定 Bundle 归属哪个 Broker，先找到**裁判Broker**，其通过 `loadManager` 查找负载最低的 Broker 并把 Bundle 分配给他。
 
     > 如何选择裁判 Broker: 选主
     >
@@ -1048,10 +1048,10 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 - **Topic 的迁移**
 
   - 作用：
-    - 当 Broker 扩容后，将现有的topic迁移到新 Broker上。
-    - 或者当 Broker负载不均衡时，把高负载broker上的部分bundle转移到低负载broker。
+    - 当 Broker 扩容后，将现有的 topic 迁移到新 Broker上。
+    - 或者当 Broker 负载不均衡时，把高负载 broker 上的部分 bundle unload 并转移到低负载 broker。- **Shed load** `loadBalancerSheddingEnabled`.
   - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
-    - 支持 split bundle （线上建议关闭）
+    - 支持 split bundle （线上建议关闭 `loadBalancerAutoBundleSplitEnabled`）
     - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
 
 - **Shedder 策略：**如何判定负载高？
@@ -2255,6 +2255,40 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
   bookkeeper shell ledgermetadata -l LEDGER_ID 
   ```
 
+  
+
+
+
+**Broker 高可用**
+
+- 当 Broker 宕机 / 或者与 ZK 断联并自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
+
+  > - https://pulsar.apache.org/docs/administration-load-balance/ 
+  >
+  > - Q: 花费多少时间？
+
+- 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
+
+- Broker 宕机，producer 会出现连接问题并重连；这期间的 in-flight 消息会 neg ack。
+
+  > --> Q: 会丢吗？
+  >
+  > A：客户端会重发，可能导致重复
+
+
+
+**ZooKeeper 断联问题**
+
+- **Broker 与 ZK 断联**
+
+  - 原 Broker 还会继续接受写入、直到发现断联并重启自己。此时可能会有消息重复。
+
+    >  --> Q: 为什么重复？
+    >
+    > A：Ensemble 写入成功、Broker 在 ack 之前发现与 zk 断联并重启；之后 客户端重连、重新发送上一次的消息。即这一批消息被 Broker1 写入 Ledger1，之后又被 Broker2 写入 Ledger2.
+
+  - 如果 ZK 完全不可用，则写入失败？！
+
 - **Bookie 与 ZK 断联**
 
   - 应该毫无影响，因为 BK 在读写过程中不依赖于 ZK。
@@ -2264,31 +2298,6 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
   - 但测试发现有数据重复。
 
     > Q: 为什么数据重复？
-
-    
-
-
-
-**Broker 高可用**
-
-- **Broker 宕机**
-
-  - 当 Broker 宕机 / 或者与 ZK 断联并自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
-
-    > - https://pulsar.apache.org/docs/administration-load-balance/ 
-    >
-    > - Q: 花费多少时间？
-
-  - 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
-
-  - Broker 宕机，producer 会出现连接问题并重连；这期间的 in-flight 消息会 neg ack。
-    --> Q: 会丢吗？
-
-- **Broker 与 ZK 断联**
-
-  - 原 Broker 还会继续接受写入、直到发现断联并重启自己。此时可能会有消息重复。
-  - --> Q: 为什么重复？
-  - A：Ensemble 写入成功、Broker 在 ack 之前发现与 zk 断联并重启；之后 客户端重连、重新发送上一次的消息。即这一批消息被 Broker1 写入 Ledger1，之后又被 Broker2 写入 Ledger2.
 
 
 
