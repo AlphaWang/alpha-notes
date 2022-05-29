@@ -1273,6 +1273,7 @@ TODO
 **角色**
 
 - Leader
+  
   - 读写
 - Follower
   - 读
@@ -1313,6 +1314,7 @@ TODO
       > 必须将每一个事务Proposal按照其ZXID的先后顺序来进行排序与处理。
 
   - **2. ACK**
+    
     - 等待半数以上的Follower回复ACK投票
   - **3. Commit**
     - Leader发送 Commit给“所有”Follower通知其对事务进行提交
@@ -1761,6 +1763,7 @@ TODO
     > 即写入一条 Commit Record，很轻量。而回滚则比较重量。
   - 如果此时有参与者提交失败
   - 重试：此阶段不回滚！
+    
     - 提交是很轻量的，重试问题不大
   
 - DoAbort
@@ -1821,8 +1824,7 @@ TODO
 
 - Practical Microservices Architectural Pattern
   - Atomikos
-
-https://github.com/Apress/practical-microservices-architectural-patterns/tree/master/Christudas_Ch13_Source/ch13/ch13-01/XA-TX-Distributed
+  - https://github.com/Apress/practical-microservices-architectural-patterns/tree/master/Christudas_Ch13_Source/ch13/ch13-01/XA-TX-Distributed
 
 
 
@@ -3016,18 +3018,18 @@ public String right2(@RequestParam("id") int id) {
 
 ## || 可靠性 Reliability
 
-**定义: Fault-Tolerant / Resilient**
+**定义：Fault-Tolerant / Resilient**
 
 - 即便发生了某些错误（`fault`），系统仍可以继续工作（`fault-tolerant`，`resilient`）。
 
 目的
 
-- prevent `faults` from causing `failure`
+- prevent `faults` from causing `failure`，避免故障引发系统失效。
+- 要在不可靠组件的基础上构建可靠的系统。
 
 手段
 
-- 硬件冗余 --> 单机可靠性
-- 软件容错
+- 硬件冗余 --> 单机可靠性 --> 软件容错 达到整体弹性
 
 
 
@@ -3044,7 +3046,6 @@ public String right2(@RequestParam("id") int id) {
   - 轮询
 
   - 带权重的轮询
-
 
 
 
@@ -3440,7 +3441,7 @@ public String right2(@RequestParam("id") int id) {
 
 **定义: 负载 - 性能**
 
-- 描述负载增高时系统的处理能力。
+- 可扩展性描述负载增高时系统的处理能力。
   Scalability is the term we use to describe a system's ability to cope with increased load.
 
   > 如何描述负载：`Load Parameters`
