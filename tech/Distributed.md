@@ -2619,6 +2619,32 @@ Richardson 成熟度模型
 
 ## || 分布式数据库
 
+**数据模型**
+
+- 关系模型
+
+  - 缺点：Object-Relational mismacth：需要 ORM 做转换
+
+- 层次模型
+
+  - 缺点：不支持多对多 --> 可泛化为 “网络模型”
+
+- 文档模型
+
+  - 类似层次模型，用 nested 记录存储一对多关系
+
+  - 类似关系模型，用外键 document reference 存储多对多关系
+
+  - 优点：Locality，查询整体数据时性能更好
+
+  - 优点：Schema 灵活。
+
+    > 并非 schemaless，而是 schema-on-read，需要应用程序在读取数据时处理 schema.
+    >
+    > Schema-on-read 类似`动态运行时类型检查`、schema-on-write 类似`静态编译期类型检查`。
+
+  - 缺点：不支持多对一，需要应用代码 join、不能直接引用 nested item
+
 **方案演进**
 
 **1. 客户端组件 + 单体数据库**
@@ -3457,6 +3483,7 @@ public String right2(@RequestParam("id") int id) {
   >
   > - Throughput
   > - Response Time : Percentile
+  >   - Response time vs. Latency: 响应时间是客户端观测到的；Latency 是请求等待处理的时间。
 
 
 
@@ -3501,20 +3528,19 @@ public String right2(@RequestParam("id") int id) {
 手段
 
 - **可运维性 Opeability**
-
-  - 可观测运行时行为和内部状态；
-
-  - 自动化、与标准工具集成；
-
-  - 避免依赖单个机器；
-
-  - 良好的文档和操作模式；
-
-  - 良好的默认行为；
-
-  - 自我修复；同时给管理员手动控制；
-
-  - 行为可预测；Minimizing suprises；
+- 可观测运行时行为和内部状态；
+  
+- 自动化、与标准工具集成；
+  
+- 避免依赖单个机器；
+  
+- 良好的文档和操作模式；
+  
+- 良好的默认行为；
+  
+- Self-healing 自我修复；同时给管理员手动控制；
+  
+- 行为可预测；Exhibiting predictable behavior, minimizing suprises；
 
 
 
@@ -3528,7 +3554,7 @@ public String right2(@RequestParam("id") int id) {
 
 - **可演化性 Evolvability / Extensibility**
 
-  - Agile
+  - Agile：适应变化
 
   - 架构重构
 
