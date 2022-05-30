@@ -432,33 +432,34 @@ Learning and Development Team Manager
 
 Sequence: 
 
-- at first, first, firstly
-- then, next, eventually, subsequently
-- at the same time, simultaneously,
-- above all, my next point is
+- `at first`, `first`, `firstly`
+- `then`, `next`, `eventually`, `subsequently`
+- `at the same time`, `simultaneously`,
+- `above all`, `my next point is`
 
 Addition:
 
-- and, in addition, not only...but also
-- moreover, besides, further, furthermore, what is more, likewise
+- `and`, `in addition`, `not only...but also`
+- `moreover`, `besides`, `further`, `furthermore`, `what is more`, `likewise`
 
 Contrast/Comparison:
 
-- but, yet, however, conversely, in contrast, on the contrary, on the other hand, in comparison, whereas
+- `but`, `yet`, `however`, `conversely`, `in contrast`, `on the contrary`, `on the other hand`, `in comparison`, `whereas`
 
 Consequence:
 
-- consequently, accordingly
-- hence, as a result, due to, owing to
+- `consequently`, `accordingly`
+- `hence`, `as a result`, `due to`, `owing to`
+- `thus`
 
 Exception:
 
-- aside from, barring, excluding, other than, outside of
+- `aside from`, `barring`, `excluding`, `other than`, `outside of`
 
 Emphasis:
 
-- Again, indeed, please note
-- to emphasize, to repeat, truly, with this in mind
+- `Again`, `indeed`, `please note`
+- `to emphasize`, `to repeat`, `truly`, `with this in mind`
 
 
 
