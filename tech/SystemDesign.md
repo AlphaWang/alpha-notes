@@ -484,6 +484,30 @@ Sharding KEY：
 
 
 
+## || Rebalancer: Partition assigner
+
+需求
+
+Think Kafka consumer groups. With a Kafka consumer group you have P partitions and C consumers and you want to balance consumption of the partitions over the consumers such that:
+
+- Allocation of partitions to consumers is balanced. With 7 partitions and 3 consumers, you’ll end up with 3, 2, 2.
+- No partition can be allocated to more than one consumer
+- No partition can remain unallocated
+
+Also, when a new partition is added, or a consumer is added or removed or fails, then the partitions need to be rebalanced again.
+
+
+
+https://jack-vanlightly.com/blog/2019/1/25/building-a-simple-distributed-system-the-what 
+
+
+
+
+
+
+
+
+
 # | Chat 
 
 https://systeminterview.com/design-a-chat-system.php  
