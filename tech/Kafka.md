@@ -1188,8 +1188,9 @@ try {
   > 紧接着A也恢复过来成为Follower并向B发送一个OffsetForLeaderEpochRequest请求，这个时候A的LeaderEpoch为0。B根据0这个LeaderEpoch查询到对应的offset为1并返回给A，那么A就要对日志进行截断，删除m2这条消息。然后用FetchRequest从B中同步m3这条消息。这样就解决了数据不一致的问题。
 
 - **原因**
-  - Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
-
+  
+- Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
+  
 - **解决： Leader Epoch**
   - 取值
 
@@ -1948,6 +1949,35 @@ Q: 消费者重启后，如何获取 offset？
 
 
 
+复制协议
+
+> https://www.slideshare.net/ConfluentInc/hardening-kafka-replication
+
+- Leader 接受写入
+
+- Follower 从 leader fetch 数据
+
+  - 如果 Follower 落后太多，会被 leader 踢出ISR；同时 high watermark剔除该 follower的影响
+  - 默认只有 ISR 中的副本才有可能变成 Leader
+
+- Leader Election：由 Controller 负责
+
+  - 当 Leader A 挂了，zk 感知，Controller watch，并从 ISR 中选出新 Leader B；zk 中有 ISR 信息
+
+  - 新 Leader B产生后，即可接受写入；
+
+  - 新 Leader B产生后，其他 Follower C 会 fetch 数据。此时可能会对其他 Follower 中的未提交数据进行截断；
+
+    > Q：能否Follower C local HWM 之后的数据直接截断？
+    >
+    > A：如果Follower C fetch data 之前新Leader B 又挂了，Follower C 成为Leader，会有数据丢失！
+    >
+    > Follower C会询问新Leader 上一个 epoch 的`end offset`，如果大于 local HWM，则无需截断。
+
+  - 
+
+
+
 网络分区
 
 - **场景1：Follower 与 Leader 断联，但与 zk 正常**
@@ -2242,6 +2272,7 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
   
 
 - **限制**
+  
   - 性能更差
 
 
@@ -4253,6 +4284,7 @@ producer = new KafkaProduer<String, String>(p);
   > kafka.log:type=Log,name=LogStartOff,topic=XX,partition=0
 
 - ISRShrink / ISRExpand
+  
   - 副本频繁进出ISR --> 什么原因？
 
 
