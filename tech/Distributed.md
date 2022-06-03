@@ -2621,15 +2621,15 @@ Richardson 成熟度模型
 
 **数据模型**
 
-- 关系模型
+- **关系数据模型**
 
   - 缺点：Object-Relational mismacth：需要 ORM 做转换
 
-- 层次模型
+- **层次数据模型**
 
   - 缺点：不支持多对多 --> 可泛化为 “网络模型”
 
-- 文档模型
+- **文档数据模型**
 
   - 类似层次模型，用 nested 记录存储一对多关系
 
@@ -2644,6 +2644,18 @@ Richardson 成熟度模型
     > Schema-on-read 类似`动态运行时类型检查`、schema-on-write 类似`静态编译期类型检查`。
 
   - 缺点：不支持多对一，需要应用代码 join、不能直接引用 nested item
+
+- **图状数据模型**
+
+  - 顶点 `Vertex` + 边 `Edge`
+  - Property Graph 属性图模型
+    - 相当于 2 个关系表，分别表示顶点和边
+    - 查询语言：`Cypher`
+  - Triple Store 三元存储模型
+
+
+
+
 
 **方案演进**
 
