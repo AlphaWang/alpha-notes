@@ -500,7 +500,40 @@ Also, when a new partition is added, or a consumer is added or removed or fails,
 
 https://jack-vanlightly.com/blog/2019/1/25/building-a-simple-distributed-system-the-what 
 
+- 基于ZK分配任务
 
+  ```
+  /rebalanser
+     /{group name} (permanent)
+        /clients (permanent)
+           /c_000000000 (ephemeral sequential)
+           /c_000000001 
+           /c_000000002
+           /c_n
+        /resources (permanent - data: stores allocations map)
+           /{res id 1} (permanent)
+           /{res id 2}
+           /{res id n}
+        /barriers (permanent)
+           /{res id 1} (ephemeral)
+           /{res id 2}
+           /{res id n}
+        /term (permanent)
+  ```
+
+  
+
+- `/clients/`客户端启动时注册 zk：
+
+  - 临时节点、递增节点
+
+  - 如果 ID 最小，则成为 Leader；并监听 **term** 节点；
+
+    > 避免脑裂多个节点成为 Leader，当 term 节点版本更新，上一个 Leader 监听到并退位(abdicate)
+
+  - 如果 ID 不是最小，则成为 Follower；并监听**前一个 ID** 节点；
+
+  - 
 
 
 
