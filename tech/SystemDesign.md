@@ -500,6 +500,10 @@ Also, when a new partition is added, or a consumer is added or removed or fails,
 
 https://jack-vanlightly.com/blog/2019/1/25/building-a-simple-distributed-system-the-what 
 
+https://github.com/Rebalanser/wiki/wiki
+
+https://github.com/Rebalanser/rebalanser-net-zookeeper 
+
 - 基于ZK分配任务
 
   ```
@@ -523,17 +527,40 @@ https://jack-vanlightly.com/blog/2019/1/25/building-a-simple-distributed-system-
 
   
 
-- `/clients/`客户端启动时注册 zk：
+- `/chroot/group/clients/`客户端启动时注册 zk：
 
   - 临时节点、递增节点
 
-  - 如果 ID 最小，则成为 Leader；并监听 **term** 节点；
+  - 如果 ID 最小，则成为 Leader；
 
-    > 避免脑裂多个节点成为 Leader，当 term 节点版本更新，上一个 Leader 监听到并退位(abdicate)
+    - 监听`/chroot/group/term` **term** 节点；
 
-  - 如果 ID 不是最小，则成为 Follower；并监听**前一个 ID** 节点；
+      > 避免脑裂多个节点成为 Leader，当 term 节点版本更新，上一个 Leader 监听到并退位(abdicate)
 
-  - 
+    - 监听 `/chroot/group/resources` child 节点
+
+    - 监听 `/chroot/group/clients` child 节点
+
+  - 如果 ID 不是最小，则成为 Follower；
+
+    - 监听**前一个 ID** 节点；
+    - 监听 `/chroot/group/resources` 节点，监听资源分配。
+
+- `/chroot/group/resources/` 用于注册资源
+
+  - 新增资源后，被 Leader client 监听到；触发 rebalance；
+  - Leader 将分配结果写入 `/resources/` znode；被 follower 监听到、执行相应动作。
+
+- 重平衡流程
+
+  - Leader 监听到  `/chroot/group/resources`  或  `/chroot/group/clients`  子节点有变化、触发重平衡；
+  - Leader 获取到当前 resource、client 列表；分配任务保存为 resource-client KV、写入 `/chroot/group/resources` 节点值；
+  - Follower 监听到 `/chroot/group/resources` 节点值变化、即资源分配有变；
+    - 调用 `OnStop`
+    - getData() 获取资源分配映射
+    - 遍历当前占有的资源，删除 resource barrier znode
+    - 遍历新的已分配资源，watch `/resources/resource-x/barrier`
+    - 调用 `OnStart`
 
 
 
