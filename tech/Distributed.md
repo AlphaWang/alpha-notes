@@ -2496,7 +2496,6 @@ Richardson 成熟度模型
 
 
 
-
 ### 数据模型 & 查询语言
 
 > 从应用程序开发者角度，理解如何把数据交给db、如何从中查询数据
@@ -2510,24 +2509,77 @@ Richardson 成熟度模型
 
 
 
-数据模型演进
+数据模型
 
+- **层次模型** 
+  
+  - 缺点：不支持多对多 --> 可泛化为 “网络模型”
+  
 - **关系模型 Relational Model**
-  - Relations (tables), Tuples (rows)
-  - 网络模型 - 未能竞争过
-  - 层次模型 - 未能竞争过，无法多对多
-  - 网络模型 - 层次模型的泛化（multi-parents）
+  
+  - Relations (tables), Tuples (rows) 
+  
+  - 缺点：Object-Relational mismacth：需要 ORM 做转换
+  
+    
+  
 - **文档模型 Document Model**
   - NoSQL
-  - Schema Flexibility?
-    - **Schema-on-write** 写时模式，类似编译器类型检查 - 静态检查；
-    - **Schema-on-read** 读时模式，隐式数据结构，类似运行时类型检查 - 动态检查；适合于集合元素结构不一样时。
+  - 对比
+    - 类似层次模型，用 nested 记录存储一对多关系
+    - 类似关系模型，用外键 document reference 存储多对多关系
+  - 优点：**Locality**，局部性，查询整体数据时性能更好
+    - 频繁访问整个文档时有用。避免join。
+  - 优点：Schema 灵活。
+    - **Schema-on-write** 写时模式，类似`静态编译期类型检查`；
+    - **Schema-on-read** 读时模式，隐式数据结构，类似`动态运行时类型检查`；适合于集合元素结构不一样时。
+  - 缺点：不支持多对一，需要应用代码 join、不能直接引用 nested item
 
+  
 
+- **图模型 Graph-Like Data Model**
 
-查询的**数据局部性 Data Locality**
+  - 顶点 `Vertex` + 边 `Edge`
 
-- 频繁访问整个文档时有用。避免join。
+  - **Property Graph** 属性图模型
+
+    - 相当于 2 个关系表，分别表示顶点和边
+
+    - 查询语言：`Cypher`，声明式，而非命令式。
+
+      ```cypher
+      //data
+      CREATE 
+        (USA:Location   {name:'United States', type:'country'}),
+        (Idaho:Location {name:'Idaho', type:'state'}),
+        (Lucy:Person    {name:'Lucy'})                  
+        (Idaho) -[:WITHIN] -> (USA),
+        (Lucy)  -[:BORN_IN] -> (Idaho)
+      //query
+      MATCH   
+        (person) -[:BORN-IN]-> () -[WITHIN*0..]-> (us:Location {name:'United States'})      
+      RETURN
+        person.name
+      ```
+
+    - 查询语言还可用 Graph Queries in SQL
+
+  - **Triple Store** 三元存储模型
+
+    - 格式 `(subject, predicate, object)`，
+
+      -  `(Jim, likes, bananas)` *subject* = Vertex, *predicate* = Edge, *object* = Vertex
+      - `(Jim, age, 33)` *subject* = Vertex, *predicate* + *object* = property
+
+    - 查询语言：`SPARQL`
+
+      ```SPARQL
+      PREFIX : <urn:example:>
+      SELECT ?personName WHERE {
+        ?person :name ?personName,
+        ?person :bornIn / :within* / :name "United States".
+      }
+      ```
 
 
 
@@ -2539,56 +2591,6 @@ Richardson 成熟度模型
   - 例如 JS
   - 优点：精确、易用、隐藏实现细节！
   - 优点：并行执行会更快 - 因为只定义了模式而不定义算法 --> 依赖底层优化？
-
-
-
-**图模型 Graph-Like Data Model**
-
-- **Property Graph 属性图**
-
-  > Vertieces + Edges
-
-  - Vertices：顶点，包含：
-
-    - id
-    - outgoing edges
-    - incoming edges
-    - Properties (k-v)
-
-  - Edges：边；
-
-    - id
-    - tail vertex: 边的起点
-    - head vertex: 边的终点
-    - label
-    - Properties (k-v)
-
-    |          | 顶点 | 边       |
-    | -------- | ---- | -------- |
-    | 社交网络 | 人   | 关系     |
-    | 网页     | 页面 | 引用关系 |
-    | 铁路网络 | 车站 | 路线     |
-
-  - 查询
-
-    - Cypher Query Language
-    - Graph Queries in SQL
-
-- **Triple-Stores & SPARQL 三元存储**
-
-  > (Subject, predicate, object)
-  >
-  > ```
-  > _:lucy  a       :Person
-  > _:lucy  :name   "Lucy"
-  > _:lucy  :bornIn _:ca
-  > _:ca    a       :Location
-  > _:ca    :within _:usa
-  > ```
-
-- **Datalog**
-
-
 
 
 
@@ -2618,42 +2620,6 @@ Richardson 成熟度模型
 
 
 ## || 分布式数据库
-
-**数据模型**
-
-- **关系数据模型**
-
-  - 缺点：Object-Relational mismacth：需要 ORM 做转换
-
-- **层次数据模型**
-
-  - 缺点：不支持多对多 --> 可泛化为 “网络模型”
-
-- **文档数据模型**
-
-  - 类似层次模型，用 nested 记录存储一对多关系
-
-  - 类似关系模型，用外键 document reference 存储多对多关系
-
-  - 优点：Locality，查询整体数据时性能更好
-
-  - 优点：Schema 灵活。
-
-    > 并非 schemaless，而是 schema-on-read，需要应用程序在读取数据时处理 schema.
-    >
-    > Schema-on-read 类似`动态运行时类型检查`、schema-on-write 类似`静态编译期类型检查`。
-
-  - 缺点：不支持多对一，需要应用代码 join、不能直接引用 nested item
-
-- **图状数据模型**
-
-  - 顶点 `Vertex` + 边 `Edge`
-  - Property Graph 属性图模型
-    - 相当于 2 个关系表，分别表示顶点和边
-    - 查询语言：`Cypher`
-  - Triple Store 三元存储模型
-
-
 
 
 
