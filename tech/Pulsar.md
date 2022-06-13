@@ -2884,7 +2884,7 @@ Pulsar Manager
 启动入口
 
 - bin/pulsar broker --> `PulsarBrokerStarter`
-- Bin/pulsar standalone
+- bin/pulsar standalone
 
 服务端请求入口
 
