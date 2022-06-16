@@ -2584,27 +2584,50 @@ Richardson 成熟度模型
 
 **Log-structured storage engine**
 
-- Append-only，而不更新已有记录
+- 特性：Append-only，而不更新已有记录
   - 顺序写，性能好
-  - 易于并发、易于恢复 - 因为单线程写？
-- 分段存储：避免磁盘用尽
-  - 定期 Compact + Merge（避免文件碎片化）
-- 索引：哈希索引
+  - 易于并发 - 因为单线程写？
+  - 崩溃恢复更简单：
+- 索引：哈希索引（key - offset）
   - 否则必须全日志扫描
-  - 缺点：必须能全部放入内存、范围查询效率低。
+  - 缺点：
+    - Key 不能太多，必须能全部放入内存；
+    - 范围查询效率低。
+- 问题：如何避免磁盘用尽
+  - 分段存储；
+  - 定期在后台对 frozen segments 进行 Compact + Merge
+  - 每个 segment 有自己的索引
+
+
+
+**SSTable**：Sorted String Table
+
+> 实际应用：LevelDB，RocksDB
+>
+> 源自 **LSM-Tree**：Log-Structured Merged-Tree
+
+- 定义：类似 log segments，但在每个 segment 内按 key 排序
+- 优点：
+  - Merge segments 更简单高效。
+  - 不必索引所有 key。
+  - 进而可以将记录组合成块，并对块压缩
+- 实现：
+  - 写入：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；
+  - 读取：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
+  - 后台 merge + compact 
+- 问题：宕机后 memtable 数据丢失
+  - 解决方案：先写入一个 append-only log，该log只用于崩溃恢复。
+- 问题：查找不存在的 key 很慢
+  - 解决方案：布隆过滤器
+
+
 
 **Page-oriented storage engine**
 
-
-
-**索引**
-
-- **哈希索引** + Log Segments
-  - 适用于 key 较少的场景，feasible to keep all keys in memory.
-  - 缺点
-    - Key 过多时不适用；
-    - 不支持范围查询；
+- 定义：将数据库分解成固定大小的 块或页；页可以互相引用、形成 tree --> **B-Tree**
 - 
+
+
 
 
 
