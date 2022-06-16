@@ -2820,7 +2820,7 @@ Pulsar Manager
 
 
 
-**Docker compose 部署**
+**Docker Compose 部署 (推荐)**
 
 > https://github.com/apache/pulsar/tree/master/docker-compose/kitchen-sink 
 
@@ -2858,8 +2858,13 @@ Pulsar Manager
 
 
 
+**Bare Metal 部署**
 
-测试
+> https://pulsar.apache.org/docs/next/deploy-bare-metal
+
+
+
+**测试**
 
 ```shell
 ./pulsar-admin clusters list
@@ -2881,6 +2886,15 @@ Pulsar Manager
 
 ## || 开发调试
 
+编译
+
+```sh
+mvn install -DskipTests
+mvn install -Pcore-modules,-main -DskipTests # 忽略IO/Function
+```
+
+
+
 启动入口
 
 - bin/pulsar broker --> `PulsarBrokerStarter`
@@ -2889,21 +2903,25 @@ Pulsar Manager
 服务端请求入口
 
 - `ServerCnx`
+- 基于 Netty
+  ![image-20220614213351686](../img/pulsar/pulsar-dev-servercnx.png)
 
 客户端请求入口
 
 - `ClientCnx`
+- 基于 Netty
+  ![image-20220614213553953](../img/pulsar/pulsar-dev-clientcnx.png)
 
 控制面入口
 
-- 服务端：pulsar-broker `xx.admin.v2.Brokers`
+- 服务端：pulsar-broker，包名 `xx.admin.v2.Brokers`
 - 客户端：pulsar-client-admin
 
 
 
 **问题排查**
 
-
+- PR UT 失败，重试： `/pulsarbot run-failure-checks`
 
 
 
