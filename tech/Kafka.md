@@ -1043,8 +1043,15 @@ try {
   > Kafka在启动的时候会开启两个任务，
   >
   > - 一个任务用来定期地检查是否需要缩减或者扩大 ISR 集合，这个周期是`replica.lag.time.max.ms`的一半，默认 5000ms。当检测到 ISR 集合中有失效副本时，就会收缩 ISR 集合，当检查到有 Follower 的 HighWatermark 追赶上 Leader 时，就会扩充 ISR。
-  >
   > - 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。然后 Controller 通过 watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
+  >
+  > 
+  >
+  > ISR 的作用：
+  >
+  > - The ISR exists to **balance data safety with latency**. It allows for a majority of replicas to fail and still provide availability while minimizing the impact of dead or slow replicas in terms of latency.
+
+  
 
 - **OSR**: Out-of-Sync Replicas
 
@@ -1054,6 +1061,8 @@ try {
   - Replicates across slower/higher-latency links without falling in and out of sync (also known as ISR thrashing)
   - Complements *Follower Fetching*
   - **可用于 DR** - 复制到另一个 DC 中的 Observer
+
+
 
 
 
@@ -1974,7 +1983,15 @@ Q: 消费者重启后，如何获取 offset？
     >
     > Follower C会询问新Leader 上一个 epoch 的`end offset`，如果大于 local HWM，则无需截断。
 
-  - 
+
+
+
+**节点分配不均：**
+
+- 问题：节点宕机后，分区 Leader 转移到其他节点；而节点恢复后，并不会自动迁移回来？
+- 解决：
+  - 方案一：主题配置 `auto.leader.rebalance.enable=true`，允许 controller 将leadership 重分配到 prefered replica leader 节点。
+  - 方案二：手工执行 `kafka-prefered-replica-election.sh`
 
 
 
