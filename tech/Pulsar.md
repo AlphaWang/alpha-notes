@@ -749,6 +749,79 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 
 
+**Topic Compaction** 
+
+> - https://pulsar.apache.org/docs/concepts-topic-compaction/
+> - https://pulsar.apache.org/docs/cookbooks-compaction/
+
+
+
+- **创建原理**
+
+  - 第一轮遍历：找出每个key的最近一次位置，并新建一个 BK Ledger；
+
+  - 第二轮遍历：如果当前key的位置满足最近一次位置，则将数据写入新 Ledger，否则跳过；如果 payload 为空，则认为是 tombstone、删除 key；
+
+  - 二轮遍历后，关闭新 Ledger，并写入主题元数据：leddger id、最后一个 message id （compaction horizon）
+
+    > compaction 之后相当于用了另一个主题，不影响原来主题的正常消费。
+
+- **读取原理**
+
+  - 初始创建完成后，每当 compaction horizon 变动、或者 compacted backlog 变动都会通知 Topic Owner Broker；
+  - 客户端即会尝试读取主题
+    - 如果 msg ID >= compaction horizon，则正常读取；
+    - 如果 msg ID < compaction horizon，则从开始位置读取； 
+      --> Q: why? 
+
+- 触发
+
+  - 自动触发：当 backlog 达到阈值时自动触发，namespace 级别的配置：
+
+    ```sh
+    $ bin/pulsar-admin namespaces set-compaction-threshold \
+      --threshold 100M my-tenant/my-namespace
+    ```
+
+  - 手工触发：
+
+    ```sh
+    # via REST api
+    $ bin/pulsar-admin topics compact \
+      persistent://my-tenant/my-namespace/my-topic
+      
+    # or communicate with ZK directly  
+    $ bin/pulsar compact-topic \
+      --topic persistent://my-tenant-namespace/my-topic
+    ```
+
+  > Q: 需要运维触发 compaction，并且频率取决于具体用例：If you want a compacted topic to be extremely speedy on read, then you should run compaction fairly frequently.
+
+  
+
+- 客户端
+
+  - 消费端配置 readCompacted(true)
+
+  - 生产端消息必须有key
+
+    ```java
+    Producer<byte[]> compactedTopicProducer = client.newProducer()
+            .topic("some-compacted-topic")
+            .create();
+    
+    Message<byte[]> msg = MessageBuilder.create()
+            .setContent(someByteArray)
+            .setKey("some-key")
+            .build();
+    
+    compactedTopicProducer.send(msg);
+    ```
+
+    
+
+
+
 
 
 ## || 客户端通用能力
