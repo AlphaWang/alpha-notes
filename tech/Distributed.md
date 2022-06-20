@@ -2582,7 +2582,7 @@ Richardson 成熟度模型
 
 
 
-**Log-Structured Storage Engine**
+**Log-Structured Storage**
 
 - 特性：Append-only，而不更新已有记录
   - 顺序写，性能好
@@ -2604,7 +2604,7 @@ Richardson 成熟度模型
 
 > 实际应用：LevelDB，RocksDB
 >
-> 源自 **LSM-Tree**：Log-Structured Merged-Tree
+> 源自 **LSM-Tree**： Log-Structured Merged-Tree
 
 - 定义：类似 log segments，但在每个 segment 内按 key 排序
 - 优点：
@@ -2622,31 +2622,56 @@ Richardson 成熟度模型
 
 
 
-**Page-Oriented Storage Engine**
+**Page-Oriented Storage**
 
 - 基于 **B-Tree**：将数据库分解成固定大小的 块或页；页可以互相引用、形成 tree
-
 - 特性
-
   - 更新：LSM-Tree 更新记录时只会append，而 B-Tree 是修改对应页；
   - **页分裂**：当插入key时发现当前页没有足够的存储空间，则将当前页分裂为多个页。--> 页有空洞
   - **深度可控**：O(log n) 深度
-
 - 可靠性
-
   - 可靠性问题：例如页分裂、并更新父页对两个子页的引用，如果此时发生崩溃，则可能出现孤儿页；
-
   - 解决：**WAL**，必须先写入 WAL、再修改页
 
-    
-
-**对比 LSM-Tree vs. B-Tree**
+- **对比 LSM-Tree vs. B-Tree**
 
 |      | LSM-Tree                                                     | B-Tree                                                       |
 | ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
 | 特点 | 写入更快；                                                   | 读取更快；                                                   |
 | 优点 | 写入吞吐更高：顺序写入 + 更少的写放大；<br />文件更小：compaction； | 易于事务隔离；                                               |
 | 缺点 | Compaction 可能影响常规读写、占用磁盘带宽；<br />难以事务隔离、加锁：同一个key可能存在不同的 segment； | 写入吞吐低（至少两次写入，WAL + Page）；<br />存储浪费：页中有空洞； |
+
+
+
+**OLAP 存储模型**
+
+- OLTP vs. OLAP 
+
+  |          | OLTP         | OLAP                           |
+  | -------- | ------------ | ------------------------------ |
+  | 读取模式 | 查询少量记录 | 在大量记录上聚合、只读取少量列 |
+  | 写入模式 | 随机访问     | 批量导入 ETL                   |
+  | 性能     | 快           | 慢                             |
+
+- **星型模型**
+
+  - 事实表 Fact Table：处于中心；每行表示一个事件
+  - 维度表 Dimension Table：表示与事件相关的人、物、时间等
+
+- **雪花模型**
+
+  - 维度继续拆分为子维度
+
+
+
+**Column-Oriented Storage**
+
+- 目的：解决 OLAP 每次只访问少量列、但查询大量行的问题。
+- 思路：将每一列的数据存储在一起，可认为每一列存储在独立的文件里。
+
+
+
+
 
 
 
