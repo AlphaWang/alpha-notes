@@ -3862,7 +3862,7 @@ producer = new KafkaProduer<String, String>(p);
   > - 必须 > max.message.size；否则会导致大消息无法被消费，consumer被hang住 --> 之后的消息也会无法消费。
   > - 如果设置过大，会导致 consumer处理耗时，影响poll()频率
 
-- **max.poll.record**
+- **max.poll.records**
 
   > 含义：poll() 返回的最大记录个数
   >

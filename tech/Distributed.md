@@ -2280,20 +2280,6 @@ TODO
   - 扩展性
   - 协议体、协议头不定长
 - **序列化：如何表示数据**
-- 序列化协议
-  
-  -  JDK：ObjectOutputStream
-  - JSON：
-        -  额外空间开销大
-    -  没有类型，要通过反射，性能不好
-      -  Hessian
-  -  Protobuf
-        - 预定义 IDL
-  -  kryo
-    - 选型依据
-    - 性能
-      - 空间开销
-    - 通用性、兼容性
 - **通信模型**
 
   - 阻塞IO
@@ -2428,6 +2414,125 @@ Richardson 成熟度模型
 - 例如想要只返回用户姓名，而不是完整用户详情
 - 例如要批量修改一批用户
 - GraphQL
+
+
+
+## || 编码
+
+Aka. 序列化
+
+**编程语言特定的编码**
+
+-  **JDK**：ObjectOutputStream
+   -  语言限定
+   -  安全问题
+   -  兼容性差
+   -  性能差
+
+**文本格式编码**
+
+-  **JSON**
+   -  额外空间开销大
+   -  没有类型，转换数字可能损失精度
+   -  不支持二进制字符串
+   -  要通过反射，性能不好
+
+**二进制编码**
+
+> 一般附带代码生成工具。
+
+- **Thrift**
+
+  - 预定义 IDL
+
+    ```idl
+    struct Person {
+      1: required string       userName,
+      2: optional i64          favoriteNumber,
+      3: optional list<string> interests
+    }
+    ```
+
+  -  编码 & 压缩：有两种，BinaryProtocol， CompactProtocol
+
+     > - Filed type
+     > - Field tag - 数字、对应IDL中的字段
+     > - Field value length
+     > - Filed value
+
+  -  兼容性要求
+
+     > 向前兼容：老代码可以读新记录；
+     >
+     > 向后兼容：新代码可以读老记录；
+
+     -  不可修改字段 tag
+     -  新增的字段，要么是optional，要么有默认值，否则破坏 向后兼容性
+     -  删除的字段，必须是optional，且其 tag 后续不可被重用
+
+- **Protobuf**
+
+  - 预定义 IDL
+
+    ```protobuf
+    message Person {
+      required string user_name = 1;
+      optional int64 favorite_number = 2;
+      repeated string interests = 3;
+    }
+    ```
+
+  - 编码&压缩
+
+    > - Field tag - 数字、对应IDL中的字段
+    > - Field type
+    > - Field value length
+    > - Filed value
+
+- **Avro**
+
+  - 作为 Hadoop 子项目诞生
+
+  - IDL
+
+    ```idl
+    record Person {
+      string userName;
+      union {null, long} favoriteNumber = null #注意可选字段的表示方式
+      array<string> interests;
+    }
+    ```
+
+    
+
+  - 编码&压缩
+
+    > 不保存字段名或字段 tag，靠顺序来识别字段
+    >
+    > - Field value length
+    > - Field value
+
+  -  兼容性：
+
+     -  只可增加有默认值的字段。
+     -  因为不保存字段 tag；解码时，lib 分别解析读模式 writer's schema 和写模式 reader's schema，进行转译。但 lib 如何知道读模式呢？
+        -  如果存储为大文件，可以在文件开头包含写模式；
+        -  如果存储为数据库，可以保存版本号；
+        -  如果发送到网络，可以在建立连接时协商模式版本；
+
+  -  优点：对动态生成的模式更友好
+
+     -  否则如果用 Protobuf, Thrift，需要手工映射字段 tag
+
+- Hessian
+
+- kryo
+
+- 选型依据
+
+  - 性能
+  - 空间开销
+  - 通用性、兼容性
 
 
 
@@ -2846,8 +2951,7 @@ TBD
 
 
 
-
-### 对比
+对比
 
 **vs. CDN缓存**
 
