@@ -2705,11 +2705,11 @@ Aka. 序列化
 
 
 
-**SSTable**：Sorted String Table
+**SSTable：Sorted String Table**
 
 > 实际应用：LevelDB，RocksDB
 >
-> 源自 **LSM-Tree**： Log-Structured Merged-Tree
+> 源自 **LSM-Tree： Log-Structured Merged-Tree**
 
 - 定义：类似 log segments，但在每个 segment 内按 key 排序
 - 优点：
@@ -2736,7 +2736,7 @@ Aka. 序列化
   - **深度可控**：O(log n) 深度
 - 可靠性
   - 可靠性问题：例如页分裂、并更新父页对两个子页的引用，如果此时发生崩溃，则可能出现孤儿页；
-  - 解决：**WAL**，必须先写入 WAL、再修改页
+  - 解决：**WAL**，必须先写入 WAL（redo log）、再修改页
 
 - **对比 LSM-Tree vs. B-Tree**
 
@@ -2780,14 +2780,28 @@ Aka. 序列化
 
 
 
-### 数据复制
+## || Replication
+
+> 数据复制，在多个节点保存相同的数据副本。 
+
+**目的**
+
+- 减小延时：地理最近原则
+- 增加可用性：冗余
+- 增加读吞吐：scale out 
+
+
+
+**复制方式**
 
 - **同步复制**
   - 所有备库均操作成功，才返回成功
-
+- 优点：能保证所有节点数据都是最新的
+  - 缺点：写入性能差
+  
 - **异步复制**
-
-  - 写入主库，则返回成功
+- 写入主库，则返回成功
+  - 缺点：不保证 durable
 - MySQL 默认复制模式，binlog --> relay log
 
 - **半同步复制**
@@ -2797,9 +2811,74 @@ Aka. 序列化
 
 
 
-### 数据分区
+**复制流程**
+
+- 一般 Leader 节点会定期生成快照；
+- Follower 启动时首先同步快照；
+- 然后增量同步。
 
 
+
+**处理节点失效**
+
+- **Follower 失效**：追赶时恢复，Catch-up Recovery
+  - 发生故障重新连接后，从断链时的位置继续复制；
+- **Leader 失效**：节点切换，Failover
+  - 确认主节点失效：心跳 + 超时；
+  - 选出新主：多数节点共识、或由提前选定的 controller node 决定；
+  - 配置系统使新主生效：写入请求、从新主复制；
+- **问题**
+  - Failover 如何处理异步复制的数据不一致？
+    - 原主节点上未复制的数据就此丢弃。
+  - 脑裂
+    - 强制关闭其中一个主节点
+  - 如何设置合适的主节点失效超时？
+    - 太小则会导致频繁的不必要的切换；
+    - 尤其当系统已经处于高负载时，不必要的切换让情况更糟；
+  - 权限：数据一致性、持久性、可用性、延迟。
+
+
+
+**复制日志**
+
+- **基于语句，Statement-based**
+
+  > MySQL 5.1之前版本
+
+  - 将操作语句同步到 Follower；
+  - 问题
+    - 非确定性函数，造成数据值不一致--> now()
+    - 自增字段，造成数据值不一致 --> 可由 Leader 决定好，再将确定值复制到从节点
+    - 有些语句有副作用：调用 trigger、存储过程
+
+- **基于预写日志，Write-ahead Log**
+
+  > Oracle，PostgreSQL
+
+  - 数据引擎通常每个写操作都会记录到 WAL，以便崩溃后能恢复索引：SSTable、LSM Tree、B-Tree；
+  - Leader 可以直接将此 WAL 复制给 Follower；
+  - 问题
+    - 太过底层、与存储引擎绑定；
+    - 兼容性问题：升级时一般先升级 Follower、再无缝切换成新主；但升级Follower后可能导致无法解析 Leader 中的老版本 WAL.
+
+- **基于逻辑日志，Logical Log**
+
+  > MySQL binlog
+
+  - 为了解决 WAL 的问题；又称 Row-based，记录对每一行的增删改。
+
+- **基于 Trigger**
+
+  > Oracle Gloden Gate，Databus for Oracle，Bucardo for Postgress
+  - 在应用层面做复制，更灵活。例如可以决定只复制一部分数据。
+  - 优点：灵活
+  - 缺点：易错、开销大
+
+
+
+## || Partition
+
+> 数据分区，将大块数据拆分成多个较小子集，分别存储到不同节点
 
 
 
