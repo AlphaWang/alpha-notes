@@ -1040,30 +1040,37 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
   - `Retention`：消息**被 ACK 后**还想保留一段时间/或大小。
 
-  - `MessageTTL`：当堆积超过此阈值，即便消息没有被消费，这个 Ledger 也会自动被确认、让Ledger 进入 Retention 状态。
+  - `TTL`：当堆积超过此阈值，即便消息没有被消费，这个 Ledger 也会自动被确认、让Ledger 进入 Retention 状态。
 
     > 本质是自动将  `MarkDelete` 向前移；解决如果没有订阅时，消息的永远堆积问题。 
 
-- **Data Retention**
+- **Retention**
 
-  - 只要有 Cursor 存在，则其之后的数据不会被删除；除非ack后达到 `Retention` 
-  - **ACK过的数据分为两部分**：超过 Retention 的可以被删除，Retention 之内的不可被删除。
+  - Retention 表示当消息被 ack 后，继续在 bk 保留多久。
+  - 只要有 Cursor 存在，则 Cursor 之后的数据不会被删除；除非ack后达到 `Retention` 
+  - **ACK 过的数据分为两部分**：超过 Retention 的可以被删除，Retention 之内的不可被删除。
 
   ![image-20220426224056965](../img/pulsar/pulsar-retention.png)
 
 - **TTL**
 
   - 目的：如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
-  - TTL 到期后，相当于自动 ack
+
+  - TTL 到期后，相当于**自动 ack**
 
     > Q: TTL 是 subscription level 的配置？！
-  - Kafka 相当于 `TTL = Retention`
+    
+  - TTL < Retention：消息生命周期 = TTL + Retention (?)
+
+  - TTL >= Retention：消息生命周期 = TTL
+
+    - Kafka 相当于 `TTL = Retention`
 
   ![image-20220426224548840](../img/pulsar/pulsar-ttl.png)
 
 - 相关监控
 
-  - `Msg Backlog`：尚未被 ack 的消息数量；
+  - `Backlog`：尚未被 ack 的消息数量；表示生产者发送的消息与消费者接收消息之间的差距。
 
   - `Storage Size`：所有未被删除的 Segment 的空间大小；
 
