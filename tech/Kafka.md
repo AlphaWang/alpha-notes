@@ -1902,6 +1902,19 @@ Q: 消费者重启后，如何获取 offset？
 
 
 
+**Compaction**
+
+- 原理
+  - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中待清理的 Segment：
+    - 条件1：topic `cleanup.policy = compact`
+    - 条件2：TopicPartition 状态为空，即没有其他 CleanerThread 在操作；
+    - 条件3：达到 `max.compaction.lag.ms`
+  - 构造 OffsetMap 记录每个 key 最新的 offset 以及对应的消息时间；
+  - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息、存入新 Segment；
+  - 对于已经完成 Compaction 流程的log进行删除，删除LogStartOffset 之前的所有 Segment
+
+
+
 ## || 高性能
 
 **原理**

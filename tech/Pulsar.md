@@ -1094,69 +1094,80 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-## || 主题归属
+## || 主题归属 - bundle
 
 
 
-- **ZK 存储**
+**ZK 存储**
 
-  > 不能直接在 zk 上存储 topic - broker 归属关系：否则数据量太大
+> 不能直接在 zk 上存储 topic - broker 归属关系：否则数据量太大
 
-  - ZK 只保存 Bundle 与 Broker 之间的联系。
-  - Topic 归属哪个 broker 是通过一致性哈希动态计算出来的。
-
-  
-
-- **Topic 归属的计算步骤** `ServerCnx#handleLookup`
-
-  - 根据 namespace 找到其所有的 Bundle；
-
-  - 计算 Topic 所属的 Bundle：一致性哈希算法；每个 **namespace** 有一个哈希环。
-
-  - 确定 Bundle 归属哪个 Broker，先找到**裁判Broker**，其通过 `loadManager` 查找负载最低的 Broker 并把 Bundle 分配给他。
-
-    > 如何选择裁判 Broker: 选主
-    >
-    > - 优先选择 Heartbeat、SLAMonitor 所在的broker；
-    > - 如果 loadManager 使用的是中心化策略，则需要 Leader 裁判；
-    > - 如果 loadManager 使用的是非中心化策略，则当前Broker即可裁判；
-
-  - 客户端请求到归属 Broker，该Broker会尝试在 zk 写入一个节点，如果写入失败则说明 Bundle 被别的 Broker 抢到了。
-
-  
-
-- **Topic 的迁移**
-
-  - 作用：
-    - 当 Broker 扩容后，将现有的 topic 迁移到新 Broker上。
-    - 或者当 Broker 负载不均衡时，把高负载 broker 上的部分 bundle unload 并转移到低负载 broker。- **Shed load** `loadBalancerSheddingEnabled`.
-  - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
-    - 支持 split bundle （线上建议关闭 `loadBalancerAutoBundleSplitEnabled`）
-    - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
-
-- **Shedder 策略：**如何判定负载高？
-
-  - For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
-    - 默认阈值比较难达到，容易导致大部分流量集中在几个 broker；
-    - 阈值调整标准难以确定，受其他因素影响较大，特别是这个节点上部署有其他服务的情况下；
-    - broker 重启后，长时间没有流量均衡到该 broker 上，因为其他 broker 节点均没有达到 bundle unload 阈值。
-  - **ThresholdShedder**：基于均值的负载均衡策略，并支持 CPU、Memory、Direct Memory、BindWith In、BindWith Out 权重配置
+- ZK 只保存 Bundle 与 Broker 之间的联系。
+- Topic 归属哪个 broker 是通过一致性哈希动态计算出来的。
 
 
 
-- **客户端如何找到 Topic Owner**
+**Topic 归属的计算步骤** `ServerCnx#handleLookup`
 
-  - Topic owner == Namespace bundle owner，相关信息记在 zk 中。
-  - 客户端执行 Topic lookup 发送到任意 Broker；Broker 找到 topic 归属哪个 namespace bundle、在从zk 找到bundle对应的 Owner Broker。
+- 根据 namespace 找到其所有的 Bundle；
 
-  > Q：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
+- 计算 Topic 所属的 Bundle：一致性哈希算法；每个 **namespace** 有一个哈希环。
+
+- 确定 Bundle 归属哪个 Broker，先找到**裁判Broker**，其通过 `loadManager` 查找负载最低的 Broker 并把 Bundle 分配给他。
+
+  > 如何选择裁判 Broker: 选主
   >
-  > - 改进：增加 **readonly broker** 的概念，同步 cursor.
-  > - https://github.com/apache/pulsar/wiki/PIP-63%3A-Readonly-Topic-Ownership-Support
+  > - 优先选择 Heartbeat、SLAMonitor 所在的broker；
+  > - 如果 loadManager 使用的是中心化策略，则需要 Leader 裁判；
+  > - 如果 loadManager 使用的是非中心化策略，则当前Broker即可裁判；
+
+- 客户端请求到归属 Broker，该Broker会尝试在 zk 写入一个节点，如果写入失败则说明 Bundle 被别的 Broker 抢到了。
 
 
 
-## || 压缩主题
+**负载均衡：Topic 的迁移**
+
+- 作用：
+  - 当 Broker 扩容后，将现有的 topic 迁移到新 Broker上。
+  - 或者当 Broker 负载不均衡时，把高负载 broker 上的部分 bundle unload 并转移到低负载 broker。- **Shed load** `loadBalancerSheddingEnabled`.
+- Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
+  - 支持 split bundle （线上建议关闭 `loadBalancerAutoBundleSplitEnabled`）
+  - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
+
+**Shedder 策略：**如何判定负载高？
+
+- For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
+  - 默认阈值比较难达到，容易导致大部分流量集中在几个 broker；
+  - 阈值调整标准难以确定，受其他因素影响较大，特别是这个节点上部署有其他服务的情况下；
+  - broker 重启后，长时间没有流量均衡到该 broker 上，因为其他 broker 节点均没有达到 bundle unload 阈值。
+- **ThresholdShedder**：基于均值的负载均衡策略，并支持 CPU、Memory、Direct Memory、BindWith In、BindWith Out 权重配置
+
+
+
+**客户端如何找到 Topic Owner**
+
+- Topic owner == Namespace bundle owner，相关信息记在 zk 中。
+- 客户端执行 Topic lookup 发送到任意 Broker；Broker 找到 topic 归属哪个 namespace bundle、在从zk 找到bundle对应的 Owner Broker。
+
+> Q：如果某个 topic 消费者非常多（fan-out），那么 Owner Broker 压力会非常大。
+>
+> - 改进：增加 **readonly broker** 的概念，同步 cursor.
+> - https://github.com/apache/pulsar/wiki/PIP-63%3A-Readonly-Topic-Ownership-Support
+
+
+
+**bundle 设置实践**
+
+- Broker * 20; [200, 500]
+- 流量大的主题，扩大分区数
+
+
+
+## || 压缩主题 - compact
+
+> https://pulsar.apache.org/zh-CN/docs/next/cookbooks-compaction/
+>
+> https://pulsar.apache.org/zh-CN/docs/next/concepts-topic-compaction/#compaction 
 
 - 作用：相同key的消息，只保存最新的值。
 - 触发
@@ -2234,12 +2245,27 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 ## || 对比 Kafka
 
-- Kafka 生产数据到 Leader，再同步到 follower；`ack=all`的情况下需要等待所有 ISR follower返回，性能差。Leader 宕机时如果ISR = 1，则可能导致数据丢失。
+**安全性**
+
+- Leader 宕机时如果ISR = 1，则可能导致数据丢失。
+
+**扩展性**
+
 - Kafka 分区数据存储到指定的几个 Broker，利用率可能倾斜。
 - Kafka 分区扩容困难，涉及到数据重平衡。
+
+**性能**
+
+- Kafka 生产数据到 Leader，再同步到 follower；`ack=all`的情况下需要等待所有 ISR follower返回，性能差。
 - Kafka 新增/替换 Follower 需要先fetch lag，同步整个分区数据，新的节点才能serve read/write；Fetch lag 会占用 IO，影响写入性能。
 - Kafka catch-up read会**污染page cache**，影响 tailing read的性能、以及写入性能；
 - Kafka 主题多了之后，也会污染 page  cache
+
+
+
+**Benchmark**
+
+
 
 
 
@@ -3226,7 +3252,7 @@ http://localhost:7750/bkvm/
       .topic("xx")
       .enableBatching(true)
       .batchingMaxBytes(128 * 1024 * 1024)
-      .batchingMaxMessages(1000)
+      .batchingMaxMessages(1000) //要比maxPendingMessage大
       .batchingMaxPublishDelay(2, MILLISECONDS)
       .blockIfQueueFull(true)
       .roundRobinRouterBatchingPartitionSwitchFrequency(10) //切换频率 10ms
@@ -3350,6 +3376,28 @@ http://localhost:7750/bkvm/
   >   - direct memory: 2/3
   >
   > - PageCache: 1/2  --> 为何要考虑 pagecache?
+
+
+
+## || 常见问题
+
+
+
+**Broker OOM**
+
+- 可能原因1：ACK 空洞。底层集合可扩容，但无法缩容
+
+
+
+**Bookie OOM**
+
+- 可能原因1：W3A2，当有一个节点如果返回较慢，则对应直接内存无法释放（已修复）
+
+
+
+**负载均衡频繁、每个 bundle 流量不均衡**
+
+- 增加分区数
 
 
 
