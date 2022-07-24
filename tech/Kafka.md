@@ -136,9 +136,9 @@ One way to think about the relationship between messaging systems, storage syste
 
   > 当有 Broker离开
   >
-  > 1. 失去 leader 的分区需要一个新 leader；控制器会遍历这些分区，确定谁将成为新 leader；
+  > 1. 失去 leader 的分区需要一个新 leader；ZK 通知控制器，控制器会遍历这些分区，确定谁将成为新 leader；
   >    --> Q: 如何确定新 leader？
-  > 2. 控制器然后向包含新 leader、原有 follower 的 broker 发送请求，告知新的 leader/follower 信息；
+  > 2. 控制器先写入 ZK，然后向包含新 leader、原有 follower 的 broker 发送请求，告知新的 leader/follower 信息；
   > 3. 新 leader 处理生产者消费者请求、follower 则从新 leader 复制消息；
   >
   > 
@@ -1006,7 +1006,7 @@ try {
     > 3. 拉取！发送 Fetch 请求， == Consumer 消费消息
     >
     
-  - 不对外提供服务
+  - **不对外提供服务**
   
   > 好处：
     >
@@ -1038,19 +1038,17 @@ try {
 
   > 判断是否 In-Sync：`replica.lag.time.max.ms` (default = 10s)， **是判断落后的时间间隔，而非落后的消息数！**
   >
-  > 
-  >
-  > Kafka在启动的时候会开启两个任务，
+  
+  > 原理：Kafka在启动的时候会开启两个任务，
   >
   > - 一个任务用来定期地检查是否需要缩减或者扩大 ISR 集合，这个周期是`replica.lag.time.max.ms`的一半，默认 5000ms。当检测到 ISR 集合中有失效副本时，就会收缩 ISR 集合，当检查到有 Follower 的 HighWatermark 追赶上 Leader 时，就会扩充 ISR。
-  > - 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。然后 Controller 通过 watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
-  >
+  >- 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。然后 Controller 通过 watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
   > 
-  >
-  > ISR 的作用：
+  
+  > **ISR 的作用：**
   >
   > - The ISR exists to **balance data safety with latency**. It allows for a majority of replicas to fail and still provide availability while minimizing the impact of dead or slow replicas in terms of latency.
-
+  
   
 
 - **OSR**: Out-of-Sync Replicas
@@ -1061,6 +1059,18 @@ try {
   - Replicates across slower/higher-latency links without falling in and out of sync (also known as ISR thrashing)
   - Complements *Follower Fetching*
   - **可用于 DR** - 复制到另一个 DC 中的 Observer
+
+
+
+**思想**
+
+- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用 ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
+
+  > 同步复制要求所有能工作的 follower 都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
+  >
+  > 而异步复制方式下，follower 异步的从 leader 复制数据，数据只要被 leader 写入 log 就被认为已经 commit，这种情况下如果 follower 都还没有复制完，落后于 leader 时，突然leader 宕机，则会丢失数据。
+
+- Redis 属于同步复制？
 
 
 
@@ -1082,16 +1092,18 @@ try {
 
 
 
+**副本同步概念**
 
-**副本同步：HWM**
-
+- **LEO**
+  
+- Log End Offset，日志末端位移: 表示副本写入下一条消息的位移值。
+  
 - **高水位 High Watermark**
-  - HWM = ISR 集合中最小的 Log End Offset (LEO)
-
-    > LEO 日志末端位移: 表示副本写入下一条消息的位移值。
-
-  - 分区的高水位  == Leader 副本的高水位
-
+  
+- HWM = ISR 集合中最小的 Log End Offset (LEO)
+  
+- 分区的高水位  == Leader 副本的高水位
+  
 - **HWM 作用**
   - 定义消息可见性：消费者只能拉取高水位之前的消息
 
@@ -1101,37 +1113,16 @@ try {
 
     https://time.geekbang.org/column/article/112118
 
-  
-
-**更新机制** - TBD
-
-- Leader副本
-
-- Follower副本
 
 
 
-**思想**
-
-- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用 ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
-
-  > 同步复制要求所有能工作的 follower 都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
-  >
-  > 而异步复制方式下，follower 异步的从 leader 复制数据，数据只要被 leader 写入 log 就被认为已经 commit，这种情况下如果 follower 都还没有复制完，落后于 leader 时，突然leader 宕机，则会丢失数据。
-
-- Redis 属于同步复制？
-
-
-
-**副本原理**
-
-流程
+**副本同步流程**
 
 -  **ISR**
 
   - 1. Leader收到消息后，写入本地，并等待复制到所有 Follower  --> 所有 or 所有 ISR?
 
-    > 靠 Follower 异步拉取
+    > 靠 Follower 异步拉取：Fetch 请求，带上自己的LEO，默认间隔 500ms
 
   - 2. 如果某个 Follower 落后太多，则从 ISR 中删除
 
@@ -1139,7 +1130,7 @@ try {
   - 1. 处理生产者写入消息
        - 写入本地磁盘
        - 更新分区高水位值：`HW = max{HW, min(所有远程副本LEO)}`
-  - 2. 处理Follower副本拉取消息
+  - 2. 处理 Follower 副本拉取消息
        -  读取磁盘/页缓存中的消息数据；
        - 更新远程副本LEO值 = 请求中的位移值；
        - 更新分区高水位置：`HW = max{HW, min(所有远程副本LEO)}`
@@ -1165,6 +1156,22 @@ try {
        > Leader：`HW = 1`, ` LEO = 1`,`RemoteLEO = 1`
        >
        > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后更新 HW
+
+- **Leader Failover**
+
+  - Leader fail 之后，ZK 通知控制器、选出新 Leader；新 Leader 会将 HW 作为其当前 LEO。
+
+  - Follower 获知新 Leader后，Truncate Local Log to HW，然后发出 fetch 请求。或请求新 Leader 获知 HW、然后据此 Truncate。 
+
+    > 为何要 Truncate log?
+    >
+    > 新 Leader 可能并未完全catch up，或者新Leader 上次fsync 更久远，truncate 可以避免出现数据不一致。
+
+  - 
+
+
+
+
 
 
 
@@ -1962,16 +1969,22 @@ Q: 消费者重启后，如何获取 offset？
 
 ## || 高可用
 
+> https://jack-vanlightly.com/blog/2018/9/2/rabbitmq-vs-kafka-part-6-fault-tolerance-and-high-availability-with-kafka
+>
+> https://jack-vanlightly.com/blog/2018/9/14/how-to-lose-messages-on-a-kafka-cluster-part1
+
 副本配置
 
 - `unclean.leader.election.enable = false`
 - `replication.factor >= 3`
-- `min.insync.replicas > 1` `ack = all`
-- `replication.factor > min.insync.replicas` 避免挂掉一个 broker 就导致不可用
+- `min.insync.replicas > 1` & `ack = all` 
+  - 如果 minISR < 配置值，则写入和读取均会失败：NotEnoughReplicas。
+- `replication.factor > min.insync.replicas` 
+  - 避免挂掉一个 broker 就导致不可用
 
 
 
-复制协议
+**复制协议**
 
 > https://www.slideshare.net/ConfluentInc/hardening-kafka-replication
 
@@ -2003,12 +2016,12 @@ Q: 消费者重启后，如何获取 offset？
 
 - 问题：节点宕机后，分区 Leader 转移到其他节点；而节点恢复后，并不会自动迁移回来？
 - 解决：
-  - 方案一：主题配置 `auto.leader.rebalance.enable=true`，允许 controller 将leadership 重分配到 prefered replica leader 节点。
+  - 方案一：主题配置 `auto.leader.rebalance.enable=true`，允许 controller 将leadership 重分配到 **prefered replica** leader 节点。
   - 方案二：手工执行 `kafka-prefered-replica-election.sh`
 
 
 
-网络分区
+**[网络分区](https://jack-vanlightly.com/blog/2018/9/2/rabbitmq-vs-kafka-part-6-fault-tolerance-and-high-availability-with-kafka)**
 
 - **场景1：Follower 与 Leader 断联，但与 zk 正常**
 
@@ -2017,7 +2030,7 @@ Q: 消费者重启后，如何获取 offset？
 
 - **场景2：Leader 与所有 Follower 断联，但与 zk 正常**
 
-  - ISR 缩减为 1
+  - ISR 缩减为 1，数据冗余降低。
 
 - **场景3：Follower 与 zk 断联，但与 Leader 正常**
 
@@ -2026,23 +2039,25 @@ Q: 消费者重启后，如何获取 offset？
 
 - **场景4：Leader 与 zk 断联，但与 Follower 正常**
 
-  - ZK 感知到 Leader 宕机，通知 Controller、触发选主；
+  - ZK 感知到 Leader 宕机，通知 Controller、选出新主；
 
-  - 原 Leader 尝试缩减 ISR = 1，但是会失败，拒绝新的请求；
+  - 原 Leader 尝试缩减 ISR = 1、继续接受写入；但是因为无法写入zk会失败，拒绝新的请求；
 
   - 客户端探测到 Leader 改变、开始写入到新 Leader；
 
   - 网络分区解决后，原 Leader 变为 Follower：truncate log 到新 Leader 的 HW、发送 Fetch 请求。
 
-    > 写入原 Leader 但是尚未同步到其他 Follower的消息会丢失。
+    > Data Loss：写入原 Leader 但是尚未同步到其他 Follower的消息会丢失。
 
 - **场景5：Follower 与 Leader & zk 断联**
 
-  - 被移除 ISR，同场景1
+  - 被移出 ISR，同场景1
 
 - **场景6：Leader 与 Follower & zk 断联**
 
-  - 原 Leader 在 `replica.lag.time.max.ms`到期后，尝试缩减 ISR = 1，但是会失败，拒绝新的请求；
+  - 原 Leader 在 `replica.lag.time.max.ms`到期后，尝试缩减 ISR = 1，但是会失败 无法更新zk，拒绝新的请求；
+  - 如果 acks=1，则在此期间接受的写入会丢失。
+  - 如果 acks=all，
   - 可能短暂脑裂：`acks=1`  `min.insync.replicas=1` 时；
   - 其他同场景4？
 
@@ -2052,12 +2067,23 @@ Q: 消费者重启后，如何获取 offset？
 
 - **场景8：Controller 节点与 zk 断联**
 
-  - 
+  - 选出新 Controller；原控制器因为无法与zk通信 无法做出任何行动
+  - 网络分区解决后，原控制器意识到有新 controller、变成普通节点。
 
 > - Follower 网络分区不会导致消息丢失；
 > - Leader / ZK 断联，在`acks=1`时会导致数据丢失，会短时脑裂；
 
 
+
+**宕机恢复：Kill Leader**
+
+- **acks = 0**
+  - Fire-and-forget
+  - 此时Leader宕机会导致数据丢失。两个原因：连接失败、Leader failover
+- **acks = 1**
+  - 此时Leader宕机会导致数据丢失。一个原因：Leader failover；丢失几率比 acks = 0 小。
+- **acks = all**
+  - 无数据丢失
 
 
 
@@ -2423,6 +2449,15 @@ Q: 什么情况下消息不丢失
 
 
 ### 消息不丢配置
+
+**数据丢失的场景**
+
+- acks = 1 时，Leader 宕机、或者Leader 与 ZK 断链。
+- acks = all 时，出现 unclean 选举
+- min.insync.replicas = 1 时，即便acks = all，也会出现 ISR 缩减为 1 (Leader被网络分区)
+- 分区所有副本节点同时宕机：fsync 尚未保存到磁盘。
+
+
 
 **Producer 设置**
 
@@ -4036,7 +4071,7 @@ producer = new KafkaProduer<String, String>(p);
 
 **目的**
 
-减少消息丢失的几率。
+减少消息丢失的几率。--> **Consistency**
 
 
 
