@@ -2382,8 +2382,9 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 - 当 Broker 宕机 / 或者与 ZK 断联并自动重启，客户端可以通过 Lookup 重新触发 Bundle 与 Broker 之间的绑定；**让主题转移到新的 Broker 上**。
 
   > - https://pulsar.apache.org/docs/administration-load-balance/ 
-  >
-  > - Q: 花费多少时间？
+  > - Q: 花费多少时间？--> [30s](https://jack-vanlightly.com/blog/2018/10/21/how-to-not-lose-messages-on-an-apache-pulsar-cluster)？
+  >   - It will take a few seconds for the dead broker's ZK session to timeout triggering the controller to choose a new leader. All the while the client is polling trying to find out who the new leader is. 30 seconds is reasonable. 
+  >   - producers **slowing down significantly** after a broker fail-over, if the number of `messages in flight` at the time was close to the `internal pending message queue size`. 
 
 - 同时触发 **Ledger Recovery**：与该 Broker 关联的 Ledger 会进入恢复流程，Fencing 并重新找 owner Broker
 
