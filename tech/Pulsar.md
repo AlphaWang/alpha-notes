@@ -1085,8 +1085,24 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
     > GC 的处理方式为依次读取 entry log 文件中每一个 entry，判断 entry 是否过期。如果已经过期，则直接丢弃，否则将其写入新 entry log 文件中，并更新 entry 在 RocksDB 中的索引信息。
     >
     > 配置 `minorCompaction` 和 `majorCompaction`
+    
   - Ledger 标记成可删除后，并不表明对应 Entry Log 可以被删除，因为 Entry Log 可能还包含其他 Ledger 数据。
+  
   - Retention 到期后也不一定马上删除，还需要看 TTL + 有无 ack.
+  
+  - 删除 ZK 元数据、删除 BK Ledger，如何保证原子性：
+  
+    - 先删 ZK，则第二步删除 BK 失败的话（重试三次）则会一直删不掉。--> 工具定时检查？-- 高风险操作。
+    - 两阶段删除协议：
+      - Phase-1：Broker 发送删除命令到 System Topic：`__ledger_deletion` `__ledger_deletion_RETRY / DLQ`；发送成功则从元数据存储中删除 Ledger ID；
+      - Phase-2：Broker 启动时还启动了一个消费者（Shared模式、启用retry），接收删除命令，从 BK 中删除 Ledger
+    - 可能的中间状态
+      - Case-1：第一阶段发送成功但删除元数据失败。
+        第二阶段还会让Broker删除元数据；
+      - Case-2：第一阶段发送多次删除命令。
+        第二次删除特殊处理，也会认为成功。
+      - Case-3：第二阶段删除成功，但ack失败。
+        会重新执行删除，幂等，再次删除也会认为成功。
 
 
 
@@ -1107,7 +1123,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-**Topic 归属的计算步骤** `ServerCnx#handleLookup`
+**Topic 归属的计算步骤：LoadManager** `ServerCnx#handleLookup`
 
 - 根据 namespace 找到其所有的 Bundle；
 
@@ -1129,12 +1145,23 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 - 作用：
   - 当 Broker 扩容后，将现有的 topic 迁移到新 Broker上。
-  - 或者当 Broker 负载不均衡时，把高负载 broker 上的部分 bundle unload 并转移到低负载 broker。- **Shed load** `loadBalancerSheddingEnabled`.
+  - 或者当 Broker 负载不均衡时，把高负载 broker 上的部分 bundle unload 并转移到低负载 broker。- **Shed load** `loadBalancerSheddingEnabled` 设置**自动unload**. 
 - Q: 如果无论迁移到哪个Broker都无法承载topic的负载？
-  - 支持 split bundle （线上建议关闭 `loadBalancerAutoBundleSplitEnabled`）
+  - 支持 **split bundle**（线上建议关闭 `loadBalancerAutoBundleSplitEnabled`）
   - Bundle分裂，重新进行一致性哈希，将**部分** topic 转移到新的 Broker上。
 
-**Shedder 策略：**如何判定负载高？
+**Bundle Split 算法**
+
+- range_equally_devide：平分 bundle 为相同 hash range 两部分
+- topic_count_equally_divide：平分 bundle 为相同主题数量的两部分
+
+
+
+
+
+**Shedder 策略：如何判定负载高？**
+
+> https://pulsar.apache.org/docs/administration-load-balance/#shed-load-automatically
 
 - For example, the default threshold is 85% and if a broker is over quota at 95% CPU usage, then the broker unloads the percent difference plus a 5% margin: `(95% - 85%) + 5% = 15%`.
   - 默认阈值比较难达到，容易导致大部分流量集中在几个 broker；
@@ -1158,7 +1185,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 **bundle 设置实践**
 
-- Broker * 20; [200, 500]
+- Broker * 20; [200, 500] `defaultNumberOfNamespaceBundle`
 - 流量大的主题，扩大分区数
 
 
@@ -1230,6 +1257,13 @@ tx.commit().get();
 ```
 
 
+
+**原理**
+
+- Transaction Coordinator
+  - 记录每个 tx 状态
+  - 记录每个 tx 参与发送过消息的topic
+  - 记录每个 tx 参与 ack过消息的subsscription
 
 
 
@@ -3397,7 +3431,7 @@ http://localhost:7750/bkvm/
 
 **Broker OOM**
 
-- 可能原因1：ACK 空洞。底层集合可扩容，但无法缩容
+- 可能原因1：ACK 空洞（pendingAcks?）。底层集合可扩容，但无法缩容
 
 
 
@@ -3409,7 +3443,10 @@ http://localhost:7750/bkvm/
 
 **负载均衡频繁、每个 bundle 流量不均衡**
 
-- 增加分区数
+- unload 流量不均？
+- 解决：增加分区数
 
 
+
+**KeyShared 模式消费者加入后可能被 block**
 
