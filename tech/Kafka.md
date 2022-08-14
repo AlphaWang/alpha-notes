@@ -4865,40 +4865,52 @@ public void subscribe(Collection<String> topics, ConsumerRebalanceListener liste
 
 
 
-# | 问题排查
+# | 问题
 
-### 主题删除失败
+**主题删除失败**
 
-**原因**
+- 原因
+  - 副本所在 Broker 宕机
+  - 待删除主题部分分区依然在执行迁移过程
 
-- 副本所在 Broker 宕机
-- 待删除主题部分分区依然在执行迁移过程
+- 解决
+  - 手动删除zk `/admin/delete_topics/xx`
 
-**解决**
+  - 手动删除该主题在磁盘上的分区目录
 
-- 手动删除zk `/admin/delete_topics/xx`
-
-- 手动删除该主题在磁盘上的分区目录
-
-- 执行zk `rmr /controller`，触发controller重选举
+  - 执行zk `rmr /controller`，触发controller重选举
 
 
 
-### __consumer_offsets 磁盘占用大
+**__consumer_offsets 磁盘占用大**
 
-**原因**
+- 原因
+  - kafka-log-cleaner-thread 线程挂掉，无法清理此内部主题
 
-- kafka-log-cleaner-thread 线程挂掉，无法清理此内部主题
+  - 用 jstack 确认
 
-- 用 jstack 确认
+- 解决
+  - 重启 broker
 
-**解决**
+# | 挑战
 
-- 重启 broker
+**慢节点影响读写**
+
+- 慢节点的原因
+  - 集群负载不均衡导致局部热点，部分磁盘打满
+  - PageCache 污染，**追赶读** 触发慢速磁盘访问。
 
 
 
+**数据迁移效率问题**
 
+- 迁移和实时拉取共用 Fetcher 线程，导致影响实时消费请求。
+- 
+
+**大规模集群运维复杂**
+
+- 不同主题之间互相影响。大流量主题、或部分消费者追赶读会影响整体集群稳定性。
+- 故障感知不及时。
 
 
 
