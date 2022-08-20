@@ -890,6 +890,61 @@ https://systeminterview.com/design-a-chat-system.php
 
 
 
+<img src="https://camo.githubusercontent.com/3cb97853adab74ef0abfe733685aab2a224702191cb696560be2b48a0d6c1d08/687474703a2f2f692e696d6775722e636f6d2f424b73426e6d472e706e67" alt="Imgur" style="zoom:50%;" />
+
+**Write API**
+
+- 生成唯一 URL
+
+  - 先校验是否已存在，如果已存在则重新生成
+
+  - 映射关系存入 SQL
+    ```sql
+    shortlink char(7) NOT NULL
+    expiration_length_in_minutes int NOT NULL
+    created_at datetime NOT NULL
+    paste_path varchar(255) NOT NULL
+    PRIMARY KEY(shortlink)
+    ```
+
+    
+
+-  如何生成
+  ```
+  url = base_encode(md5(ip_address+timestamp))[:URL_LENGTH]
+  ```
+
+  - MD5 哈希
+  - 再 Base 62 编码
+  - 取出前 7 位作为短链
+
+
+
+**Read API**
+
+- 从 SQL 中查询
+- 如果查不到，则报错
+
+
+
+**扩展：分析点击率**
+
+- map reduce web logs
+
+
+
+**扩展：过期策略**
+
+- 定期清理
+
+
+
+**扩展：扩展设计**
+
+<img src="https://camo.githubusercontent.com/018f5e8780f65abf18eee58d0dfe8a0501213be42829a3da0d4d94118a5979c9/687474703a2f2f692e696d6775722e636f6d2f346564584730542e706e67" alt="Imgur" style="zoom:50%;" />
+
+
+
 ## || 网页爬虫
 
 > https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/web_crawler/README-zh-Hans.md 
