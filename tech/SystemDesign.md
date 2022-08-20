@@ -490,6 +490,8 @@ Sharding KEY：
 
 
 
+
+
 # | MQ 系统设计
 
 
@@ -888,7 +890,7 @@ https://systeminterview.com/design-a-chat-system.php
 
 > https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/pastebin/README-zh-Hans.md 
 
-
+**概要设计**
 
 <img src="https://camo.githubusercontent.com/3cb97853adab74ef0abfe733685aab2a224702191cb696560be2b48a0d6c1d08/687474703a2f2f692e696d6775722e636f6d2f424b73426e6d472e706e67" alt="Imgur" style="zoom:50%;" />
 
