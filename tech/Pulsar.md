@@ -3502,7 +3502,10 @@ http://localhost:7750/bkvm/
 
 **Broker OOM**
 
-- 可能原因1：ACK 空洞（pendingAcks?）。底层集合可扩容，但无法缩容
+- 原因 [Report by InLong]：share、key_shared 模式下单条确认，ACK 空洞（pendingAcks 暴涨）。其底层数组可扩容，但无法缩容
+- 解决：remove 元素后清理标志位；增加自动缩容功能
+
+
 
 
 
@@ -3512,10 +3515,46 @@ http://localhost:7750/bkvm/
 
 
 
-**负载均衡频繁、每个 bundle 流量不均衡**
 
-- unload 流量不均？
+
+**Tailing Read cache miss**
+
+- 原因 [Report by InLong] ：cache evict 条件 1) size、时间，2) 已经推送到所有 consumer 的会被驱逐( read position) 
+  --> 如果还没来得及 ack，客户端重启，则不能命中 cache
+- 解决：evict by `markdelete` position，根据 ack 位置进行驱逐
+
+
+
+**unload 频繁**
+
+- 原因 [Report by InLong] ：某个broker负载信息被计算为 NaN 无穷大，因为 FullGC --> 以固定速率统计，导致时间间隔 < 1s，usage = 100 * (usage - lastUsage) / elapsedTimeSeconds == 分母太小
+- 解决：scheduleAtFixedRate --> scheduleWithFixedDelay 
+
+
+
+**每个 bundle 流量不均衡**
+
+- 原因 [Report by InLong]：unload 流量不均？bundle 切分算法不灵活：哈希均分、主题数均分；如果存在热点topic，拆分后流量还是不均衡。
+- 解决：按照指定位置拆分，尽量把两个热点主题 拆到两个不同的bundle；（缺点：需要人工介入）
+  - get hash position of a topic
+  - specify the hash position for split 
 - 解决：增加分区数
+
+
+
+
+
+**BK 写入流量明显偏大**
+
+- 原因 [InLong]：ack 持久化请求过多？
+- 配置调优：减小ack持久化速率？
+
+
+
+**BK 隔离策略导致流量只能打到部分节点**
+
+- 原因 [InLong]：BK 发现不健康后 会被隔离，流量不会打到这些节点；但升级过程中也会被隔离。
+- 解决：通过 bk client 写入标志位到zk，标识本次是升级无需隔离，保证升级过程平滑。
 
 
 
