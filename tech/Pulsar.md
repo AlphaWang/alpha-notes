@@ -2328,9 +2328,26 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 
 
--  
-- A log, though implemented as a series of files, cannot be split between multiple brokers or between multiple disks on the same broker.
-- 
+
+
+-  A log, though implemented as a series of files, cannot be split between multiple brokers or between multiple disks on the same broker.
+
+
+
+**优势**
+
+- **一个系统满足多样业务场景**
+  - 延迟队列：任意时间维度的延迟消息
+  - 死信队列：消费失败后，重新投递到另外得topic
+  - 海量分区：mqtt
+- **云原生的伸缩能力**
+  - 秒级伸缩、对业务无感知、避免伸缩过程数据复制
+  - Kafka 数据复制，与客户端争抢资源。--> 一般在现有机器上升级 cpu、磁盘；或新建集群
+  - 
+- **容灾建设**
+- **资源利用率**
+  - Kafka 单租户：需要为不同服务部署不同集群
+  - Pulsar：共享 bk 资源
 
 
 
@@ -3525,20 +3542,30 @@ http://localhost:7750/bkvm/
 
 
 
-**unload 频繁**
+**负载均衡：unload 频繁**
 
 - 原因 [Report by InLong] ：某个broker负载信息被计算为 NaN 无穷大，因为 FullGC --> 以固定速率统计，导致时间间隔 < 1s，usage = 100 * (usage - lastUsage) / elapsedTimeSeconds == 分母太小
 - 解决：scheduleAtFixedRate --> scheduleWithFixedDelay 
 
 
 
-**每个 bundle 流量不均衡**
+**负载均衡：每个 bundle 流量不均衡**
 
 - 原因 [Report by InLong]：unload 流量不均？bundle 切分算法不灵活：哈希均分、主题数均分；如果存在热点topic，拆分后流量还是不均衡。
 - 解决：按照指定位置拆分，尽量把两个热点主题 拆到两个不同的bundle；（缺点：需要人工介入）
   - get hash position of a topic
   - specify the hash position for split 
-- 解决：增加分区数
+
+
+
+**负载均衡：Broker 负载差异较大**
+
+- 原因 [Huawei]：某个节点重启后，负载降为0；原负载转移到其他 Broker、但尚未超过阈值、不会触发重平衡；所以重启后的节点持续空闲无流量。
+- 解决：PR？
+
+
+
+
 
 
 

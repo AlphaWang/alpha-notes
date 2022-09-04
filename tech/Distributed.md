@@ -2871,6 +2871,8 @@ Aka. 序列化
 ## || Replication
 
 > 数据复制，在多个节点保存相同的数据副本。 
+>
+> - DDIA replication 笔记：https://mp.weixin.qq.com/s/LB5SR4ypQwDxzueI1ai2Kg 
 
 **目的**
 
