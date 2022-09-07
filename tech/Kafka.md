@@ -1520,7 +1520,7 @@ while (true) {
   - 按 Duration 相对时间查询位移
 
     ```java
-  Map<TopicPartition, Long> timeToSearch = consumer.partitionsFor(topic).stream()
+    Map<TopicPartition, Long> timeToSearch = consumer.partitionsFor(topic).stream()
      .map(info -> new TopicPartition(topic, info.partition()))
      .collect(Collectors.toMap(Function.identity(), tp -> System.currentTimeMillis() - 30 * 1000  * 60));
     
@@ -2426,7 +2426,7 @@ Q: 什么情况下消息不丢失
 
   1. **接收时网络抖动，导致没收到**
   2. **处理时失败，但更新消费进度成功**
-  3. **异步处理消息 + 自动提交**
+  3. **异步处理消息 + 自动提交**：提交时尚有未处理完成的消息
 
 - 措施
 
