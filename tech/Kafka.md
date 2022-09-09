@@ -2093,6 +2093,10 @@ Q: 消费者重启后，如何获取 offset？
 
 **1. RocketMQ 事务消息**
 
+> https://help.aliyun.com/document_detail/43348.htm?spm=a2c4g.11186623.0.0.69003945pTBACv#concept-2047067
+>
+> ![事务消息](../img/kafka/rocketmq-tx.png)
+
 作用：解决本地事务和发消息的数据一致性问题
 
 例子：

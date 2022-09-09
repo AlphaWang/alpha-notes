@@ -3133,6 +3133,13 @@ mvn install -DskipTests
 mvn install -Pcore-modules,-main -DskipTests # 忽略IO/Function
 ```
 
+Admin 
+
+```sh
+## get topic stats
+./pulsar-admin topics stats persistent://public/default/XX
+```
+
 
 
 启动入口
@@ -3304,7 +3311,7 @@ http://localhost:7750/bkvm/
 - **DbLedgerStorage 读取指标**
   ![image-20220521205052850](../img/pulsar/metrics-ledger-read.png)
 
-  1. `bookie_read_cache_hits_count` `bookie_read_cache_misses_count`：Cache 命中率以及时延。包含 read cache + write cache
+  1. `bookie_read_cache_hits_count` , `bookie_read_cache_misses_count`：Cache 命中率以及时延。包含 read cache + write cache
 
   2. `bookie_read_cache_size`：Read cache 大小。没有意义，因为是循环buffer；
 
