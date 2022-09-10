@@ -1690,6 +1690,9 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 - Read Threadpool：正常读取不会与其他线程交互；
 - Long Poll Threadpool：被 write thread 通知写入事件；
 - Write path 则涉及多个线程。
+  - High Priority Threadpool：处理高优先级读写，例如 Fencing 操作、以及与恢复有关的读写；
+  - 
+
 
 ![image-20220521100714544](../img/pulsar/bookkeeper-read-write-thread-model.png)
 
@@ -1753,9 +1756,9 @@ Producer<User> producer = client.newProducer(Schema.AVRO(User.class)).create();
 
   - 配置：
 
-    - `journalDirectories`: **每个目录对应一个 Thread**，给多个Ledger开多个directory可提高写入SSD的吞吐。
+    - `journalDirectories`: **每个目录对应一个 Thread**，给多个 Ledger 开多个 directory 可提高写入 SSD 的吞吐。
 
-      > Journal / Ledger 都可以通过设置多个目录，提高并行度！
+      > Journal / Ledger 都可以通过设置多个目录，提高并行度！`journalDirectories` vs. `ledgerDirectories`
     >
       > - A separate **Journal instance** is created for each configured journal directory. Each journal instance has its own internal **threading model** for writing to disk and calling the write request callbacks for sending the write responses.
       >   ![image-20220521103629430](../img/pulsar/bk-journal-directories.png)
@@ -3174,7 +3177,7 @@ Admin
 
 ## || 监控
 
-**查看主题统计**
+**pulsar-admin 主题统计**
 
 ```sh
 ./pulsar-admin topics stats TOPIC_NAME
@@ -3188,7 +3191,7 @@ Admin
 
 
 
-**查看 BK**
+**bk admin**
 
 ```sh
 ./bookkeeper shell listledgers
@@ -3203,7 +3206,7 @@ Admin
 
 
 
-**Pulsar-manager 监控 BookKeeper:**
+**pulsar-manager 监控 BookKeeper:**
 
 ```
 http://localhost:7750/bkvm/
@@ -3264,23 +3267,25 @@ http://localhost:7750/bkvm/
 
   - todo
 
+  
+
 - **Journal 写入指标** 
   ![image-20220521200114168](../img/pulsar/metrics-journal.png)
 
-  1. `bookie_journal_JOURNAL_QUEUE_SIZE`：Journal queue size，如果 flush / fsync 耗时，则 Journal 队列会增长。  
-  2. `bookie_journal_JOURNAL_QUEUE_LATENCY` ：Journal queue 队列排队时间
-  3. `bookie_journal_JOURNAL_ADD_ENTRY` ：Journal entry 写入延时
-  4. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_WAIT`：Journal 因为达到 max wait time 导致的 flush 次数
-  5. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_OUTSTANDING_BYTES`：Journal 因为达到最大字节数或最大entry个数导致的 flush 次数
-  6. `bookie_journal_JOURNAL_NUM_FLUSH_EMPTY_QUEUE`：Journal 因为清空队列导致的 flush 次数
-  7. `bookie_journal_JOURNAL_FLUSH_LATENCY`：Journal 线程进行 flush 的时延
-  8. `bookie_journal_JOURNAL_WRITE_BYTES`：Journal 写入字节数
-  9. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_BYTES`：Flush 字节数？？
-  10. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_ENTRIES`：Flush 的entry个数
-  11. `bookie_journal_JOURNAL_FORCE_WRITE_QUEUE_SIZE`： force write 队列大小，过大的话会block caller
-  12. `bookie_journal_JOURNAL_FORCE_WRITE_ENQUEUE`：forece write 请求在队列中的等待时间，增大时会导致 force write 队列变大；
-  13. `bookie_journal_JOURNAL_SYNC`：Force Write Thread 执行 fsync 的时延。
-  14. `bookie_journal_JOURNAL_CB_QUEUE_SIZE`：Journal 正在处理的 entry 个数
+  1. `bookie_journal_JOURNAL_QUEUE_SIZE` (gauge)：Journal 队列中待处理的请求总数。如果 flush / fsync 耗时，则 Journal 队列会增长。  
+  2. `bookie_journal_JOURNAL_QUEUE_LATENCY` (OpStatsLogger)：Journal 队列排队时间
+  3. `bookie_journal_JOURNAL_ADD_ENTRY` (OpStatsLogger)：Journal entry 写入延时
+  4. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_WAIT` (counter)：Journal 因为达到 max wait time 导致的 flush 次数
+  5. `bookie_journal_JOURNAL_NUM_FLUSH_MAX_OUTSTANDING_BYTES` (counter)：Journal 因为达到最大字节数或最大 entry 个数导致的 flush 次数
+  6. `bookie_journal_JOURNAL_NUM_FLUSH_EMPTY_QUEUE ` (counter)：Journal 因为清空队列导致的 flush 次数；默认情况清空队列不会刷盘
+  7. `bookie_journal_JOURNAL_FLUSH_LATENCY` (OpStatsLogger)：Journal 线程进行 flush 刷盘的时延
+  8. `bookie_journal_JOURNAL_WRITE_BYTES` (counter)：Journal 写入字节数
+  9. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_BYTES` (OpStatsLogger)：Flush 字节数？？
+  10. `bookie_journal_JOURNAL_FORCE_WRITE_BATCH_ENTRIES` (OpStatsLogger)：Flush 的entry个数
+  11. `bookie_journal_JOURNAL_FORCE_WRITE_QUEUE_SIZE` (gauge)： force write 队列大小，过大的话会阻塞调用者
+  12. `bookie_journal_JOURNAL_FORCE_WRITE_ENQUEUE` (OpStatsLogger)：forece write 请求在队列中的等待时间，增大时会导致 force write 队列变大；
+  13. `bookie_journal_JOURNAL_SYNC` (OpStatsLogger)：Force Write Thread 执行 fsync 的时延。
+  14. `bookie_journal_JOURNAL_CB_QUEUE_SIZE` (gauge)：Journal 正在处理的 entry 个数
 
   > Journal 调优
   >
@@ -3294,12 +3299,12 @@ http://localhost:7750/bkvm/
 - **DbLedgerStorage 写入指标**
   ![image-20220521202959479](../img/pulsar/metrics-ledger.png)
 
-  1. `bookie_throttled_write_requests`：写入线程发现 write cache 已满时则 throttle （同时触发 DbLedgerStorage flush）
-  2. `bookie_rejected_write_requests`：写入线程等待 write cache 清空超时、被拒绝写入
-  3. `bookie_write_cache_size`：两个 write cache 总大小，注意不要太接近最大值 （25% 直接内存）
-  4. `bookie_write_cache_count`：两个 write cache 中的entry 个数；不常用。
-  5. `bookie_flush`：DbLedgerStorage flush 的时延，包括 rocksDB + entry log 写入时延
-  6. `bookie_flush_size`：每次 Flush 的字节数，不常用。
+  1. `bookie_throttled_write_requests` (counter)：写入线程发现 write cache 已满时的次数，即被 throttle 的次数；此时会触发 DbLedgerStorage 刷盘。此指标*不能*说明 DbLedgerStorage 是否达到容量上限。
+  2. `bookie_rejected_write_requests` (counter)：写入线程等待空的 write cache 被换入而超时、被拒绝写入的次数。此指标表明  DbLedgerStorage 是否已达到容量上限，因为换出的 write cache 仍然在刷盘中。
+  3. `bookie_write_cache_size` (counter) ：所有 write cache 总大小，注意不要太接近最大值 （25% 直接内存）
+  4. `bookie_write_cache_count` (counter)：所有 write cache 中的entry 个数；不常用。
+  5. `bookie_flush`  (OpStatsLogger)：DbLedgerStorage 刷盘时延，包括 rocksDB + entry log 写入时延
+  6. `bookie_flush_size`  (OpStatsLogger)：每次刷盘的字节数，不常用。
 
   > Ledger 写入调优
   >
@@ -3308,27 +3313,24 @@ http://localhost:7750/bkvm/
   > - 配置多个 Ledger directory
   > - 增加 write thread 数目
 
+  
+  
 - **DbLedgerStorage 读取指标**
   ![image-20220521205052850](../img/pulsar/metrics-ledger-read.png)
 
-  1. `bookie_read_cache_hits_count` , `bookie_read_cache_misses_count`：Cache 命中率以及时延。包含 read cache + write cache
+  1. `bookie_read_cache_hits` , `bookie_read_cache_misses`  (OpStatsLogger)：Cache 命中率以及时延。可用于检测缓存抖动 cache thashing。
 
-  2. `bookie_read_cache_size`：Read cache 大小。没有意义，因为是循环buffer；
+  2. `bookie_read_cache_size` (gauge)：Read cache 大小。没有意义，因为是循环buffer；
 
-  3. `bookie_read_cache_count`：Read cache entry 个数。没有意义。
+  3. `bookie_read_cache_count` (gauge)：Read cache entry 个数。没有意义。
 
-  4. `bookie_readahead_batch_count`：每次 read-ahead 操作读取的 entry 个数；方便排查 *cache thashing*. 
+  4. `bookie_readahead_batch_count` (OpStatsLogger)：每次 read-ahead 操作读取的 entry 个数；方便排查 *cache thrashing*. 
 
-     > 定位 cache thashing：读取磁盘的数目，对比read operation的个数
-     >
-     > `(sum(rate(bookie_readahead_batch_count_count[1m])) by (pod) + sum(rate(bookie_readahead_batch_count_sum[1m])) by (pod))` / `sum(rate(bookie_read_entry_count[1m])) by (pod)`
-     >
-     > ? https://medium.com/splunk-maas/apache-bookkeeper-observability-part-5-read-metrics-in-detail-2f53acac3f7e yin
-
-  5. `bookie_readahead_batch_size`：每次 read-ahead 操作读取的字节大小；
-
-  6. `bookie_read_entry`：entry 读取整体性能。
-
+  5. `bookie_readahead_batch_size` (OpStatsLogger)：每次 read-ahead 操作读取的字节大小；
+     
+  
+  6. `bookie_read_entry` (OpStatsLogger)：entry 整体读取性能。
+  
   > Ledger 读取调优
   >
   > - Journal / Ledger 磁盘分离
@@ -3336,14 +3338,25 @@ http://localhost:7750/bkvm/
   > - 配置多个 Ledger directory 分担负载
   > - 使用 SSD
   >
+  
+  
+  
+  > 定位 Cache Thashing：读取磁盘的数目，对比read operation的个数
+  >
+  > `(sum(rate(bookie_readahead_batch_count_count[1m])) by (pod) + sum(rate(bookie_readahead_batch_count_sum[1m])) by (pod))` / `sum(rate(bookie_read_entry_count[1m])) by (pod)`
+  >
+  > ? https://medium.com/splunk-maas/apache-bookkeeper-observability-part-5-read-metrics-in-detail-2f53acac3f7e 
+  >
+  > 
+  >
   > Cache Thrashing 调优
   >
   > - 增大 bookie 的直接内存、间接提高 read cache 容量
   > - 增大  `dbStorage_readAheadCacheMaxSizeMb`
   > - 减少 read-ahead batch size `dbStorage_readAheadCacheBatchSize`，以便 read cahce 能容纳更多消费者的请求。
-
   
-
+  
+  
 - prom 查询示例
   - 读取请求量 `sum(irate(bookkeeper_server_READ_ENTRY_REQUEST_count[1m])) by (pod)`
   - 读取请求失败量 `sum(irate(bookkeeper_server_READ_ENTRY_REQUEST_count{success=”false”}[1m])) by (pod)`
