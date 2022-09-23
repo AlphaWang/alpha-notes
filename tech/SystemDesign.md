@@ -122,6 +122,99 @@ TBD
 
 
 
+## || TopK 
+
+> https://www.youtube.com/watch?v=kx-XDoPjoHw 
+
+**单机版本**
+
+- 先用 Map 存储计数：`Map<String, Integer>`
+
+- 再遍历放入 Heap：`PriorityQueue<Entry>`
+  ```java
+  PriorityQueue<Entry> heap = new PriorityQueue<Entry>(Comparator.comparing(e -> e.getValue()));
+  for (Entry e : map.getEntry()) {
+    heap.offer(e);
+    if (heap.size() > k) {
+      heap.poll();
+    }
+  }
+  ```
+
+- 遍历heap取出结果即可。
+
+问题：not scalable，大数据量无法放入内存怎么办？
+
+
+
+**分布式版本：**
+
+- 方案一：负载均衡
+
+  - Load Balancer 接收请求，路由到多个**计算节点**进行计算；
+  - 计算节点将结果存到统一的 **存储节点**。
+
+- 方案二：数据分区
+
+  - Data Paritioner 将数据按 key 分区到多个计算节点，按 heap 找出各自的 topK
+  - 再由单个节点 merge sorted list
+
+- 方案三：MapReduce 批处理
+
+  > 上面的方案要求数据集固定 bonded. 
+
+- 优化：节省内存，但结果可能不精确：**count-min sketch**
+
+  - 结构：一个二维表，纵轴 = hash function （很少，例如5个），横轴 = function values (有限个)，取值 = 各 hash function value的出现次数。
+  - 写入时：对每个key，执行 5 个  hash function，5个单元格内的 value++
+  - 读取时：读出对应 key 的所有 hash funciton value，取最小值。（可能比实际值大）
+
+  
+
+  
+
+最终版本：
+
+- API gateway：收集点击事件、预聚合以便减少数据量、写入 Kafka
+
+- fast path: 
+
+  - 快速获取结果，但不精确。
+  - Fast processor 使用 count-min sketch 聚合短时数据。
+    ——无需数据分区，因为内存不再是问题；可做数据复制，但不是必须，因为结果本来就不精确。
+  - 定期（几秒钟）将结果写入存储。
+    ——需要数据复制，保证HA
+
+  ![image-20220923162355761](../img/design/topk-fast-path.png)
+
+  
+
+- slow path: 
+
+  - 延时获取结果，但精确
+  - 方案一：MapReduce：计数、聚合、写入存储
+  - 方案二：分区
+    - Data Partitioner 将数据分区到不同的 Kafka 分区；
+    - Partition Processor 计算各个分区的topK
+  - 方案三：整合
+  
+  ![image-20220923162638329](../img/design/topk-slow-path.png)
+  
+  两个 MapReduce:
+  
+  - Frequencey Count MapReduce
+  - TopK MapReduce
+
+
+
+![image-20220923162947407](../img/design/topk-slow-path-mapreduce.png)
+
+- **读取流程：查询指定时间段的 TopK** 
+  - 根据时间段不同，结合 Slow Path、Fast Path
+  - ![image-20220923163615795](../img/design/topk-query.png)
+
+
+
 ## || 分布式计数服务
 
 功能需求：
@@ -485,6 +578,12 @@ Sharding KEY：
 ## || Twitter 时间线设计
 
 > https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/twitter/README-zh-Hans.md 
+
+
+
+## || 通知服务
+
+> https://www.youtube.com/watch?v=bBTPZ9NdSk8 
 
 
 
