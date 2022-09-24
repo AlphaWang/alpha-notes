@@ -33,7 +33,7 @@
 
 - 每次读取都能得到响应数据
 
-- 但不保证数据时正确的
+- 但不保证数据是最新的/正确的
 
 
 
@@ -827,11 +827,10 @@ String result = jedis.set(
 
 ## || 分布式共识
 
-> Distributed Consensus. 
+> Distributed Consensus：为了实现“复制状态机”
 >
-> - 分布式系统内部容忍暂时的不同状态，但最终保证大多数节点状态达成一致；
->
-> - 同时分布式系统在外部看来始终表现出整体一致的结果。
+> - 分布式系统内部容忍暂时的不同状态，但最终保证大多数节点状态达成一致；同时分布式系统在外部看来始终表现出整体一致的结果。
+>- 扩展：两个副本一个采用行存储、另一个采用列存储；实现 HTAP。
 
 
 
@@ -868,7 +867,7 @@ String result = jedis.set(
 
 **3. DPoS: Delegated Proof of Stake**
 
-解决PoS的垄断wen't
+解决PoS的垄断问题 
 
 
 
@@ -881,7 +880,8 @@ String result = jedis.set(
 > - https://ongardie.net/static/raft/userstudy/ 
 >
 > - https://www.youtube.com/watch?v=JEpsBg0AO6o
->   https://ongardie.net/static/raft/userstudy/paxos.pdf 
+>   
+> - https://ongardie.net/static/raft/userstudy/paxos.pdf 
 
 
 
@@ -1106,11 +1106,11 @@ TODO
 
 
 
-达成共识等价于解决一下三个问题：
+达成共识等价于解决一下**三个问题**：
 
-- 如何选主 `Leader Election`
-- 如何把数据复制到各个节点上 `Entity Replication`
-- 如何保证过程是安全的 `Safety`
+- 领导者选举  `Leader Election`
+- 日志复制：如何把数据复制到各个节点上 Log Replication`
+- 安全性：如何保证过程是安全的 `Safety`
 
 
 
@@ -1121,19 +1121,29 @@ TODO
   - 状态机
     ![image-20220423182344629](../img/distributed/raft-state-machine.png)
 
-- **Term**
+- **任期：Term**
 
-  - 把时间划分为不同 Term，每个Term有一个或〇个 Leader。
+  - Raft 把时间划分为不同 Term，每个 Term 从一次选举开始；每个Term有一个或〇个 Leader。
 
   - 每个节点都持久化”current term“相关的取值。
 
     ![image-20220423200954023](../img/distributed/raft-terms.png)
 
+- **两种 RPC 请求**
+
+  - RequestVote：请求投票
+
+  - AppendEntries：追加条目、保持心跳
+
 - **Log Structure**
 
   - Log = entry list
 
-  - Entry = index + term id + command
+  - Entry = 
+
+    - `command` 状态机指令
+    - `term id` Leader 任期号，用于检测多个日志副本之间的不一致情况、判定节点状态、判断节点空缺了哪个任期；
+    - `index` 日志索引
 
   - Committed: 被多数节点写入。
 
@@ -1143,69 +1153,103 @@ TODO
 
 
 
-**Leader Election 流程**
+**Raft 子问题一：Leader Election 领导者选举**
 
 > http://thesecretlivesofdata.com/raft/#election 
-
-> Timeout 设置
 >
-> - `electionTimeout`：follower 等待变成 candidate的时间，随机值。
-> - `heartbeatTimeout`：发送 AppendEntries 消息的时间间隔。
+> https://www.bilibili.com/video/BV1uF411G7vc/
 
-- 当 electionTimeout 到期后，Follower 变成 candidate、开启新一轮选主 `election term`：投票给自己、发送 `RequestVote` RPC 请求给所有其他节点。
+- Raft 有两类超时设置
 
-- 如果其他节点在本轮尚未做出投票，则投票给该 candidate、并重置 election timeout。当 candidate 收到多数投票后，则成为 Leader。
+  - `electionTimeout`：follower 等待变成 candidate的时间，150ms ~ 300ms随机值。
+  - `heartbeatTimeout`：发送 AppendEntries 消息的时间间隔。
 
-  > 若出现 **split vote**，例如两个candidate节点均无法获得多数投票，则重试：增加 term id、重新选举。
+- **Leader Election 流程**
 
-- Leader 被选出后开始以 heartbeat timeout 时间间隔发送 `AppendEntries` 消息给 follower。
+  - **1. 开始投票：**当 electionTimeout 到期后，Follower 变成 candidate、开启新一轮选主 `election term`：增加TermId、转到 Candidate 状态、投票给自己、并行发送 `RequestVote` RPC 请求给所有其他节点。
 
-- 当一个 Follower (在election timeout 内？) 未收到 heartbeat 后，变成 candidate、重新触发选主。
+  - **2. 选出领导者：**如果其他节点在本轮尚未做出投票，则投票给该 candidate、并重置 election timeout。当 candidate 收到多数投票后，则成为 Leader。
 
-> **扩展：Picking the best leader**
->
-> - 应该选择尽量包含所有已提交 entry 的 candidate 作为新 Leader。
->   During elections, choose candidate with log most likely to contain all committed entries
->
->   - `RequestVote` 请求中包含当前节点 last entry 的 `index & item`；
->
->   - Voting 节点对比该值，如果觉得自己更完整则拒绝该 `RequestVote` 请求：
->
->     ```
->     (lastTerm-V > lastTerm-C) || 
->     (lastTerm-V == lastTerm-C) && (lastIndex-V > lastIndex-C)
->     ```
->
-> - For a leader to decide an entry is committed: 
->
->   - Must be stored on a majority of servers.
->   - NEW: At least one new entry from leader’s term must also be stored on majority of servers
+    > 若出现 **split vote**，例如两个candidate节点均无法获得多数投票，则重试：增加 term id、重新选举。
+
+  - **3. 心跳：**Leader 被选出后开始以 heartbeat timeout 时间间隔定期发送 `AppendEntries` 消息给 follower；follower 返回响应。
+
+    > 若一个 Follower (在election timeout 内) 未收到 heartbeat，变成 candidate、重新触发选主。
+    >
+    > 若一个 Leader / Follower 收到的 term id比自己的大，则发现自己的任期号过期，立即回到 Follower 状态。
 
 
+- **扩展：Picking the best leader**
 
-**Log Replication 流程**
+  - 应该选择尽量包含所有已提交 entry 的 candidate 作为新 Leader。
+    During elections, choose candidate with log most likely to contain all committed entries
+
+    - `RequestVote` 请求中包含当前节点 last entry 的 `index & item`；
+
+    - Voting 节点对比该值，如果觉得自己更完整则拒绝该 `RequestVote` 请求：
+
+      ```
+      (lastTerm-V > lastTerm-C) || 
+      (lastTerm-V == lastTerm-C) && (lastIndex-V > lastIndex-C)
+      ```
+
+  - For a leader to decide an entry is committed: 
+
+    - Must be stored on a majority of servers.
+    - NEW: At least one new entry from leader’s term must also be stored on majority of servers
+
+
+
+**Raft 子问题二：Log Replication 日志复制**
 
 > http://thesecretlivesofdata.com/raft/#replication
+>
+> https://www.bilibili.com/video/BV1VY4y1e7px
 
-- Leader 收到客户端请求后，先记入本地 `node log`（未提交，不会即时修改`node value`）；
+- **Log Replication 流程**
 
-- Leader 通过 heartbeat  `AppendEntries` 请求将修改复制到 Follower 节点 log；
+  - **1. Leader 写入日志：**Leader 收到客户端请求后，先记入本地 `node log`（未提交，不会即时修改`node value`）；
 
-  > **Consistency Check：**
-  >
-  > - 保证一个 entry 被接受的话，之前的entry也一定已被接受。
-  >
-  > - AppendEntries 请求会带上 preceding entry，follower 如果不包含该preceding entry 则会拒绝该请求。
 
-- 等待多数返回后，Leader 提交日志并写入 `node value`。
+  - **2. AppendEntries：**Leader 通过 heartbeat  `AppendEntries` 请求将修改复制到 Follower 节点 log；
 
-- 然后 Leader 通知 Follower 节点该 entry 已提交，集群达成共识。
 
-**Log Replication 流程（网络分区时）**
+  - **3. 提交：**等待多数返回后，Leader 提交日志、并执行对应的状态机指令，写入 `node value`。
 
-- LeaderA 收到客户端请求后， `Append Entries` 请求在分区A内无法获得多数返回，则其 log entry 保持为 uncommitted 状态。
-- 同时另一个 LeaderB 收到另一请求，成功写入，在分区B内达成共识。
-- 网络恢复后，LeaderA 发现有更高的 election term、则分区A内节点会回滚 uncommitted entry，并同步新 LeaderB 的日志。
+
+  - 然后 Leader 通知 Follower 节点该 entry 已提交，集群达成共识。
+
+
+- **Log Replication 流程（网络分区时）**
+
+  - LeaderA 收到客户端请求后， `Append Entries` 请求在分区A内无法获得多数返回，则其 log entry 保持为 uncommitted 状态。
+
+  - 同时另一个 LeaderB 收到另一请求，成功写入，在分区B内达成共识。
+
+  - 网络恢复后，LeaderA 发现有更高的 election term、则分区A内节点会回滚 uncommitted entry，并同步新 LeaderB 的日志。
+
+
+- **Raft 一致性检查：**
+
+  - 目的：保证一个 entry 被接受的话，之前的entry也一定已被接受。
+
+  - 场景：Follower 崩溃后恢复。保证 follower 能按顺序恢复崩溃后缺失的日志。
+
+  - AppendEntries 请求会带上前一个日志条目的 Term ID + Index，follower 如果不包含该该 preceding entry 则会拒绝该请求。Leader 收到拒绝后，会发送前一个日志条目，逐渐向前定位到 follower 第一个缺失的日志、补齐所有缺失的日志。--> Follower 中额外的日志会被覆盖掉（因为这些日志一定没有被提交，不违反一致性）。
+
+    > 优化：follower 返回最后一个日志索引？或者往回找的时候 二分查找？
+    >
+    > - Raft 作者认为不必要，失败不经常发生。
+
+
+
+**Raft 子问题三：安全性**（完善边界条件规则）
+
+- Leader 宕机处理：选举限制
+  - 被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
+- Leader 宕机处理：新 Leader 是否提交之前任期内的日志条目
+- Follower 和 Candidate 宕机处理：
+- 时间与可用性限制：
 
 
 
@@ -3472,10 +3516,6 @@ Aka. 序列化
 
 - 目的：处理 ChunkServer 宕机后的数据恢复
 - 对 Chunk 的每次写入，都必须确保在三个副本中都写入完成。ACK = all? 
-
-
-
-### GFS 一致性模型
 
 
 
