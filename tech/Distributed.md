@@ -1245,11 +1245,17 @@ TODO
 
 **Raft 子问题三：安全性**（完善边界条件规则）
 
-- Leader 宕机处理：选举限制
-  - 被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
-- Leader 宕机处理：新 Leader 是否提交之前任期内的日志条目
-- Follower 和 Candidate 宕机处理：
-- 时间与可用性限制：
+- **Leader 宕机处理：选举限制**
+  - **目的**：使得被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
+  - **解决问题**：follower 落后 leader 若干日志（但没有漏一整个任期），那么下次选举其任期号 + 1、依旧有可能当选 leader。
+  - **实现**：RequestVote 请求中包含 candidate 的日志信息，如果投票者自己的日志比该 candidate 还新，则拒绝该投票。
+- **Leader 宕机处理：新 Leader 是否提交之前任期内的日志条目**
+  - Raft 永远不会通过计算副本数目的方式，来提交**之前任期**内的日志条目。 只有 leader **当前任期内**的日志条目才通过计算副本数目的方式来提交。(??? --> https://www.bilibili.com/video/BV1S94y1d7iY )
+- **Follower 和 Candidate 宕机处理：**
+  - 宕机后，后续发给他们的 RequestVote 和 AppendEntries RPC 都会失败、无限重试。
+- **时间与可用性限制：**
+  - Raft 不依赖客观时间，即便后发的 RPC 先到，也不会影响 Raft 正确性。
+  - 广播时间（broadcastTime，RPC 时间）<< 选举超时时间（electionTimeout）<< 平均故障时间（MTBF）
 
 
 
