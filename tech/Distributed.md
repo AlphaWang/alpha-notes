@@ -1243,13 +1243,24 @@ TODO
 
 
 
-**Raft 子问题三：安全性**（完善边界条件规则）
+**Raft 子问题三：安全性**
+
+目的：
+
+- 光靠领导者选举 + 日志复制，无法完全保证每一个状态机都按照相同的**顺序**执行相同的命令。
+- 保证日志有序、无空洞。
+
+
+
+完善边界条件规则：
 
 - **Leader 宕机处理：选举限制**
-  - **目的**：使得被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
-  - **解决问题**：follower 落后 leader 若干日志（但没有漏一整个任期），那么下次选举其任期号 + 1、依旧有可能当选 leader。
-  - **实现**：RequestVote 请求中包含 candidate 的日志信息，如果投票者自己的日志比该 candidate 还新，则拒绝该投票。
+  - **增加限制**：被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
+  - **解决问题**：follower 落后 leader 若干日志（但没有遗漏一整个任期），那么下次选举其任期号 + 1、依旧有可能当选 leader、之后无法补齐之前缺失的日志，造成状态机之间的不一致。
+  - **实现**：RequestVote 请求中包含 candidate 的日志信息（`lastLogIndex`, `lastLogTerm`），如果投票者自己的日志比该 candidate 还新，则拒绝该投票。
 - **Leader 宕机处理：新 Leader 是否提交之前任期内的日志条目**
+  - Leader 在提交某个日志条目之后崩溃，则新 Leader 会试图完成该日志条目的**复制**，而非提交。
+  - 这些被复制的老日志何时被提交？—— 新 Leader 提交一个新日志时，同时提交老日志。可以避免老任期内的日志被覆盖。
   - Raft 永远不会通过计算副本数目的方式，来提交**之前任期**内的日志条目。 只有 leader **当前任期内**的日志条目才通过计算副本数目的方式来提交。(??? --> https://www.bilibili.com/video/BV1S94y1d7iY )
 - **Follower 和 Candidate 宕机处理：**
   - 宕机后，后续发给他们的 RequestVote 和 AppendEntries RPC 都会失败、无限重试。
