@@ -25,6 +25,34 @@ TBD
 
 
 
+# | 通则
+
+**需求确认**
+
+- Scenario
+  - Who will use the system?
+  - How the system will be used?
+- Scale
+  - Read TPS?
+  - Spike traffic?
+- Performance
+  - P99 latency?
+- Cost
+  - minimize dev cost
+  - minimize maintenance cost
+
+
+
+**高层设计**
+
+- 数据模型
+  - what we store: individual events, or aggregate data? 
+  - 
+
+
+
+
+
 
 
 # | 计数系统设计

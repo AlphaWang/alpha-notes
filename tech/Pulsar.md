@@ -656,6 +656,8 @@ Reader 包装了 Consumer，拥有Consumer的所有功能。
 
 **订阅类型**
 
+> TODO https://pulsar-summit.org/en/event/virtual-conference-2020/sessions/how-splunk-mission-control-leverages-various-pulsar-subscription-types
+
 ![image-20220322112234641](../img/pulsar/subscription-modes.png)
 
 - **Exclusive**
@@ -2299,6 +2301,7 @@ Pulsar broker 调用 BookKeeper 客户端，进行创建 ledger、关闭 ledger�
 
 > - https://www.splunk.com/en_us/blog/it/comparing-pulsar-and-kafka-how-a-segment-based-architecture-delivers-better-performance-scalability-and-resilience.html
 > - https://github.com/AlphaWang/Translation-Apache-Pulsar-Versus-Apache-Kafka 
+> - TODO https://medium.com/streamnative/apache-pulsar-at-yahoo-japan-b7765bb7b58c
 
 
 
@@ -3327,7 +3330,6 @@ http://localhost:7750/bkvm/
   4. `bookie_readahead_batch_count` (OpStatsLogger)：每次 read-ahead 操作读取的 entry 个数；方便排查 *cache thrashing*. 
 
   5. `bookie_readahead_batch_size` (OpStatsLogger)：每次 read-ahead 操作读取的字节大小；
-     
   
   6. `bookie_read_entry` (OpStatsLogger)：entry 整体读取性能。
   
