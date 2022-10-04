@@ -45,7 +45,7 @@
 
 ## || 分布式流处理模型
 
-- Google 论文：https://research.google/pubs/pub43864/ 
+- Google 论文《The Dataflow Model》：https://research.google/pubs/pub43864/ 
 
 - Flink doc: https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/overview/ 
 
@@ -53,6 +53,25 @@
 
 - 数据从上一个 Operation 节点直接 push 到下一个 Operation 节点；
 - 各节点可以分布在不同的 task 线程中运行；
+
+
+
+**流处理演进**
+
+- **Lambda 架构**
+  - 在传统周期性批处理架构的基础上，增加一个提速层（Speed Layer），由低延迟流处理引擎驱动。
+  - 数据同时发往流处理引擎和批量存储。批处理引擎周期性处理并将精确结果写入“批处理表”；流处理引擎近实时计算出近似结果并写入“提速表”。
+  - 应用最终对“批处理表”、“提速表” 将精确结果与近似结果进行合并。
+
+
+
+## || Dataflow
+
+
+
+
+
+
 
 
 
