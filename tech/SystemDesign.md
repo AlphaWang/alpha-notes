@@ -201,7 +201,7 @@ TBD
 
   
 
-最终版本：
+最终版本：(Lambda 架构)
 
 - API gateway：收集点击事件、预聚合以便减少数据量、写入 Kafka
 
@@ -259,6 +259,48 @@ TBD
 
 
 
+#### 高层设计
+
+![image-20221004114208837](../img/design/counter.png)
+
+**考察点**
+
+- **API gateway：分区服务客户端**
+  - Blocking vs. Non-blocking IO
+  - Buffering & batching：不要每次有访问记录都写入
+  - Timeout
+  - Retry：超时之后重试
+  - Exponetial backoff & Jitter：重试间隔
+  - Circuit Breaker
+- **Load Balancer**
+  - 软件 or 硬件负载均衡
+  - 网络协议：TCP
+  - 负载均衡算法
+  - DNS
+  - Health checking
+  - HA
+- **Partitioner Service**
+  - 分区策略
+  - 服务发现：zk
+  - Replication
+
+
+
+**技术栈**
+
+- Client
+  - Netty, Hystrix, Polly
+- Load Balancer
+  - NetScaler, Nginx, AWS ELB
+- Messaging
+  - Kafka, AWS Kinesis
+- Data processing
+  - Spark, Flink
+- Storage
+  - Cassandra, HBase, Hadoop, S3
+
+
+
 #### 存储
 
 **数据库选型 : SQL** 
@@ -288,7 +330,7 @@ TBD
 
 
 
-#### 计数服务
+#### 计数写入服务
 
 **设计思路**
 
@@ -332,7 +374,9 @@ TBD
 
 
 
-#### 查询服务
+
+
+#### 计数查询服务
 
 **数据获取层设计**
 
