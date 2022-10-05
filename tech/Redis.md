@@ -1004,7 +1004,7 @@ ZADD user_score score ui
   > - 同时还提供了一个timeout参数，如果没有任何事件到来，那么就最多等待timeout时间，线程处于阻塞状态。
   > - 一旦期间有任何事件到来，就可以立即返回。时间过了之后还是没有任何事件到来，也会立即返回。拿到事件后，线程就可以继续挨个处理相应的事件。处理完了继续过来轮询。于是线程就进入了一个死循环，我们把这个死循环称为事件循环，一个循环为一个周期。
 
-###### 
+
 
 **异步处理线程**
 
@@ -1212,1698 +1212,1381 @@ https://redis.io/topics/lru-cache
 
 配置
 
-- maxmemory-policy
+- `maxmemory-policy`
 
 策略
 
-- 不删除，拒绝写入：noeviction
+- 不删除，拒绝写入：`noeviction`
   -  默认策略，拒绝写入操作；
   - 这个策略作为默认值是否合适？导致数据不可更新
 
 - 删除有过期时间的key
-  - volatile-lru：LRU算法删除 有expire的key；
-  - volatile-ttl：删除最近将要过期key；
-  - volatile-random：随机删除过期key
-  - volatile-lfu：LFU算法
+  - `volatile-lru`：LRU算法删除 有expire的key；
+  - `volatile-ttl`：删除最近将要过期key；
+  - `volatile-random`：随机删除过期key
+  - `volatile-lfu`：LFU算法
 
 - 删除所有key
-  - allkeys-lru：LRU算法删除所有key；
-  - allkeys-random：随机删除所有key；
-  - allkeys-lfu：LFU 算法
+  - `allkeys-lru`：LRU算法删除所有key；
+  - `allkeys-random`：随机删除所有key；
+  - `allkeys-lfu`：LFU 算法
 
-### eviction 算法
+### Eviction 算法
 
 https://redis.io/topics/lru-cache
 
-##### LFU: Least Frequently Used
+- LFU: Least Frequently Used
+  - 4.0 新加入
 
-4.0 新加入
+- LRU: Least Recently Used
+  - 附加链表，头部表示刚被访问的元素
+  - 要消耗大量额外内存
+  - 当字典的某个元素被访问时，它在链表中的位置会被移动到表头。所以链表的元素排列顺序就是元素最近被访问的时间顺序。位于链表尾部的元素就是不被重用的元素，所以会被踢掉。
 
-##### LRU: Least Recently Used
+- 近似LRU
 
-当字典的某个元素被访问时，它在链表中的位置会被移动到表头。
+  - 无需额外内存
 
-所以链表的元素排列顺序就是元素最近被访问的时间顺序。
+  - 原理：每个key增加额外字段，表示最近被访问的时间。超出maxmemory时，随机采样5个key，淘汰掉最旧的；直至低于maxmemory
 
-位于链表尾部的元素就是不被重用的元素，所以会被踢掉。
-
-- 缺点：需要大量的额外的内存
-
-
-###### 附加链表，头部表示刚被访问的元素
-
-###### 要消耗大量额外内存
-
-##### 近似LRU
-
-- **随机**采样出 5个 key(可配置 maxmemory-samples 5) ，
-- 然后淘汰掉最旧的 key，
-- 如果淘汰后内存还是超出 maxmemory，那就继续随机采样淘汰，直到内存低于 maxmemory 为止。
-
-Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 24 个 bit，也就是最后一次被访问的时间戳。
+    > Redis给每个 key 增加了一个额外的小字段，这个字段的长度是 24 个 bit，也就是最后一次被访问的时间戳。
+    >
+    > - **随机**采样出 5个 key(可配置 maxmemory-samples 5) ，
+    > - 然后淘汰掉最旧的 key，
+    > - 如果淘汰后内存还是超出 maxmemory，那就继续随机采样淘汰，直到内存低于 maxmemory 为止。
 
 
 
-###### 无需额外内存
+## || 内部存储结构
 
-###### 原理
+**redisObject**
 
-####### 每个key增加额外字段：最近被访问的时间
+- type，数据类型
+  - string
+  - hash
+  - list
+  - set
+  - sorted set
 
-####### 超出maxmemory时，随机采样5个key，淘汰掉最旧的；直至低于maxmemory
+- encoding，编码方式
+  - raw
+  - int
+  - ziplist
+  - linkedlist
+  - hashmap
+  - intset
 
-### 内部存储结构
-
-#### redisObject
-
-##### type
-
-string
-hash
-list
-set
-sorted set
-
-
-###### 数据类型
-
-##### encoding
-
-raw
-int
-ziplist
-linkedlist
-hashmap
-intset
+- ptr，数据指针
+- vm，虚拟内存
+- 其他
 
 
 
-###### 编码方式
+**字典结构**
 
-##### ptr
+- 类似 HashMap, 数组 + 链表
 
-###### 数据指针
+- 扩容 Rehash
 
-##### vm
+  - 触发：
+    - 当LoadFactor达到阈值，则重新分配一个 2倍大小的数组
+  - 重新计算元素位置
+    - 将元素 hash 值对数组长度进行取模运算
+    - 数组长度为 2 的 n 次方 --> 取模 等价于 按位于操作：`a mod 8 = a & (8 - 1) = a & 7`。7 即为 mask，作用是保留hash值的低位。
+    - 即，每个槽位链表中约一半元素还是会放在当前槽位
 
-###### 虚拟内存
+  - 故，若按高位进位加法的遍历顺序，rehash后的槽位在遍历顺序上是相邻的。—— scan 命令的遍历！！！
 
-##### 其他
 
-#### 字典结构
 
-##### 类似 HashMap, 数组 + 链表
+**小对象压缩**
 
-##### 扩容 Rehash
+- `hashtable` --> `skiplist`
+  - 针对 hash / zset 
 
-###### 触发
+- `hashtable` --> `intset`
 
-####### 当LoadFactor达到阈值，则重新分配一个 2倍大小的数组
+  - 针对 整数 set
 
-###### 重新计算元素位置
+  
 
-####### 将元素 hash 值对数组长度进行取模运算
+# | 持久化
 
-####### 数组长度为2的n次方 --> 取模 等价于 按位于操作
-
-####### a mod 8 = a & (8 - 1) = a & 7
-
-######## 7 即为 mask，作用是保留hash值的低位
-
-####### 即，每个槽位链表中约一半元素还是会放在当前槽位
-
-###### 故，若按高位进位加法的遍历顺序，rehash后的槽位在遍历顺序上是相邻的
-
-####### scan 命令的遍历！！！
-
-#### 小对象压缩
-
-##### hashtable --> skiplist
-
-###### 针对 hash / zset 
-
-##### hashtable --> intset
-
-###### 针对 整数set
-
-## 持久化
-
-### RDB
+## || RDB
 
 全量备份
 
 
-#### 触发条件
 
-##### SAVE 命令
+**触发条件**
 
-###### 同步
+- SAVE 命令
+  - 同步
+  - 阻塞客户端命令
+  - 不消耗额外内存
 
-###### 阻塞客户端命令
+- BGSAVE 命令
 
-###### 不消耗额外内存
+  - 异步
 
-##### BGSAVE 命令
+  - 不阻塞客户端命令。——但 fork 执行瞬间是阻塞主线程的
+  - fork子进程，消耗内存。——子进程名：redis-rdb-bgsave
 
-###### 异步
+- 配置文件: save seconds changes
+  ```properties
+  save 900 1
+  # save after 900 seconds if there is at least 1 change to the dataset
+  ```
 
-###### 不阻塞客户端命令
+  - BGSAVE
+  - 不建议打开
 
-####### 但 fork 执行瞬间是阻塞主线程的
+- SHUTDOWN 命令
 
-###### fork子进程，消耗内存
-
-子进程名：redis-rdb-bgsave
-
-
-##### 配置文件: save seconds changes
-
-save 900 1
-
-save after 900 seconds if there is at least 1 change to the dataset
-
-###### BGSAVE
-
-###### 不建议打开
-
-##### SHUTDOWN 命令
-
-##### 从节点 SYNC 时 (=BGSAVE)
-
-#### 原理
-
-##### fork子进程生成快照
+- 从节点 SYNC 时 (=BGSAVE)
 
 
-- 调用 glibc 的函数fork产生一个子进程，快照持久化完全交给子进程来处理，父进程继续处理客户端请求。
 
-###### 流程
+**原理**
 
-####### 父进程继续处理客户端请求
+- **fork子进程生成快照**
 
-####### redis-rdb-bgsave 子进程进行持久化
+  > 调用 glibc 的函数fork产生一个子进程，快照持久化完全交给子进程来处理，父进程继续处理客户端请求。
 
-###### 内存越大，耗时越长
+  - 流程
+    - 父进程继续处理客户端请求
+    - redis-rdb-bgsave 子进程进行持久化
 
-###### info: latest_fork_usec
+  - 内存越大，耗时越长
+  - info: latest_fork_usec
 
-##### COW (Copy On Write)
+- **COW** (Copy On Write)
 
-使用操作系统的 COW 机制来进行数据段页面的分离。
-当父进程对其中一个页面的数据进行修改时，会将被共享的页面复制一份分离出来，然后对这个复制的页面进行修改。这时子进程相应的页面是没有变化的，还是进程产生时那一瞬间的数据。
+  > 使用操作系统的 COW 机制来进行数据段页面的分离。
+  > 当父进程对其中一个页面的数据进行修改时，会将被共享的页面复制一份分离出来，然后对这个复制的页面进行修改。这时子进程相应的页面是没有变化的，还是进程产生时那一瞬间的数据。
 
-###### 父进程修改数据时，会将被共享的page复制一份，分离出来
+  - 父进程修改数据时，会将被共享的page复制一份，分离出来
+  - 会导致内存增长。——但redis修改的数据量比例小，所以内存增长不会超过2倍
+  - 子进程数据保持不变，所以称为“快照”
 
-###### 会导致内存增长
 
-####### 但redis修改的数据量比例小，所以内存增长不会超过2倍
 
-###### 子进程数据保持不变，所以称为“快照”
+**缺点**
 
-#### 缺点
+- 不可控、会丢失数据
+- 耗时 O(n)、耗性能、耗内存
 
-##### 不可控、会丢失数据
 
-##### 耗时 O(n)、耗性能、耗内存
 
-### AOF
+## || AOF
 
 增量备份
 
 - 先执行指令才将日志存盘.
 - 可用 `bgrewriteaof` 指令对 AOF 日志进行瘦身。
 
-#### 触发条件
 
-##### always
 
-##### every second
+**触发条件**
 
-##### no
+- always
+- every second
+- no
 
-#### 原理
+**原理**
 
-##### 先执行指令，再存储到AOF文件
+- 先执行指令，再存储到AOF文件
+- 写命令刷新到缓冲区
+- 每条命令 fsync 到硬盘AOF文件
 
-##### 写命令刷新到缓冲区
+**AOF重写**
 
-##### 每条命令 fsync 到硬盘AOF文件
+- `bgrewriteaof` 命令
 
-#### AOF重写
+- 原理：类似bgsave, fork子进程重新生成AOF
 
-##### bgrewriteaof 命令
+- 配置文件
 
-###### 原理：类似bgsave, fork子进程重新生成AOF
+  - auto-aof-rewrite-min-size
 
-##### 配置文件
+  - auto-aof-rerwrite-percentage
 
-###### auto-aof-rewrite-min-size
+  - 推荐配置
 
-###### auto-aof-rerwrite-percentage
+    ```
+    appendonly yes
+    appendfilename "appendonly-${port}.aof"
+    appendfsync everysec
+    dir /bigdiskpath
+    
+    no-appendfsync-on-rewrite yes
+    
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    ```
 
-###### 推荐配置
+    
 
-``` 
-appendonly yes
-appendfilename "appendonly-${port}.aof"
-appendfsync everysec
-dir /bigdiskpath
+  - 动态应用配置
+    - config set appendonly yes
+    - config rewrite
 
-no-appendfsync-on-rewrite yes
 
-auto-aof-rewrite-percentage 100
-auto-aof-rewrite-min-size 64mb
-```
 
-###### 动态应用配置
+**AOF追加阻塞**
 
-####### config set appendonly yes
+- 对比上次 fsync 时间，>2s 则阻塞
+- info: aof_delayed_fsync (累计值)
 
-####### config rewrite
 
-#### AOF追加阻塞
 
-##### 对比上次 fsync 时间，>2s 则阻塞
+**建议**
 
-##### info: aof_delayed_fsync (累计值)
+- 混合持久化
+  - 在 Redis 重启的时候，可以先加载 rdb 的内容，然后再重放增量 AOF 日志。比 AOF 全量文件重放要快很多。
 
-### 建议
+- 持久化操作主要在“从节点”进行
 
-#### 混合持久化
 
-在 Redis 重启的时候，可以先加载 rdb 的内容，然后再重放增量 AOF 日志。比 AOF 全量文件重放要快很多。
 
-#### 持久化操作主要在“从节点”进行
+# | 集群
 
-## 集群
+## || 主从
 
-### 主从
+### **主从配置**
 
-#### 配置
+- slaveof
 
-##### slaveof
+- slave-read-only yes
 
-- 命令
-- 配置
+- 查看主从状态：info replication
+  ```
+  127.0.0.1:6379> info replication
+  
+  role:master
+  connected_slaves:2
+  
+  slave0:ip=127.0.0.1,port=6380,state=online,offset=27806,lag=1
+  slave1:ip=127.0.0.1,port=6381,state=online,offset=27806,lag=1
+  master_repl_offset:27806
+  
+  repl_backlog_active:1
+  repl_backlog_size:1048576
+  repl_backlog_first_byte_offset:2
+  repl_backlog_histlen:27805
+  ```
 
-##### slave-read-only yes
+- 读从库：LettuceClientConfiguration.readFrom(ReadFrom.SLAVE_PREFERRED)
 
-##### 查看主从状态：info replication
 
-127.0.0.1:6379> info replication
 
-role:master
-connected_slaves:2
+### **主从复制流程**
 
-slave0:ip=127.0.0.1,port=6380,state=online,offset=27806,lag=1
-slave1:ip=127.0.0.1,port=6381,state=online,offset=27806,lag=1
-master_repl_offset:27806
+**全量复制**
 
-repl_backlog_active:1
-repl_backlog_size:1048576
-repl_backlog_first_byte_offset:2
-repl_backlog_histlen:27805
+- 步骤
+  - 1.【s -> m】psync runId offset
+    ——首次：`psync ? -1`
+  - 2.【m -> s】+FULLRESYNC {runId} {offset}
+  - 3.【s】save masterInfo
+  - 4.【m】bgsave / 写入 repl_back_buffer
+    ——生成快照
+  - 5.【m -> s】send RDB
+  - 6.【m -> s】send buffer
+    ——用于复制增量指令
+  - 7.【s】flush old data
+    ——避免之前数据的影响
+  - 8.【s】load RDB
 
-##### 读从库
+- 首次同步
+  - 从节点加入到集群时，必须先进行一次快照同步 （全量复制）！
 
-###### LettuceClientConfiguration.readFrom(ReadFrom.SLAVE_PREFERRED)
+- 问题
+  - 如果buffer太小，或rdb复制时间太长，会导致无法进行增量复制；然后就会再次发起快照同步，陷入死循环
 
-#### 主从复制流程
 
-##### 全量复制
 
-###### 步骤
+**部分复制**
 
-####### 1.【s -> m】psync runId offset
+- 步骤
+  - 1.【s -> m】psync runId offset
+  - 2.【m -> s】CONTINUE
+  - 3.【m -> s】send partial data
 
-######## 首次：`psync ? -1`
+- 原理
 
-####### 2.【m -> s】+FULLRESYNC {runId} {offset}
+  - 主节点上有个 “内存 buffer”，存储指令数据
+    - 是个环形数组
+    - 数组满了会被覆盖；此时强制全量复制
 
-####### 3.【s】save masterInfo
+  - 从节点拉取buffer数据，并反馈偏移量
 
-####### 4.【m】bgsave / 写入 repl_back_buffer
+- 问题
+  - buffer 过小就会导致指令被覆盖；
+  - buffer过大可能导致OOM；
+    ——设置 client-output-buffer-limit，超过则主库强制断开从库的连接；
+  - 从库过多时，主库生成RDB会很频繁；
+    ——主从级联模式
 
-######## 生成快照
 
-####### 5.【m -> s】send RDB
 
-####### 6.【m -> s】send buffer
+**两个buffer**
 
-######## 用于复制增量指令
+- replication buffer
+  - 用于全量复制；
+  - 每个 client 对应一个 replication buffer
 
-####### 7.【s】flush old data
+- repl_backlog_buffer
+  - 用于增量复制
+  - 环形缓冲区
+  - 所有从库共享
 
-######## 避免之前数据的影响
+### 问题
 
-####### 8.【s】load RDB
+- **开销大** 
+  - 【m】bgsave 时间开销
+  - 【m】RDB 网络传输开销
+  - 【s】清空数据时间开销
+  - 【s】加载 RDB 时间开销
+  - 【s】可能的AOF重写时间
 
-###### 首次同步
+- **读写分离问题**
 
-####### 从节点加入到集群时，必须先进行一次快照同步 （全量复制）！
+  - 复制数据延迟
+  - 读到过期数据
+    - wait 指令
+    - 等待wait之前的所有写操作 同步到 N 个从节点
 
-###### 问题
+  - 从节点故障
 
-####### 如果buffer太小，或rdb复制时间太长，会导致无法进行增量复制
+- **主从配置不一致**
 
-####### 然后就会再次发起快照同步，陷入死循环
+  - maxmemory配置不一致。——可能丢失数据
+    ```
+    master: maxmemory=4g
+    slave: maxmemory=2g
+    当数据>2g，slave会使用maxmemory-policy删除数据，failover之后的表现就是丢失数据。
+    ```
 
-##### 部分复制
+  - 数据结构优化参数不一致。——内存不一致
 
-###### 步骤
+- **规避“全量复制”**
 
-####### 1.【s -> m】psync runId offset
+  - 第一次全量复制
+    - 不可避免
+    - 优化：小主节点（小分片），低峰
 
-####### 2.【m -> s】CONTINUE
+  - 节点runId不匹配导致复制
+    - 主节点重启后runId变化
+    - 优化：故障转移（哨兵、集群）
 
-####### 3.【m -> s】send partial data
+  - 复制积压缓冲区不足
+    -  网络中断后无法进行部分复制
+    - 优化：rel_backlog_size（默认1m）
 
-###### 原理
+- **规避“复制风暴”**
+  - 主节点重启，多个从节点复制
+  - 优化：更换复制拓扑
 
-####### 主节点上有个 “内存 buffer”，存储指令数据
+## || sentinel
 
-######## 是个环形数组
+### 原理
 
-######## 数组满了会被覆盖
+思路
 
-######### 此时强制全量复制
+- sentinel持续监控主从节点状态；主挂掉，自动选择最优的从节点切换成主
+- 客户端连接集群时，先向sentinel询问主节点地址
 
-####### 从节点拉取buffer数据，并反馈偏移量
+**三个定时任务**
 
-###### 问题
+- **每1秒：心跳检测**
+  - sentinel 对其他 sentinel 和 redis 执行 `ping `
+  - 失败判定依据
 
-####### buffer 过小就会导致指令被覆盖
+- **每2秒：交换信息**
+  - sentinel 通过 master 的 channel 交换信息，交换对节点的看法、以及自身信息
+  - master频道：`__sentinel__:hello`
 
-####### buffer过大可能导致OOM
+- **每10秒：发现slave**
+  - sentinel 对 m/s 执行 `info`，发现slave节点
+    - sentinel 初始配置只关心master节点
+  - 确认主从关系
 
-######## 设置 client-output-buffer-limit，超过则主库强制断开从库的连接
 
-####### 从库过多时，主库生成RDB会很频繁
 
-######## 主从级联模式
+**哨兵集群**
 
-##### 两个buffer
+- sentinel 集群可看成是一个 ZooKeeper 集群
 
-###### replication buffer
+- 集群内部如何通讯？
 
-####### 用于全量复制
+  - 利用 pub / sub 机制，频道：`__sentinel__:hello`
 
-####### 每个 client 对应一个 replication buffer
+  - 每个哨兵在主库上发布消息、订阅消息
 
-###### repl_backlog_buffer
+- 哨兵如何知道从库IP？
+  - 向主库发送 info 命令
 
-####### 用于增量复制
+- 哨兵如何与客户端同步信息？
+  - 哨兵自身提供了 pub/sub 频道
+  - `+sdown`: 实例进入“主观下线”
+    `-sdown`：实例退出“主观下线”
+    `+odown`：进入“客观下线”
+    `-down`：退出“客观下线”
+  - `+slave-reconf-sent`：哨兵发送slaveof命令重新配置从库
+    `+slave-reconf-inprog`：从库配置了新主库，但尚未进行同步
+    `+slave-reconf-done`：从库配置了新主库，且完成同步
+  - `+switch-master`：主库地址发生变化
 
-####### 环形缓冲区
+### 流程
 
-####### 所有从库共享
+**客户端流程**
 
-#### 问题
+- 【0. sentinel集合】 预先知道sentinel节点集合、masterName
+- 【1. 获取sentinel】遍历sentinel节点，获取一个可用节点
+- 【2. 获取master节点】get-master-addr-by-name masterName
+- 【3. role replication】获取master节点角色信息
+- 【4. 变动通知】当节点有变动，sentinel会通知给客户端 （发布订阅）
+  - JedisSentinelPool -> MasterListener --> sub "+switch-master"
+  - sentinel是配置中心，而非代理！
 
-##### 开销大
 
-###### 【m】bgsave时间开销
 
-###### 【m】RDB网络传输开销
+**故障转移流程**
 
-###### 【s】清空数据时间开销
+- 【1. 故障发现】多个sentinel发现并确认master有问题
 
-###### 【s】加载RDB时间开销
+  - 主观下线：ping 响应超时
+    ```
+    # 主观下线相关配置
+    sentinel monitor myMaster <ip> <port> <quorum>
+    sentinel down-after-milliseconds myMaster <timeout>
+    ```
 
-###### 【s】可能的AOF重写时间
+  - 客观下线
+    - 超半数哨兵判断为 主观下线
+    - 为了防止误判，防止无谓的主从切换
 
-##### 读写分离问题
+- 【2. 选主】选举出一个sentinel作为领导
+  - 原因：只有一个sentinel节点完成故障转移
+  - 实现：通过sentinel `is-master-down-by-addr`命令竞争领导者
 
-###### 复制数据延迟
+- 【3. 选master】选出一个slave作为master, 并通知其余slave
 
-###### 读到过期数据
+  - 筛选
 
-####### wait 指令
+    - 从库当前在线状态
+    - 从库之前的网络连接状态
 
-####### 等待wait之前的所有写操作 同步到 N 个从节点
+  - 打分
 
-###### 从节点故障
+    - 选slave-priority最高的
 
-##### 主从配置不一致
+    - 选复制偏移量最大的：`slave_repl_offset`
 
-###### maxmemory配置不一致
+      > 主库会用 master_repl_offset 记录当前的最新写操作在 repl_backlog_buffer 中的位置，而从库会用 slave_repl_offset 这个值记录当前的复制进度。
 
-####### 可能丢失数据
+    - 选runId最小的
 
-master: maxmemory=4g
-slave: maxmemory=2g
+  - 对这个slave执行slaveof no one
 
-当数据>2g，slave会使用maxmemory-policy删除数据，failover之后的表现就是丢失数据。
+- 【4. 通知】通知客户端主从变化
 
-###### 数据结构优化参数不一致
+- 【5. 老master】等待老的master复活成为新master的slave。
 
-####### 内存不一致
+  ——sentinel会保持对其关注
 
-##### 规避“全量复制”
+### 运维
 
-###### 第一次全量复制
+**消息丢失**
 
-####### 不可避免
+- 场景：主从切换后，从节点的数据不是最新的
 
-####### 优化：小主节点（小分片），低峰
+- 缓解
 
-###### 节点runId不匹配导致复制
+  - `min-slaves-to-write 1`：至少要有一个从节点正常复制，才返回结果。
+    主节点必须至少有一个从节点在进行正常复制，否则就停止对外写服务，丧失可用性
 
-####### 主节点重启后runId变化
+  - `min-slaves-max-lag 10`：如果10s未收到从节点反馈，则认为复制不正常
 
-####### 优化：故障转移（哨兵、集群）
 
-###### 复制积压缓冲区不足
 
-####### 网络中断后无法进行部分复制
+**上下线节点**
 
-####### 优化：rel_backlog_size（默认1m）
+- 下线主节点：`sentinel failover <masterName>`
 
-##### 规避“复制风暴”
+- 下线从节点：考虑是否做清理、考虑读写分离
 
-###### 主节点重启，多个从节点复制
+- 上线主节点：sentinel failover进行替换
 
-###### 优化：更换复制拓扑
+- 上线从节点：slaveof
 
-### sentinel
+- 上线sentinel：参考其他sentinel节点启动
 
-#### 原理
 
-##### 思路
 
-###### sentinel持续监控主从节点状态；主挂掉，自动选择最优的从节点切换成主
+**高可用读写分离**
 
-###### 客户端连接集群时，先向sentinel询问主节点地址
+- client关注slave节点资源池
 
-##### 三个定时任务
+- 关注三个消息
 
-###### 每1秒：心跳检测
+  - +switch-master: 从节点晋升
 
-####### sentinel 对其他 sentinel 和 redis 执行ping 
+  - +convert-to-slave: 切换为从节点
+  - +sdown: 主观下线
 
-####### 失败判定依据
+  
 
-###### 每2秒：交换信息
+## || codis
 
-####### sentinel 通过 master 的 channel 交换信息
+**原理**
 
-######## master频道：__sentinel__:hello
+- proxy 转发
 
-####### 交换对节点的看法、以及自身信息
+- 存储槽位关系
+  - zookeeper
+  - etcd
 
-###### 每10秒：发现slave
+- 扩容迁移
 
-####### sentinel 对 m/s 执行info
+  - 增加 SlotScan 命令，扫描出制定槽位下的所有key，然后挨个迁移
 
-######## 发现slave节点
+  - 如果get key正好在迁移中的槽位，则强制对当前key先完成迁移，迁移后访问新redis实例
 
-sentinel初始配置只关心master节点
+**代价**
 
-####### 确认主从关系
+- 不支持事务
 
-##### 哨兵集群
+- rename 操作也很危险，rename 前后可能放到不同的redis实例
 
-######  sentinel 集群可看成是一个 ZooKeeper 集群
+- 为了支持扩容，单个 key 对应的 value 不宜过大
 
-###### 集群内部如何通讯？
+- 网络开销更大
 
-####### 利用 pub / sub 机制
+- 需要运维zk
 
-######## 频道：__sentinel__:hello
 
-####### 每个哨兵在主库上发布消息、订阅消息
 
-###### 哨兵如何知道从库IP？
+## || cluster
 
-####### 向主库发送 info 命令
+### 复制
 
-###### 哨兵如何与客户端同步信息？
+- 与 Master / Slave 一样
 
-####### 哨兵自身提供了 pub/sub 频道
+- **主从复制 (异步)**：SYNC snapshot + backlog队列
 
-`+sdown`: 实例进入“主观下线”
-`-sdown`：实例退出“主观下线”
-`+odown`：进入“客观下线”
-`-down`：退出“客观下线”
+  > 流程
+  >
+  > - slave启动时，向master发起 `SYNC` 命令。
+  >
+  > - master收到 SYNC 后，开启 `BGSAVE` 操作，全量持久化。
+  >
+  > - BGSAVE 完成后，master将 `snapshot` 发送给slave.
+  >
+  > - 发送期间，master收到的来自clien新的写命令，正常响应的同时，会再存入一份到 `backlog 队列`。
+  >
+  > - snapshot 发送完成后，master会继续发送backlog 队列信息。
+  >
+  > - backlog 发送完成后，后续的写操作同时发给slave，保持实时地异步复制。
 
-`+slave-reconf-sent`：哨兵发送slaveof命令重新配置从库
-`+slave-reconf-inprog`：从库配置了新主库，但尚未进行同步
-`+slave-reconf-done`：从库配置了新主库，且完成同步
+  - **快照同步**
+  - **增量同步**：异步将 buffer 中的指令同步到从节点，从节点一边执行同步的指令流来达到和主节点一样的状态，一边向主节点反馈自己同步到哪里了 (偏移量)。
+  - **无盘复制**：无盘复制是指主服务器直接通过套接字将快照内容发送到从节点，生成快照是一个遍历的过程，主节点会一边遍历内存，一边将序列化的内容发送到从节点，从节点还是跟之前一样，先将接收到的内容存储到磁盘文件中，再进行一次性加载。
+  - **wait 指令**：wait 指令可以让异步复制变身同步复制，确保系统的强一致性。`wait N t`: 等待 wait 指令之前的所有写操作同步到 N 个从库，最多等待时间 t。
 
-`+switch-master`：主库地址发生变化
+- Slave默认是热备，不提供读写服务
 
-#### 流程
 
-##### 客户端流程
 
-###### 【0. sentinel集合】 预先知道sentinel节点集合、masterName
+### 分片
 
-###### 【1. 获取sentinel】遍历sentinel节点，获取一个可用节点
+**slots**
 
-###### 【2. 获取master节点】get-master-addr-by-name masterName
+- 16384个
+  - 定位：crc16(key) % 16384
+  - 计算槽位：cluster keyslot k
 
-###### 【3. role replication】获取master节点角色信息
+- 槽位信息存储于每个节点中
 
-###### 【4. 变动通知】当节点有变动，sentinel会通知给客户端 （发布订阅）
+  - Rax：`Rax slots_to_keys` 用来记录槽位和key的对应关系；Radix Tree 基数树；
 
-####### JedisSentinelPool -> MasterListener --> sub "+switch-master"
+  - 通过 Gossip 协议传播配置信息
 
-####### sentinel是配置中心，而非代理！
+  - 问题1：不适合大规模集群
 
-##### 故障转移流程
+  - 问题2：gossip 协议传播速度慢
 
-###### 【1. 故障发现】多个sentinel发现并确认master有问题
+  - 解决：
 
-####### 主观下线
+    - 代理：Codis/ twemproxy
 
-相关配置
-```
-sentinel monitor myMaster <ip> <port> <quorum>
-sentinel down-after-milliseconds myMaster <timeout>
-```
+      > - 转发请求
+      > - 监控集群状态、负责主从切换
+      > - 维护集群元数据（槽位映射信息）
 
-######## ping 响应超时
+    - 或者客户端维护元数据
 
-####### 客观下线
 
-######## 超半数哨兵判断为 主观下线
+- 每个节点通过meet命令交换槽位信息
 
-######## 为了防止误判，防止无谓的主从切换
 
-###### 【2. 选主】选举出一个sentinel作为领导
 
-####### 原因
+**伸缩**
 
-######## 只有一个sentinel节点完成故障转移
+- 迁移slot (同步)
 
-####### 实现
+  - Redis 迁移的单位是槽，当一个槽正在迁移时，这个槽就处于中间过渡状态。这个槽在原节点的状态为`migrating`，在目标节点的状态为`importing`。
 
-######## 通过sentinel is-master-down-by-addr命令竞争领导者
 
-###### 【3. 选master】选出一个slave作为master, 并通知其余slave
+  - 迁移过程是同步的，在目标节点执行`restore指令`到原节点删除key之间，原节点的主线程会处于阻塞状态，直到key被成功删除。 >> 要尽可能避免大key
 
-####### 筛选
 
-######## 从库当前在线状态
+- 原理： 
 
-######## 从库之前的网络连接状态
+  - 以原节点作为目标节点的「客户端」
 
-####### 打分
+  - 原节点对当前的key执行dump指令得到序列化内容，然后发送指令restore携带序列化的内容作为参数。
 
-######## 选slave-priority最高的
+  - 目标节点再进行反序列化就可以将内容恢复到目标节点的内存中。
 
-######## 选复制偏移量最大的
+  - 原节点收到后再把当前节点的key删除。
 
-主库会用 master_repl_offset 记录当前的最新写操作在 repl_backlog_buffer 中的位置，而从库会用 slave_repl_offset 这个值记录当前的复制进度。
 
-######### slave_repl_offset
+- 步骤
+  - dump
+  - restore
+  - remove
 
-######## 选runId最小的
+- 迁移slot过程中如何同时提供服务？
+  - `-ASK`
 
-####### 对这个slave执行slaveof no one
 
-###### 【4. 通知】通知客户端主从变化
 
-###### 【5. 老master】等待老的master复活成为新master的slave
+**故障转移**
 
-####### sentinel会保持对其关注
+- **故障发现**
 
-#### 消息丢失
+  - 通过ping/pong发现故障
 
-##### 场景
+  - **PFAIL 主观下线**
 
-###### 主从切换后，从节点的数据不是最新的
+    - node1 发送ping消息
 
-##### 缓解
+    - node2 回复pong消息
 
-###### min-slaves-to-write 1
+    - node1 收到pong，并更新与node2的 `最后通信时间`
 
-主节点必须至少有一个从节点在进行正常复制，否则就停止对外写服务，丧失可用性
+    - cron定时任务：如果最后通信时间超过node-timeout，则标记为 `pfail`
 
-####### 至少要有一个从节点正常复制，才返回结果
+  - **FAIL 客观下线**：当半数以上主节点都标记其为pfail
 
-###### min-slaves-max-lag 10
+    - 接受ping
 
-如果 10s 没有收到从节点的反馈，就意味着从节点同步不正常
+    - 消息解析：其他pfail节点 + 主节点发送消息
 
-####### 如果10s未收到从节点反馈，则认为复制不正常
+    - 维护故障链表
 
-#### 运维
+    - 尝试客观下线：计算有效下线报告数量
 
-##### 上下线节点
+    - if > 槽节点总数一半，则更新为客观下线；
+    - 并向集群广播下线节点的fail消息。
 
-###### 下线主节点
 
-####### sentinel failover <masterName>
+- **故障恢复**
 
-###### 下线从节点
+  - 资格检查
+    - 每个从节点：检查与主节点断线时间；如果大于 `cluster-node-timeout` * 
+      `cluster-slave-validity-factor`，则取消资格
 
-####### 考虑是否做清理、考虑读写分离
+  - 准备选举时间
+    - offset越大，则延迟选举时间越短。
+    - slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
 
-###### 上线主节点
+  - 选举投票
+    - 收集选票，如果大于 N/2 + 1，则可替换主节点
+  - 替换主节点
+    - 1) slaveof no one
+    - 2. clusterDelSlot撤销故障主节点负责的槽；
+    - 3. clusterAddSlot把这些槽分配给自己；
+    - 4. 向集群广播pong消息，表明已经替换了故障节点
 
-####### sentinel failover进行替换
 
-###### 上线从节点
 
-####### slaveof
+### 一致性
 
-###### 上线sentinel
+- 一致性：保证朝着epoch值更大的信息收敛。
 
-####### 参考其他sentinel节点启动
+- 每一个Node都保存了集群的配置信息`clusterState`。
 
-##### 高可用读写分离
+  - `currentEpoch`表示集群中的最大版本号，集群信息每更新一次，版本号自增。
 
-###### client关注slave节点资源池
+  - nodes列表，表示集群所有节点信息。包括该信息的版本epoch、slots、slave列表
 
-###### 关注三个消息
 
-####### +switch-master: 从节点晋升
+- 配置信息通过Redis Cluster Bus交互(PING / PONG, Gossip)。
 
-####### +convert-to-slave: 切换为从节点
+  - 当某个节点率先知道信息变更时，将currentEpoch自增使之成为集群中的最大值。
 
-####### +sdown: 主观下线
+  - 当收到比自己大的currentEpoch，则更新自己的currentEpoch使之保持最新。
 
-### codis
+  - 当收到的Node epoch大于自身内部的值，说明自己的信息太旧、则更新为收到的消息。
 
-#### 原理
+  
 
-##### proxy 转发
-
-##### 存储槽位关系
-
-###### zookeeper
-
-###### etcd
-
-##### 扩容迁移
-
-###### 增加 SlotScan 命令，扫描出制定槽位下的所有key，然后挨个迁移
-
-###### 如果get key正好在迁移中的槽位
-
-####### 则强制对当前key先完成迁移
-
-####### 迁移后访问新redis实例
-
-#### 代价
-
-##### 不支持事务
-
-##### rename 操作也很危险
-
-###### rename 前后可能放到不同的redis实例
-
-##### 为了支持扩容，单个 key 对应的 value 不宜过大
-
-##### 网络开销更大
-
-##### 需要运维zk
-
-### cluster
-
-#### 原理
-
-##### 复制
-
-###### 与 Master / Slave 一样
-
-###### 主从复制 (异步)：SYNC snapshot + backlog队列
-
-- slave启动时，向master发起 `SYNC` 命令。
-
-- master收到 SYNC 后，开启 `BGSAVE` 操作，全量持久化。
-
-- BGSAVE 完成后，master将 `snapshot` 发送给slave.
-
-- 发送期间，master收到的来自clien新的写命令，正常响应的同时，会再存入一份到 `backlog 队列`。
-
-- snapshot 发送完成后，master会继续发送backlog 队列信息。
-
-- backlog 发送完成后，后续的写操作同时发给slave，保持实时地异步复制。
-
-####### 快照同步
-
-####### 增量同步
-
-异步将 buffer 中的指令同步到从节点，从节点一边执行同步的指令流来达到和主节点一样的状态，一边向主节点反馈自己同步到哪里了 (偏移量)。
-
-####### 无盘复制
-
-无盘复制是指主服务器直接通过套接字将快照内容发送到从节点，生成快照是一个遍历的过程，主节点会一边遍历内存，一边将序列化的内容发送到从节点，从节点还是跟之前一样，先将接收到的内容存储到磁盘文件中，再进行一次性加载。
-
-
-####### wait 指令
-
-wait 指令可以让异步复制变身同步复制，确保系统的强一致性。
-- `wait N t`: 等待 wait 指令之前的所有写操作同步到 N 个从库，最多等待时间 t。
-
-###### Slave默认是热备，不提供读写服务
-
-##### 分片
-
-###### slots
-
-####### 16384个
-
-######## 定位：crc16(key) % 16384
-
-######## 计算槽位
-
-######### cluster keyslot k
-
-####### 槽位信息存储于每个节点中
-
-######## Rax
-
-`Rax slots_to_keys` 用来记录槽位和key的对应关系
-- Radix Tree 基数树
-
-
-######## 通过 Gossip 协议传播配置信息
-
-######## 问题
-
-######### 不适合大规模集群
-
-######### gossip 协议传播速度慢
-
-######## 解决
-
-######### 代理
-
-- 转发请求
-- 监控集群状态、负责主从切换
-- 维护集群元数据（槽位映射xin'x）
-
-########## Codis/ twemproxy
-
-######### 客户端维护元数据
-
-####### 每个节点通过meet命令交换槽位信息
-
-###### 伸缩
-
-####### 迁移slot (同步)
-
-- Redis 迁移的单位是槽，当一个槽正在迁移时，这个槽就处于中间过渡状态。这个槽在原节点的状态为`migrating`，在目标节点的状态为`importing`，  
-
-
-- 迁移过程是同步的，在目标节点执行`restore指令`到原节点删除key之间，原节点的主线程会处于阻塞状态，直到key被成功删除。 >> 要尽可能避免大key
-
-原理：
-- 以原节点作为目标节点的「客户端」
-- 原节点对当前的key执行dump指令得到序列化内容，然后发送指令restore携带序列化的内容作为参数
-- 目标节点再进行反序列化就可以将内容恢复到目标节点的内存中
-- 原节点收到后再把当前节点的key删除
-
-
-######## 步骤
-
-######### dump
-
-######### restore
-
-######### remove
-
-######## 状态
-
-####### 迁移slot过程中如何同时提供服务？
-
-######## - ASK
-
-###### 故障转移
-
-####### 故障发现
-
-######## 通过ping/pong发现故障
-
-######## PFAIL 主观下线
-
-- node1 发送ping消息
-- node2 回复pong消息
-- node1 收到pong，并更新与node2的 `最后通信时间`
-- cron定时任务：如果最后通信时间超过node-timeout，则标记为 `pfail`
-
-######## FAIL 客观下线
-
-- 接受ping
-- 消息解析：其他pfail节点 + 主节点发送消息
-- 维护故障链表
-- 尝试客观下线：计算有效下线报告数量
-- if > 槽节点总数一半，则更新为客观下线；
--并向集群广播下线节点的fail消息。
-
-######### 当半数以上主节点都标记其为pfail
-
-####### 故障恢复
-
-######## 资格检查
-
-每个从节点：检查与主节点断线时间；
-
-如果大于 
-`cluster-node-timeout` * 
-`cluster-slave-validity-factor`，则取消资格
-
-######## 准备选举时间
-
-offset越大，则延迟选举时间越短
-
-
-- slave通过向其他master发送FAILOVER_AUTH_REQUEST消息发起竞选，master回复FAILOVER_AUTH_ACK告知是否同意。
-
-######## 选举投票
-
-收集选票，如果大于 N/2 + 1，则可替换主节点
-
-######## 替换主节点
-
-1. slaveof no one
-2. clusterDelSlot撤销故障主节点负责的槽；
-3. clusterAddSlot把这些槽分配给自己；
-4. 向集群广播pong消息，表明已经替换了故障节点
-
-##### 一致性: 保证朝着epoch值更大的信息收敛
-
-保证朝着epoch值更大的信息收敛: 每一个Node都保存了集群的配置信息`clusterState`。
-
-- `currentEpoch`表示集群中的最大版本号，集群信息每更新一次，版本号自增。
-- nodes列表，表示集群所有节点信息。包括该信息的版本epoch、slots、slave列表
-
-配置信息通过Redis Cluster Bus交互(PING / PONG, Gossip)。
-- 当某个节点率先知道信息变更时，将currentEpoch自增使之成为集群中的最大值。
-- 当收到比自己大的currentEpoch，则更新自己的currentEpoch使之保持最新。
-- 当收到的Node epoch大于自身内部的值，说明自己的信息太旧、则更新为收到的消息。
-
-
-#### 客户端
-
-##### 连接
-
-###### 可只连接一个节点地址，其他地址可自动由这个节点来发现
-
-###### 连接多个安全性更好：否则如果挂了，需要修改地址
-
-###### redis-cli -c 会自动跳转到新节点
-
-##### 槽位迁移感知
-
-###### ASK
-
-####### 流程
-
-######## 0.先尝试访问源节点
-
-######## 1.源节点返回ASK转向
-
-######## 2.向新节点发送 ASKING 命令
-
-在迁移没有完成之前，这个槽位还是不归新节点管理的，它会向客户端返回一个`-MOVED`重定向指令告诉它去源节点去执行。如此就会形成 `重定向循环`。
-asking指令的目标就是打开目标节点的选项，告诉它下一条指令不能不理，而要当成自己的槽位来处理。
-
-######### 否则不处理而返回MOVED。避免循环重定向
-
-######## 3.向新节点发送命令
-
-####### 作用
-
-######## 迁移中的slot
-
-###### MOVED
-
-####### 流程
-
-######## 1.向任意节点发送命令
-
-######## 2.节点计算槽和对应节点
-
-######## 3.如果指向自身，则执行命令并返回结果
-
-######## 4.如果不指向自身，则回复 -moved (moved slot ip:port)
-
-######## 5.客户端重定向发送命令，并更新本地槽位信息缓存
-
-####### 作用
-
-######## 表示 slot 不在当前节点，重定向到正确节点
-
-###### moved vs. ask
-
-####### 都是客户端重定向
-
-####### MOVED: 表示slot确实不在当前节点（或已确定迁移）
-
-######## 会更新客户端缓存
-
-####### ASK: 表示slot在迁移中
-
-######## 不会更新客户端缓存
-
-##### 集群变更感知
-
-###### ConnectionError --> 目标节点挂了
-
-####### 抛出 ConnectionError
-
-####### 随机选节点重试，返回 MOVED 指令告知新节点地址
-
-###### ClusterDownError --> 手动主从切换
-
-####### 访问旧节点会返回 ClusterDownError
-
-####### 客户端关闭连接、清空槽位映射关系表
-
-####### 待下一条指令，重新初始化节点信息
-
-##### 批量操作
-
-###### 问题：mget/mset必须在同一个槽
-
-###### 实现
-
-####### 串行 mget
-
-####### 串行IO
-
-######## 客户端先做聚合，crc32 -> node，然后串行pipeline
-
-####### 并行IO
-
-######## 客户端先做聚合，然后并行pipeline
-
-####### hash_tag
-
-#### 运维
-
-##### 集群完整性
-
-###### cluster-require-full-coverage=yes
-
-####### 要求16384个槽全部可用
-
-####### 节点故障或故障转移时会不可用：(error) CLUSTERDOWN
-
-###### 大多数业务无法容忍
-
-##### 带宽消耗
-
-###### 来源
-
-####### 消息发送频率
-
-节点发现与其他节点最后通信时间超过 cluster-node-timeout/2 时，会发送ping消息
-
-
-####### 消息数据量
-
-- slots槽数据：2k
-- 整个集群1/10的状态数据
-
-####### 节点部署的机器规模
-
-集群分布的机器越多，且每台机器划分的节点数越均匀，则集群内整体可用带宽越高。
-
-###### 优化
-
-####### 避免“大”集群
-
-####### cluster-node-timeout: 带宽和故障转移速度的均衡
-
-####### 尽量均匀分配到多机器上
-
-###### 集群状态下的pub/sub
-
-####### publish在集群中每个节点广播，加重带宽
-
-####### 解决：单独用一套sentinel
-
-##### 倾斜
-
-###### 数据倾斜
-
-####### 节点和槽分配不均
-
-######## redis-trib.rb info 查看节点、槽、键值分布
-
-######## redis-trib.rb rebalance 重新均衡（慎用）
-
-####### 不同槽对应键值数量差异较大
-
-######## CRC16一般比较均匀
-
-######## 可能存在hash_tag
-
-######## cluster countkeyinslot {slot} 查看槽对应键值数
-
-####### 包含bigkey
-
-######## 从节点执行 redis-cli --bigkeys
-
-######## 优化数据结构
-
-####### 内存配置不一致
-
-###### 请求倾斜
-
-####### 原因：热点key、bigkey
-
-####### 优化
-
-######## 避免bigkey
-
-######## 热键不要用hash_tag
-
-######### why?
-
-######## 一致性不高时，可用本地缓存，MQ
-
-####### 热点key解决思路
-
-######## 客户端统计
-
-```java
-AtomicLongMap<String> COUNTER = AtomicLongMap.create();
-
-String get(String key) {
-  countKey(key);
-  ...
-}
-
-String set(String key) {
-  countKey(key);
-  ...
-}
-```
-
-######### 实现简单
-
-######### 内存泄露隐患，只能统计单个客户端
-
-######## 代理统计
-
-######### 增加代理端开发部署成本
-
-######## 服务端统计（monitor）
-
-######### monitor本身问题，只能短时间使用
-
-######### 只能统计单个redis节点
-
-######## 机器段统计（抓取tcp）
-
-######### 无侵入
-
-######### 增加了机器部署成本
-
-##### 读写分离
-
-###### 只读连接
-
-####### 从节点不接受任何读写请求
-
-####### 会重定向到负责槽的主节点（moved）
-
-####### READONLY命令：强制slave读
-
-- 默认情况下，某个slot对应的节点一定是一个master节点。客户端通过`MOVED`消息得知的集群拓扑结构也只会将请求路由到各个master中。
-
-- 即便客户端将读请求直接发送到slave上，slave也会回复MOVED到master的响应。
-
-- 客户端向slave发送 READONLY 命令后，slave对于读操作将不再返回moved，而是直接处理。
-
-###### 读写分离客户端会非常复杂
-
-####### 共性问题：复制延迟、过期数据、从节点故障
-
-####### cluster slaves {nodeId} 获取从节点列表
-
-##### 数据迁移
-
-###### redis-trib.rb import
-
-####### 只能 单机 to 集群
-
-####### 不支持在线迁移
-
-####### 不支持断点续传
-
-####### 单线程迁移，影响速度
-
-###### 在线迁移
-
-####### 唯品会 redis-migrate-tool
-
-####### 豌豆荚 redis-port
-
-#### 命令
-
-##### 创建
-
-###### 原生
-
-####### 配置文件：cluster-enabled yes
-
-cluster-enabled yes
-
-cluster-config-file "xx.conf"
-cluster-require-full-coverage no
-cluster-node-timeout 15000
-
-####### 启动: redis-server *.conf
-
-####### gossip通讯：cluster meet ip port
-
-####### 分配槽(仅对master)：cluster addslots {0...5461}
-
-####### 配置从节点：cluster replicate node-id
-
-###### 脚本
-
-####### 安装ruby
-
-####### 安装rubygem redis
-
-####### 安装redis-trib.rb
-
-###### 验证
-
-####### cluster nodes
-
-####### cluster info
-
-####### cluster slot
-
-####### redis-trib.rb info ip:port
-
-##### 扩容
-
-###### 准备新节点
-
-###### 加入集群
-
-####### meet
-
-####### redis-trib.rb add-node
-
-redis-trib.rb add-node new_host:new_port existing_host:existing_port --slave --master-id
-
-###### 迁移槽和数据
-
-####### 手工
-
-######## 1_对目标节点：cluster setslot {slot} importing {sourceNodeId}
-
-######## 2_对源节点：cluster setslot {slot} migrating {targetNodeId}
-
-######## 3_对源节点循环执行：cluster getkeysinslot {slot} {count}，每次获取count个键
-
-######## 4_对源节点循环执行：migrate {targetIp} {targetPort} key 0 {timeout}
-
-0: db0
-
-
-######## 5_对所有主节点：cluster setslot {slot} node {targetNodeId}
-
-####### pipeline migrate
-
-####### redis-trib.rb reshard
-
-redis-trib.rb reshard host:port
---from
---to
---slots
-
-host:port是任一个节点的
-
-##### 收缩
-
-###### 迁移槽
-
-###### 忘记节点
-
-####### cluster forget {downNodeId}
-
-####### redis-trib.rb del-node
-
-redis-trib.rb del-node ip:port {downNodeId}
-
-###### 关闭节点
-
-#### 缺点
-
-##### key批量操作支持有限
-
-###### mget/mset 必须在同一个slot
-
-##### key事务和lua支持有限
-
-###### 操作的key必须在同一个slot
-
-##### key是数据分区最小粒度
-
-###### bigkey无法分区
-
-###### 分支主题
-
-##### 复制只支持一层
-
-###### 无法树形复制
-
-## 运维
-
-### 内部结构
-
-#### 查看元素内部编码
-
-##### debug object key
-
-##### 查看 encoding 字段
-
-### 内存
-
-#### 内存回收
-
-##### 无法保证立即回收已经删除的 key 的内存
-
-##### 但会重新使用未回收的空闲内存
-
-##### flushdb
-
-###### 删除所有key
-
-#### 内存查看：info memory
-
-##### used_memory
-
-mem_allocator 分配的内存量
-
-###### redis自身内存
-
-###### 对象内存
-
-####### 优化
-
-######## key: 不要过长
-
-######## value: ziplist / intset 等优化方式
-
-####### 内存碎片
-
-###### 缓冲内存
-
-####### 客户端缓冲区
-
-client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
-
-  - class: normal, slave, pubsub
-
-
-######## 输出缓冲区
-
-######### 普通客户端 
-
-########## normal 0 0 0
-
-########## 默认无限制，注意防止大命令或 monitor：可能导致内存占用超大！！
-
-########## 找到monitor客户端：client list | grep -v "omem=0"
-
-######### slave 客户端
-
-########## slave 256mb 64mb 60
-
-########## 可能阻塞：主从延迟高时，从节点过多时
-
-######### pubsub 客户端 
-
-########## pubsub 32mb 8mb 60
-
-########## 可能阻塞：生产大于消费时
-
-######## 输入缓冲区
-
-######### 最大 1GB
-
-####### 复制缓冲区
-
-######## repl_back_buffer
-
-######## 默认1M，建议调大 例如100M
-
-######## 防止网络抖动时出现slave全量复制
-
-####### AOF 缓冲区
-
-######## 无限制
-
-###### lua内存
-
-##### used_memory_rss
-
-###### 从操作系统角度看redis进程占用的总物理内存
-
-##### mem_fragmentation_ratio
-
-###### 内存碎片 used_memory_rss / used_memory > 1
-
-###### 内存碎片必然存在
-
-###### 优化
-
-####### 避免频繁更新操作：append, setrange
-
-####### 安全重启
-
-##### mem_allocator
-
-#### 子进程内存消耗
-
-##### 场景
-
-###### bgsave
-
-###### bgrewriteaof
-
-##### 优化
-
-###### 去掉 THP 特性
-
-###### 观察写入量
-
-###### overcommit_memory = 1
-
-#### 内存管理
-
-##### 设置内存上限
-
-###### 一般预留 30%
-
-###### config set maxmemory 6GB
-
-####### + maxmemory_policy
-
-###### config rewrite
-
-##### 动态调整内存上限
-
-##### 序列化与压缩
-
-###### 拒绝Java原生
-
-###### 推荐protobuf, kryo, snappy
-
-### info 命令
-
-#### 分类
-
-##### server
-
-##### clients
-
-##### memory
-
-##### persistence
-
-##### stats
-
-##### replication
-
-##### cpu
-
-##### cluster
-
-##### keyspace
-
-#### 用例
-
-##### info stats | grep ops
-
-###### 查询每秒执行指令次数
-
-###### 然后用 `monitor` 命令观察哪些key被频繁访问
-
-##### info stats | grep sync
-
-###### 查询同步失败次数
-
-###### 如果 sync_partial_err 失败次数过多，考虑扩大backlog缓冲区
-
-##### info clients
-
-###### 查询连接了多少客户端
-
-###### 然后用 `client list` 命令列出客户端地址
-
-##### info memory
-
-###### 查询内存占用
-
-##### info replication | grep backlog
-
-###### 查询复制积压缓冲区大小
-
-### 保护
-
-####  spiped: SSL代理
-
-##### 加密
-
-#### 设置密码
-
-##### server: requirepass / masterauth
-
-##### client: auth命令 、 -a参数
-
-#### rename-command flushall ""
-
-##### 不支持config set动态配置
-
-#### bind 内网IP
-
-### 性能
-
-#### slowlog 慢查询
-
-##### 配置
-
-###### slowlog-max-len
-
-####### 先进先出队列、固定长度、内存
-
-####### 默认10ms, 建议1ms
-
-###### slowlog-log-slower-than
-
-####### 建议1000
-
-##### 命令
-
-###### slowlog get [n]
-
-###### slowlog len
-
-###### slowlog reset
-
-#### latency-monitor
-
-https://redis.io/topics/latency-monitor
-
-##### 配置
-
-###### latency-monitor-threshold=5ms
-
-##### 命令
-
-###### LATENCY LATEST
-
-## 开发规范
-
-### kv设计
-
-#### key设计
-
-##### 可读性、可管理型
-
-##### 简洁性
-
-###### string长度会影响encoding
-
-####### embstr
-
-####### int
-
-####### raw
-
-####### 通过 `object encoding k` 验证
-
-##### 排除特殊字符
-
-#### value设计
-
-##### 拒绝bigkey
-
-###### 最佳实践
-
-####### string < 10K
-
-####### hash,list,set元素不超过5000
-
-###### bigkey的危害
-
-####### 网络阻塞
-
-####### redis阻塞
-
-####### 集群节点数据不均衡
-
-####### 频繁序列化
-
-###### bigkey的发现
-
-####### 应用异常
-
-######## JedisConnectionException
-
-######### read time out
-
-######### could not get a resource from the pool
-
-####### redis-cli --bigkeys
-
-####### scan + debug object k
-
-####### 主动报警：网络流量监控，客户端监控
-
-####### 内核热点key问题优化
-
-###### bigkey删除
-
-####### 阻塞（注意隐性删除，如过期、rename）
-
-####### unlink命令 （lazy delete, 4.0之后）
-
-####### big hash渐进删除：hscan + hdel
-
-##### 选择合适的数据结构
-
-###### 多个string vs. 一个hash
-
-###### 分段hash
-
-####### 节省内存、但编程复杂
-
-###### 计算网站独立用户数
-
-####### set
-
-####### bitmap
-
-####### hyperLogLog
-
-##### 过期设计
-
-###### object idle time: 查找垃圾kv
-
-###### 过期时间不宜集中，避免缓存穿透和雪崩
-
-### 命令使用技巧
-
-#### O(N)命令要关注N数量
-
-##### hgetall, lrange, smembers, zrange, sinter
-
-##### 更优：hscan, sscan, zscan
-
-#### 禁用危险命令
-
-##### keys, flushall, flushdb
-
-##### 手段：rename机制
-
-#### 不推荐select多数据库
-
-##### 客户端支持差
-
-##### 实际还是单线程
-
-#### 不推荐事务功能
-
-##### 一次事务key必须在同一个slot
-
-##### 不支持回滚
-
-#### monitor命令不要长时间使用
 
 ### 客户端
 
-#### 连接池
+**连接**
 
-##### 连接数
-
-###### maxTotal
-
-####### 如何预估
-
-例如：
-- 一次命令耗时1ms，所以一个连接QPS=1000;
-- 业务期望QPS = 50000;
-
-> 则 maxTotal = 50000 / 1000 = 50
-
-######## 业务希望的 redis 并发量
-
-######## 客户端执行命令时间
-
-######## redis 资源：应用个数 * maxTotal < redis最大连接数
-
-###### maxIdle
-
-####### 有坑
-
-####### 应该 == maxTotal，如果太小 空闲连接会被丢弃
-
-###### minIdle
-
-##### 等待
-
-###### blockWhenExhausted
-
-资源用尽后，是否要等待；建议设成true
+- 可只连接一个节点地址，其他地址可自动由这个节点来发现
+- 连接多个安全性更好：否则如果挂了，需要修改地址
+- redis-cli -c 会自动跳转到新节点
 
 
-###### maxWaitMillis
 
-##### 有效性检测
+**槽位迁移感知**
 
-###### testOnBorrow 
+- **ASK**：表示 slot 在迁移中
 
-###### testOnReturn
+  - Step-0：先尝试访问源节点；
 
-##### 监控
+  - Step-1：源节点返回 ASK 转向；
 
-###### jmxEnabled
+  - Step-2：向新节点发送 ASKING 命令。否则不处理而返回 MOVED。避免循环重定向。
 
-##### 空闲资源监测
+    > 在迁移没有完成之前，这个槽位还是不归新节点管理的，它会向客户端返回一个`-MOVED`重定向指令告诉它去源节点去执行。如此就会形成 `重定向循环`。
+    >
+    > asking指令的目标就是打开目标节点的选项，告诉它下一条指令不能不理，而要当成自己的槽位来处理。
 
-###### testWhileIdle
+  - Step-3：向新节点发送命令
 
-###### timeBetweenEvictionRunsMillis
+- **MOVED**：表示 slot 不在当前节点，重定向到正确节点
+  - Step-1：向任意节点发送命令。
+  - Step-2：节点计算槽和对应节点。
+  - Step-3：如果指向自身，则执行命令并返回结果。
+  - Step-4：如果不指向自身，则回复 `-moved (moved slot ip:port)`
+  - Step-5：客户端重定向发送命令，并更新本地槽位信息缓存。
 
-监测周期
+- **moved vs. ask**
+
+  - 都是客户端重定向
+  - MOVED: 表示slot确实不在当前节点（或已确定迁移）。——会更新客户端缓存
+  - ASK: 表示slot在迁移中。——不会更新客户端缓存
+
+  
+
+**集群变更感知**
+
+- `ConnectionError` --> 目标节点挂了
+  - 抛出 ConnectionError；
+  - 随机选节点重试，返回 MOVED 指令告知新节点地址。
+
+- `ClusterDownError` --> 手动主从切换
+  - 访问旧节点会返回 ClusterDownError；
+  - 客户端关闭连接、清空槽位映射关系表；
+  - 待下一条指令，重新初始化节点信息；
 
 
-###### numTestsPerEvictionRun
 
-每次监测的采样数
+**批量操作**
+
+- 问题：mget/mset必须在同一个槽
+
+- 实现
+  - 串行 mget
+  - 串行IO：客户端先做聚合，crc32 -> node，然后串行pipeline
+  - 并行IO：客户端先做聚合，然后并行pipeline
+  - hash_tag
+
+### 运维
+
+**集群完整性**
+
+- `cluster-require-full-coverage=yes`，要求16384个槽全部可用；节点故障或故障转移时会不可用：(error) CLUSTERDOWN
+
+- 大多数业务无法容忍
 
 
-#### RedisTemplate
 
-##### 序列化
+**带宽消耗**
 
-###### serializeValuesWith
+- 来源
+  - 消息发送频率：节点发现与其他节点最后通信时间超过 cluster-node-timeout/2 时，会发送ping 消息。
+  - 消息数据量：slots 槽数据 = 2k，整个集群1/10的状态数据。
+  - 节点部署的机器规模：集群分布的机器越多，且每台机器划分的节点数越均匀，则集群内整体可用带宽越高。
 
-###### 存储类型信息
+- 优化
+  - 避免“大”集群
+  - cluster-node-timeout: 带宽和故障转移速度的均衡
+  - 尽量均匀分配到多机器上
 
-####### ObjectMapper#enableDefaultTyping()
+- 集群状态下的pub/sub
+  - publish在集群中每个节点广播，加重带宽
+  - 解决：单独用一套sentinel
+
+
+
+**数据倾斜**
+
+- 节点和槽分配不均
+  - redis-trib.rb info 查看节点、槽、键值分布
+  - redis-trib.rb rebalance 重新均衡（慎用）
+
+- 不同槽对应键值数量差异较大
+  - CRC16一般比较均匀
+  - 可能存在hash_tag
+  - cluster countkeyinslot {slot} 查看槽对应键值数
+
+- 包含bigkey
+  - 从节点执行 redis-cli --bigkeys
+  - 优化数据结构
+
+- 内存配置不一致
+
+
+
+**请求倾斜**
+
+- 原因：热点key、bigkey
+- 优化
+  - 避免bigkey
+  - 热键不要用hash_tag ——why?
+  - 一致性不高时，可用本地缓存，MQ
+
+- **热点key解决思路**
+
+  - 客户端统计
+
+    - 实现简单；
+
+    - 内存泄露隐患，只能统计单个客户端
+
+      ```java
+      AtomicLongMap<String> COUNTER = AtomicLongMap.create();
+      
+      String get(String key) {
+        countKey(key);
+        ...
+      }
+      
+      String set(String key) {
+        countKey(key);
+        ...
+      }
+      ```
+
+      
+
+  - 代理统计
+
+    - 增加代理端开发部署成本
+
+  - 服务端统计（monitor）
+
+    - monitor本身问题，只能短时间使用
+    - 只能统计单个redis节点
+
+  - 机器段统计（抓取tcp）
+    - 无侵入
+    - 增加了机器部署成本
+
+
+
+**读写分离**
+
+- 只读连接
+
+  - 从节点不接受任何读写请求
+
+  - 会重定向到负责槽的主节点（moved）
+
+  - `READONLY 命令`：强制 slave 读
+
+    > - 默认情况下，某个slot对应的节点一定是一个master节点。客户端通过`MOVED`消息得知的集群拓扑结构也只会将请求路由到各个master中。
+    >
+    > - 即便客户端将读请求直接发送到slave上，slave也会回复MOVED到master的响应。
+    >
+    > - 客户端向slave发送 READONLY 命令后，slave对于读操作将不再返回moved，而是直接处理。
+
+- 读写分离客户端会非常复杂
+  - 共性问题：复制延迟、过期数据、从节点故障
+  - cluster slaves {nodeId} 获取从节点列表
+
+
+
+**数据迁移**
+
+- redis-trib.rb import
+  - 只能 单机 to 集群
+  - 不支持在线迁移
+  - 不支持断点续传
+  - 单线程迁移，影响速度
+
+- 在线迁移
+  - 唯品会 redis-migrate-tool
+  - 豌豆荚 redis-port
+
+### 命令
+
+**创建**
+
+- 原生
+
+  - 配置文件：cluster-enabled yes
+    ```
+    cluster-enabled yes
+    
+    cluster-config-file "xx.conf"
+    cluster-require-full-coverage no
+    cluster-node-timeout 15000
+    ```
+
+  - 启动: redis-server *.conf
+
+  - gossip通讯：cluster meet ip port
+
+  - 分配槽(仅对master)：cluster addslots {0...5461}
+
+  -  配置从节点：cluster replicate node-id
+
+- 脚本
+  - 安装ruby
+  - 安装rubygem redis
+  - 安装redis-trib.rb
+
+- 验证
+  - cluster nodes
+  - cluster info
+  - cluster slot
+  - redis-trib.rb info ip:port
+
+**扩容**
+
+- 准备新节点
+
+- 加入集群
+
+  - meet
+
+  - redis-trib.rb add-node
+    ```
+    redis-trib.rb add-node new_host:new_port existing_host:existing_port --slave --master-id
+    ```
+
+- 迁移槽和数据
+
+  - 手工
+
+    > 1_对目标节点：cluster setslot {slot} importing {sourceNodeId}
+    >
+    > 2_对源节点：cluster setslot {slot} migrating {targetNodeId}
+    >
+    > 3_对源节点循环执行：cluster getkeysinslot {slot} {count}，每次获取count个键
+    >
+    > 4_对源节点循环执行：migrate {targetIp} {targetPort} key 0 {timeout}
+    >
+    > 5_对所有主节点：cluster setslot {slot} node {targetNodeId}
+
+  - pipeline migrate
+
+  - redis-trib.rb reshard
+    ```
+    redis-trib.rb reshard host:port
+    --from
+    --to
+    --slots
+    
+    host:port是任一个节点的
+    ```
+
+    
+
+**收缩**
+
+- 迁移槽
+
+- 忘记节点
+
+  - cluster forget {downNodeId}
+
+  - redis-trib.rb del-node
+    ```
+    redis-trib.rb del-node ip:port {downNodeId}
+    ```
+
+- 关闭节点
+
+
+
+### 缺点
+
+- **key 批量操作支持有限**
+  - mget/mset 必须在同一个slot
+
+- **key 事务和 lua 支持有限**
+  - 操作的key必须在同一个slot
+
+- **key是数据分区最小粒度**
+  - bigkey无法分区
+  - 分支主题
+
+- **复制只支持一层**
+  - 无法树形复制
+
+# | 运维
+
+## || 内部结构
+
+- 查看元素内部编码
+
+  - debug object key
+  - 查看 encoding 字段
+
+  
+
+## || 内存
+
+**内存回收**
+
+- 无法保证立即回收已经删除的 key 的内存
+- 但会重新使用未回收的空闲内存
+- flushdb：删除所有key
+
+
+
+**内存查看：info memory**
+
+- **used_memory**：mem_allocator 分配的内存量
+
+  - redis自身内存
+
+  - **对象内存**
+
+    - 优化
+      - key: 不要过长
+      - value: ziplist / intset 等优化方式
+
+    - 内存碎片
+
+  - **缓冲内存**
+
+    - 客户端缓冲区
+
+      > client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
+      >
+      > class: normal, slave, pubsub
+
+      - 输入缓冲区：最大 1GB
+
+      - 输出缓冲区
+
+        > 1. 普通客户端 
+        >
+        > - normal 0 0 0
+        >
+        > - 默认无限制，注意防止大命令或 monitor：可能导致内存占用超大！！
+        >
+        > - 找到monitor客户端：client list | grep -v "omem=0"
+        >
+        > 2. slave 客户端
+        >
+        > - slave 256mb 64mb 60
+        >
+        > - 可能阻塞：主从延迟高时，从节点过多时
+        >
+        > 3. pubsub 客户端 
+        >
+        > - pubsub 32mb 8mb 60
+        > - 可能阻塞：生产大于消费时
+
+    - 复制缓冲区
+      - repl_back_buffer
+      - 默认1M，建议调大 例如100M
+      -  防止网络抖动时出现slave全量复制
+
+    -  AOF 缓冲区：无限制
+
+  - **lua内存**
+
+- **used_memory_rss**：从操作系统角度看redis进程占用的总物理内存
+
+- **mem_fragmentation_ratio**：
+  - 内存碎片 used_memory_rss / used_memory > 1
+  - 内存碎片必然存在
+  - 优化
+    - 避免频繁更新操作：append, setrange
+    - 安全重启
+
+- **mem_allocator**
+
+
+
+**子进程内存消耗**
+
+- 场景
+  - bgsave
+  - bgrewriteaof
+
+- 优化
+
+  - 去掉 THP 特性
+  - 观察写入量
+  - overcommit_memory = 1
+
+  
+
+**内存管理**
+
+- 设置内存上限
+  - 一般预留 30%
+  - config set maxmemory 6GB
+     + maxmemory_policy
+  - config rewrite
+
+- 动态调整内存上限
+
+- 序列化与压缩
+
+  - 拒绝Java原生
+  - 推荐protobuf, kryo, snappy
+
+  
+
+## || info 命令
+
+**分类**
+
+- server
+
+- clients
+
+- memory
+
+- persistence
+
+- stats
+
+- replication
+
+- cpu
+
+- cluster
+
+- keyspace
+
+
+
+**用例**
+
+- `info stats | grep ops`
+  - 查询每秒执行指令次数
+  - 然后用 `monitor` 命令观察哪些key被频繁访问
+
+- `info stats | grep sync`
+  - 查询同步失败次数
+  - 如果 sync_partial_err 失败次数过多，考虑扩大backlog缓冲区
+
+- `info clients`
+  - 查询连接了多少客户端
+  - 然后用 `client list` 命令列出客户端地址
+
+- `info memory`
+  - 查询内存占用
+
+- `info replication | grep backlog`
+  - 查询复制积压缓冲区大小
+
+## || 保护
+
+- spiped: SSL代理
+  - 加密
+
+- 设置密码
+  - server: requirepass / masterauth
+  - client: auth命令 、 -a参数
+
+- rename-command flushall ""
+  - 不支持config set动态配置
+
+- bind 内网IP
+
+## || 性能
+
+**slowlog 慢查询**
+
+- 配置
+
+  - slowlog-max-len
+    - 先进先出队列、固定长度、内存
+    - 默认10ms, 建议1ms
+
+  - slowlog-log-slower-than
+    - 建议1000
+
+- 命令
+  - slowlog get [n]
+  - slowlog len
+  - slowlog reset
+
+
+
+**latency-monitor**
+
+https://redis.io/topics/latency-monitor
+
+- 配置
+  - latency-monitor-threshold=5ms
+
+- 命令
+  - LATENCY LATEST
+
+
+
+# | 开发规范
+
+## || kv 设计
+
+**key 设计**
+
+- 可读性、可管理型
+- 简洁性
+  - string长度会影响encoding
+    - embstr
+    - int
+    - raw
+    - 通过 `object encoding k` 验证
+
+- 排除特殊字符
+
+
+
+**value设计**
+
+- **拒绝 bigkey**
+
+  - 最佳实践
+    - string < 10K
+    - hash,list,set元素不超过5000
+
+  - bigkey的危害
+    - 网络阻塞
+    - redis阻塞
+    - 集群节点数据不均衡
+    - 频繁序列化
+
+  - bigkey的发现
+
+    - 应用异常 JedisConnectionException
+
+      > read time out
+      >
+      > could not get a resource from the pool
+
+    - redis-cli --bigkeys
+    - scan + debug object k
+    - 主动报警：网络流量监控，客户端监控
+    - 内核热点key问题优化
+
+  - bigkey删除
+
+    - 阻塞（注意隐性删除，如过期、rename）
+    - unlink命令 （lazy delete, 4.0之后）
+    - big hash渐进删除：hscan + hdel
+
+    
+
+- **选择合适的数据结构**
+  - 多个string vs. 一个hash
+  - 分段hash：节省内存、但编程复杂
+  - 计算网站独立用户数
+    - set
+    - bitmap
+    - hyperLogLog
+
+- **过期设计**
+
+  - object idle time: 查找垃圾kv
+  - 过期时间不宜集中，避免缓存穿透和雪崩
+
+  
+
+## || 命令使用技巧
+
+- **O(N)命令要关注N数量**
+  - hgetall, lrange, smembers, zrange, sinter
+  - 更优：hscan, sscan, zscan
+
+- **禁用危险命令**
+  - keys, flushall, flushdb
+  - 手段：rename机制
+
+- **不推荐select多数据库**
+  - 客户端支持差
+  - 实际还是单线程
+
+- **不推荐事务功能**
+  - 一次事务key必须在同一个slot
+  - 不支持回滚
+
+- **monitor命令不要长时间使用**
+
+## || 客户端
+
+**连接池**
+
+- 连接数
+
+  - **maxTotal**
+
+    - 如何预估
+
+      > 例如：
+      >
+      > - 一次命令耗时1ms，所以一个连接QPS=1000;
+      > - 业务期望QPS = 50000;
+      >
+      > 则 maxTotal = 50000 / 1000 = 50
+
+      - 业务希望的 redis 并发量
+      - 客户端执行命令时间
+      - redis 资源：应用个数 * maxTotal < redis最大连接数
+
+  - **maxIdle**
+    - 有坑
+    - 应该 == maxTotal，如果太小 空闲连接会被丢弃
+
+  - **minIdle**
+
+
+
+- **等待**
+
+  - blockWhenExhausted：资源用尽后，是否要等待；建议设成true
+
+  - maxWaitMillis
+
+- **有效性检测**
+
+  - testOnBorrow 
+
+  - testOnReturn
+
+- **监控**
+  - jmxEnabled
+
+- **空闲资源监测**
+
+  - testWhileIdle
+
+  - timeBetweenEvictionRunsMillis：监测周期
+
+  - numTestsPerEvictionRun：每次监测的采样数
+
+
+
+**RedisTemplate**
+
+- 序列化
+  - serializeValuesWith
+  - 存储类型信息：ObjectMapper#enableDefaultTyping()
