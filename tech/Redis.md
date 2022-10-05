@@ -389,524 +389,368 @@
 
 # | 应用
 
-### 分布式锁
+## || 分布式锁
 
-#### 命令
+**命令**
 
-##### setNX + expire
+- `setNX` + expire
+  - 问题：两条指令，非原子
 
-###### 问题：两条指令，非原子
+- `set k v EX 5 NX`
 
-##### set k v EX 5 NX
 
-#### 问题
 
-##### 超时问题
+**问题**
 
-如果执行任务时间较长，超时后还未执行完、又被其他线程抢去锁，则相当于有两个线程持有锁
+- **超时问题**
+  - 如果执行任务时间较长，超时后还未执行完、又被其他线程抢去锁，则相当于有两个线程持有锁
+  - 思路：保证锁不会被其他线程释放。
+  - 解决
+    - set value为随机数，del 时先判断value是否一致
+    - 注意：del与判断value仍然不是原子操作，需要Lua支持
 
-###### 思路
+- **可重入性**
 
-####### 保证锁不会被其他线程释放
+  - 需要包装客户端的 set 方法
 
-###### 解决
+  - 用 ThreadLocal 存储 Map<lockName, count>
 
-####### set value为随机数，del 时先判断value是否一致
+- **集群问题**
 
-####### 注意：del与判断value仍然不是原子操作，需要Lua支持
+  - 主从 failover时，如果锁信息还没同步到从节点，则可能导致锁被两个客户端持有
+    - 主节点挂掉时，从节点会取而代之，客户端上却并没有明显感知。原先第一个客户端在主节点中申请成功了一把锁，但是这把锁还没有来得及同步到从节点，主节点突然挂掉了。然后从节点变成了主节点，这个新的节点内部没有这个锁，所以当另一个客户端过来请求加锁时，立即就批准了。这样就会导致系统中同样一把锁被两个客户端同时持有。
 
-##### 可重入性
+  - Redlock算法
+    - 过半节点加锁成功
+    - 释放锁时，向所有节点发送 del
 
-###### 需要包装客户端的 set 方法
+- **客户端加锁失败的处理策略**
 
-###### 用 ThreadLocal 存储 Map<lockName, count>
+  - 抛出异常，通知用户重试
 
-##### 集群问题
+  - sleep后重试
 
-主节点挂掉时，从节点会取而代之，客户端上却并没有明显感知。
+  - 转至延时队列，过一会再试
 
-原先第一个客户端在主节点中申请成功了一把锁，但是这把锁还没有来得及同步到从节点，主节点突然挂掉了。然后从节点变成了主节点，这个新的节点内部没有这个锁，所以当另一个客户端过来请求加锁时，立即就批准了。
+  
 
-这样就会导致系统中同样一把锁被两个客户端同时持有
+## || 延时队列
 
-###### 主从 failover时，如果锁信息还没同步到从节点，则可能导致锁被两个客户端持有
+**队列**
 
-###### Redlock算法
+- lpush + rpop / rpush + lpop
 
-####### 过半节点加锁成功
+- 优化：阻塞读，brpop / blpop
 
-####### 释放锁时，向所有节点发送 del
+**延时队列**
 
-##### 客户端加锁失败的处理策略
+- 设计：zset, 以到期时间作为 score
 
-###### 抛出异常，通知用户重试
+- 命令
 
-###### sleep后重试
+  - 入队：`zadd`
 
-###### 转至延时队列，过一会再试
+  - 出队
+    - `zrangeByScore(System.currentTimeMillis)`
+    - `zrem`：删除成功后再进行后续处理；zrem 成功，则相当于当前线程抢到任务
 
-### 延时队列
+  - 优化
+    - zrangeByScore + zrem 合成原子操作：lua
+  - 问题
+    - 不能阻塞读？只能轮询？
 
-#### 队列
 
-##### lpush + rpop / rpush + lpop
 
-##### 优化：阻塞读
+## || 消息广播
 
-###### brpop / blpop
+**消息广播：PubSub模块**
 
-#### 延时队列
+- 命令
+  - 生产者发布：`publish channel-name msg`
+  - 消费者订阅：`subscribe/unsubscribe channel-name`
+    - 模式订阅：`psubscribe *`
+  - 消费者拉取消息
+    - 轮询：`get_message()`
+    - 阻塞监听：`listen()`
 
-##### 设计
+- 缺点
 
-###### zset, 以到期时间作为 score
+  - 消息未被持久化；消费者宕机重连后，之前的消息都丢失
 
-##### 命令
+  
 
-###### 入队
+**消息广播：Stream**
 
-####### zadd
+- 设计
+  - last_delivered_id，服务端存储每个消费者组消费到哪条消息
+  - pending_ids
+    - PEL: Pending Entries List
+    - 消费者存储已消费但未 ACK 的消息；忘了 ACK 会导致 PEL 过大
+    - 用来确保客户端至少消费了一次
+  - 如何避免消息丢失
+    - PEL ?
+  - 如何实现高可用
+    - 集群 或 哨兵
+    - failover 时可能丢失极小部分数据——其他数据结构也是一样
 
-###### 出队
+**命令**
 
-####### zrangeByScore(System.currentTimeMillis)
+- CRUD
 
-####### zrem
+  - `XADD` / `XREAD`：插入 / 读取
 
-######## 删除成功后再进行后续处理
+    > 可设置定长 stream： `XADD stream_name maxlen 3`，防止 Stream 消息过多
 
-######## zrem 成功，则相当于当前线程抢到任务
+  - `XGROUP` / `XREADGROUP`：创建、读取消费组
+  - `XDEL`：软删除
+  - `XRANGE`
+  - `XLEN`
+  - `DEL`：删除所有消息
+  - `XINFO`
+    - xinfo stream xx
+    - xinfo groups xx
 
-####### 优化
+- 消费
+  - `xread`：独立消费，无消费者组
+    - xread count 2 streams xx
+    - xread block 0  ...：支持阻塞等待
 
-######## zrangeByScore + zrem 合成原子操作：lua
+- 消费者组
 
-####### 问题
+  - `xgroup`
+    - xgroup create xx grp_name 0-0：从头消费
+    - xgroup create xx grp_name $：从尾部消费新消息
 
-######## 不能阻塞读？只能轮询？
+  - `xreadgroup`
+    - xreadgroup GROUP grp_name consumer_name
+    - 同样支持阻塞等待：block time
 
-#### 消息广播
+  - `xack`
+    - xack stream_name group_name ID
 
-##### PubSub模块
+**特点**
 
-###### 命令
+- 消息持久化
+- 类似 Kafka
 
-####### 生产者发布
 
-######## publish channel-name msg
 
-####### 消费者订阅
-
-######## subscribe/unsubscribe channel-name
-
-######## 模式订阅：psubscribe *
-
-####### 消费者拉取消息
-
-######## 轮询 get_message()
-
-######## 阻塞监听：listen()
-
-###### 缺点
-
-####### 消息未被持久化
-
-####### 消费者宕机重连后，之前的消息都丢失
-
-##### Stream
-
-###### 设计
-
-####### last_delivered_id
-
-######## 服务端存储每个消费者组消费到哪条消息
-
-####### pending_ids
-
-######## PEL: Pending Entries List
-
-######## 消费者存储已消费但未 ACK 的消息
-
-######### 忘了 ACK 会导致 PEL 过大
-
-######## 用来确保客户端至少消费了一次
-
-####### 如何避免消息丢失
-
-######## PEL ?
-
-####### 如何实现高可用
-
-######## 集群 或 哨兵
-
-######## failover 时可能丢失极小部分数据
-
-######### 其他数据结构也是一样
-
-###### 命令
-
-####### CRUD
-
-######## XADD / XREAD
-
-######### 插入 / 读取
-
-######### 可设置定长 stream
-
-########## XADD stream_name maxlen 3
-
-########## 防止 Stream 消息过多
-
-######## XGROUP / XREADGROUP
-
-######### 创建、读取消费组
-
-######## XDEL
-
-######### 软删除
-
-######## XRANGE
-
-######## XLEN
-
-######## DEL
-
-######### 删除所有消息
-
-######## XINFO
-
-######### xinfo stream xx
-
-######### xinfo groups xx
-
-####### 消费
-
-######## xread
-
-######### 独立消费，无消费者组
-
-######### xread count 2 streams xx
-
-######### xread block 0  ...
-
-########## 支持阻塞等待
-
-####### 消费者组
-
-######## xgroup
-
-######### xgroup create xx grp_name 0-0
-
-########## 从头消费
-
-######### xgroup create xx grp_name $
-
-########## 从尾部消费新消息
-
-######## xreadgroup
-
-######### xreadgroup GROUP grp_name consumer_name
-
-######### 同样支持阻塞等待：block time
-
-######## xack
-
-######### xack stream_name group_name ID
-
-###### 特点
-
-####### 消息持久化
-
-####### 类似 Kafka
-
-### 位图 Bitmap
+## || 位图 Bitmap
 
 位图不是特殊的数据结构，它的内容其实就是普通的字符串，也就是 byte 数组。
 
 我们可以使用普通的 get/set 直接获取和设置整个位图的内容，也可以使用位图操作 getbit/setbit 等将 byte 数组看成「位数组」来处理。
 
-#### 数据结构
+**数据结构**
 
-##### type: string, 最大512M
+- type: string, 最大512M
 
-#### 命令
+**命令**
 
-##### 存取
+- 写入： `SETBIT k offset v`
+  - 零存：`setbit s 4 1`
+  - 整存：`set s <string>`
 
-###### SETBIT k offset v
+- 读取：`GETBIT`
+  - 整取：`get s`
+  - 零取：`getbit s 1`
 
-零存：`setbit s 4 1`
-整存：`set s <string>`
+- 统计：`BITCOUNT k [start end]`
+  - 注意，start/end 是字节索引，只能是 8 的倍数
 
-###### GETBIT
+- 查找：`BITPOS k targetBit [start] [end]`
 
-整取：`get s`
-零取：`getbit s 1`
+- 位操作：`BITOP op destKey key1 key2`
+
+  - and
+
+  - or
+
+  - not
+
+  - xor
 
 
-##### 统计
+- 魔术指令：`bitfield`操作多个位
+  - `BITFIELD k get u4 2`：从第3个位开始，取4个位，结果是无符号数(u) / 有符号数 (i)
+  - `BITFIELD k set u8 16 97`：从第17个位开始，设置接下来的 8 个位，用无符号数97 （字母a）替代
+  - `BITFIELD k incrby u4 2 1`：从第3个位开始，设置接下来的 4 位无符号数，+1
+    - 可设置溢出策略子指令：overflow`bitfield k overflow wrap incrby ...`
+    - wrap 折返：增加过多会变成0
+    - sat 截断：增加过多会停留在最大值
+    - fail 失败：报错
 
-###### BITCOUNT k [start end] 统计
+**应用**
 
-注意，start/end 是字节索引，只能是 8 的倍数
+- 存储用户一年中的签到记录
 
 
-##### 查找
 
-###### BITPOS k targetBit [start] [end] 查找
+## || HyperLogLog
 
-##### 位操作
+作用
 
-###### BITOP op destKey key1 key2 位运算
+- HyperLogLog 提供不精确的去重计数方案
 
-op:
-- and
-- or
-- not
-- xor
+- 极小空间完成独立数量统计：https://www.jianshu.com/p/55defda6dcd2
 
-##### 魔术指令
+- type: string
 
-###### bitfield操作多个位
+**场景**
 
-####### BITFIELD k get u4 2
+- PV 统计
+  - incrby
+  - key: pageId + date
 
-######## 从第3个位开始，取4个位，结果是无符号数(u) / 有符号数 (i)
+- UV 统计
+  - set 存储访问用户ID?：数据量太大
+  - 优化：HyperLogLog
 
-####### BITFIELD k set u8 16 97
+**缺点**
 
-######## 从第17个位开始，设置接下来的 8 个位，用无符号数97 （字母a）替代
+- 有错误率 0.81%
 
-####### BITFIELD k incrby u4 2 1
+- 不能返回单条元素
 
-######## 从第3个位开始，设置接下来的 4 位无符号数，+1
 
-######## 可设置溢出策略子指令：overflow
 
-`bitfield k overflow wrap incrby ...`
+**命令**
 
-1. wrap 折返
-增加过多会变成0
-2. sat 截断
-增加过多会停留在最大值
-3. fail 失败
-报错
+- 添加：`pfadd`
+  - pfadd key e1 e2...
 
-#### 应用
+- 计数：`pfcount`
+  - pfcount key
 
-##### 存储用户一年中的签到记录
+- 合并：`pfmerge`
+  - pfmerge destKey sourceKey1 sourceKey2
+  - 可用于合并两个网页的UV统计
+- 不能判断是否存在，没有 pfcontains !!!
 
-### HyperLogLog
 
-#### 作用
 
-##### HyperLogLog 提供不精确的去重计数方案
-
-##### 极小空间完成独立数量统计
-
-###### How?
-
-https://www.jianshu.com/p/55defda6dcd2
-
-##### type: string
-
-#### 场景
-
-##### PV 统计
-
-###### incrby
-
-###### key: pageId + date
-
-##### UV 统计
-
-###### set 存储访问用户ID?
-
-####### 数据量太大
-
-###### 优化：HyperLogLog
-
-#### 缺点
-
-##### 有错误率 0.81%
-
-##### 不能返回单条元素
-
-#### 命令
-
-##### 添加：pfadd
-
-###### pfadd key e1 e2...
-
-##### 计数：pfcount
-
-###### pfcount key
-
-##### 合并：pfmerge
-
-###### pfmerge destKey sourceKey1 sourceKey2
-
-###### 可用于合并两个网页的UV统计
-
-##### 不能判断是否存在，没有 pfcontains !!!
-
-### 布隆过滤器
+## || 布隆过滤器
 
 布隆过滤器能准确过滤掉那些已经看过的内容，那些没有看过的新内容，它也会过滤掉极小一部分 (误判)
 
-#### 场景
+**场景**
 
-##### 推荐时去重
+- 推荐时去重
 
-##### 爬虫对爬过的URL去重
+- 爬虫对爬过的URL去重
 
-##### HBase过滤掉不存在的row请求
+- HBase过滤掉不存在的row请求
 
-#### 命令
+**命令**
 
-##### bf.exists / bf.mexists
+- bf.exists / bf.mexists
 
-##### bf.add / bf.madd
+- bf.add / bf.madd
 
-##### bf.reserve
+- bf.reserve
+  - key
+  - error_rate：误判率越低，需要的空间越大
+  - initial_size：预计放入的元素数量
 
-自定义布隆过滤器参数
 
-###### key
 
-###### error_rate
+**原理**
 
-####### 误判率越低，需要的空间越大
+- 参数
 
-###### initial_size
+  - m 个二进制向量
 
-####### 预计放入的元素数量
+  - n 个预备数据
 
-#### 原理
+  - k 个哈希函数
 
-##### 参数
+- 构建
+  - n个预备数据，分别进行k个哈希，得出offset，将相应位置的二进制向量置为1
 
-###### m 个二进制向量
+- 判断
+  - 进行k个哈希，得出offset，如果全为1，则判断存在
 
-###### n 个预备数据
+**误差**
 
-###### k 个哈希函数
+- 返回存在时，实际可能不存在
 
-##### 构建
+- 误差率
 
-###### n个预备数据，分别进行k个哈希，得出offset，将相应位置的二进制向量置为1
+  - 与 k (哈希函数)个数成反比
 
-##### 判断
+  - 与 n (预备数据)个数成正比
 
-###### 进行k个哈希，得出offset，如果全为1，则判断存在
+  - 与 m (二进制向量)长度成反比
 
-#### 误差
+  
 
-##### 返回存在时，实际可能不存在
-
-##### 误差率
-
-###### 与 k (哈希函数)个数成反比
-
-###### 与 n (预备数据)个数成正比
-
-###### 与 m (二进制向量)长度成反比
-
-### GeoHash
+## || GeoHash
 
 GeoHash 算法将二维的经纬度数据映射到一维的整数，这样所有的元素都将在挂载到一条线上，距离靠近的二维坐标映射到一维后的点之间距离也会很接近。
 
-#### 场景
+**场景**
 
-##### 用于地理经纬度计算
+- 用于地理经纬度计算
 
-#### 设计
+**设计**
 
-##### 初级：RDB存储经纬度、限制矩形区域、全量计算距离、排序
+- 初级：RDB存储经纬度、限制矩形区域、全量计算距离、排序
 
-##### 进阶：将二维经纬度 映射到一维整数
+- 进阶：将二维经纬度 映射到一维整数
 
-###### 二刀切分成四块：00, 01, 10, 11
+  - 二刀切分成四块：00, 01, 10, 11；如此往复，将所有坐标编程整数。
 
-###### 如此往复，将所有坐标编程整数
+  - 再将整数做base32编码，hash，作为zset的score存储。
+  - 查询：http://geohash.org
 
-###### 再将整数做base32编码，hash，作为zset的score存储
+- 底层类型: zset。并没有使用新的数据结构！！！
+  - value = key
+  - score = geohash
 
-###### 查询：http://geohash.org
 
-##### 底层类型: zset
 
-###### value = key
+**问题**
 
-###### score = geohash
+- 数据都是存到同一个key下，量大的时候集群迁移时会卡顿
 
-####### 并没有使用新的数据结构！！！
+- 解决
+  - 用单独实例部署
+  - 拆分
 
-#### 问题
+**命令**
 
-##### 数据都是存到同一个key下，量大的时候集群迁移时会卡顿
+- `GEOADD` 添加：GEOADD key longitude latitude member
 
-###### 解决
+- `GEOPOS` 获取：GEOPOS key member
 
-####### 用单独实例部署
+- `GEODIST` 距离：GEODIST key member1 member2 [unit]
 
-####### 拆分
+- `GEORADIUS` 范围：GEORADIUS key longitude latitude 20 km withdist count 3 asc
+  GEORADIUSBYMEMBER key member 20km withhash count 3 desc
 
-#### 命令
+- `ZREM` 删除：ZREM key member
 
-##### GEOADD 添加
+- `geohash`
 
-###### GEOADD key longitude latitude member
+## || 限流
 
-##### GEOPOS 获取
+**简单限流**
 
-###### GEOPOS key member
+- 设计
+  - zset 实现滑动时间窗口
+  - key = clientId-actionId
+  - value = ms
+  - score = ms
 
-##### GEODIST 距离
+- 实现 isActionAllowed
+  - 缺点：如果maxCount很大，则会消耗大量空间
 
-###### GEODIST key member1 member2 [unit]
-
-##### GEORADIUS 范围
-
-###### GEORADIUS key longitude latitude 20 km withdist count 3 asc
-
-###### GEORADIUSBYMEMBER key member 20km withhash count 3 desc
-
-##### ZREM 删除
-
-###### ZREM key member
-
-##### geohash
-
-### 限流
-
-#### 简单限流
-
-##### 设计
-
-###### zset 实现滑动时间窗口
-
-###### 存储设计
-
-####### key
-
-######## clientId-actionId
-
-####### value
-
-######## ms
-
-####### score
-
-######## ms
-
-##### 实现 isActionAllowed
-
-```
+```java
 public boolean isActionAllowed(String userId, String actionKey, int period, int maxCount) {
   String key = String.format("hist:%s:%s", userId, actionKey);
   long nowTs = System.currentTimeMillis();
   
+  // 使用 pipeline 提升效率，因为是对同一个key操作
   Pipeline pipe = jedis.pipelined();
   pipe.multi();
   
@@ -937,44 +781,24 @@ public static void main(String[] args) {
   }
 ```
 
-###### 1. 记录行为
 
-####### zadd(key, nowTs, nowTs)
 
-###### 2. 删除窗口外记录
+**漏斗限流**
 
-####### zremrangeByScore(key, 0, nowTs - period * 1000)
+- 初步实现
+  - capacity：漏斗容量
+  - leakingRate：漏出速率
+  - leftQuato：漏斗剩余空间
+  - leakingTs：上次漏水事件
 
-###### 3. 窗口内记录数
-
-####### zcard(key)
-
-###### 4. 设置过期
-
-####### expire(key, period + 1)
-
-###### 5. 判断记录数
-
-####### 记录数 <= maxCount
-
-##### 注意
-
-###### 使用 pipeline 提升效率，因为是对同一个key操作
-
-###### 缺点：如果maxCount很大，则会消耗大量空间
-
-#### 漏斗限流
-
-##### 初步实现
-
-```
+```java
 public class FunnelRateLimiter {
 
  static class Funnel {
-  int capacity;
-  float leakingRate;
-  int leftQuota;
-  long leakingTs;
+  int capacity; //漏斗容量
+  float leakingRate; //漏出速率 
+  int leftQuota; //漏斗剩余空间
+  long leakingTs; //上次漏水事件
 
   void makeSpace() {
     long nowTs = System.currentTimeMillis();
@@ -1026,491 +850,388 @@ public boolean isActionAllowed(String userId, String actionKey, int capacity, fl
 }
 ```
 
-###### capacity
-
-####### 漏斗容量
-
-###### leakingRate
-
-####### 漏出速率
-
-###### leftQuato
-
-####### 漏斗剩余空间
-
-###### leakingTs
-
-####### 上次漏水事件
-
-##### Redis-Cell模块
-
-###### cl.throttle key capacity count period 1
-
-###### 返回值
-
-####### 1. 是否拒绝
-
-####### 2. 漏斗容量
-
-####### 3. 漏斗剩余空间
-
-####### 4. 如果被拒绝，应该sleep多久
-
-####### 5. 多久后漏斗完全空出
-
-### 搜索key
-
-#### keys
-
-- 没有 offset、limit 参数，一次性吐出所有满足条件的 key。
-- keys 算法是遍历算法，复杂度是 O(n)
-
-##### 示例
-
-###### keys *
-
-###### keys code*hole
-
-##### 缺点
-
-###### 一次返回所有
-
-###### O(n)，量大时会导致卡顿
-
-#### scan
-
-scan <cursor> match <regex> count <limit>
-在 Redis 中所有的 key 都存储在一个很大的字典中，scan 指令返回的游标就是第一维数组的位置索引，limit 参数就表示需要遍历的槽位数
 
 
-##### 示例
+- Redis-Cell模块
+  - cl.throttle key capacity count period 1
 
-###### SCAN <cursor> match <regex> count <limit>
+- 返回值
 
-##### 参数
+1. 是否拒绝
+2. 漏斗容量
+3. 漏斗剩余空间
+4. 如果被拒绝，应该sleep多久
+5. 多久后漏斗完全空出
 
-###### cursor
 
-####### 游标，每次查询’返回下一个
 
-###### key正则模式
+## || 搜索key
 
-###### limit hint
+**keys**
 
-####### 不精确的限制
+- 示例
 
-####### 用于限定服务器单次遍历的字典槽位数 (Map Entry[] 的索引)
+  - `keys *`
 
-##### 遍历指定容器集合
+  - `keys code*hole`
 
-###### zscan
+- 缺点
+  - 一次返回所有：没有 offset、limit 参数，一次性吐出所有满足条件的 key。
+  - O(n)，量大时会导致卡顿：keys 算法是遍历算法，复杂度是 O(n)
 
-###### hscan
+**scan**
 
-###### sscan
+- `scan <cursor> match <regex> count <limit>`
+  在 Redis 中所有的 key 都存储在一个很大的字典中，scan 指令返回的游标就是第一维数组的位置索引，limit 参数就表示需要遍历的槽位数
 
-##### 注意rehash时的处理
+- 参数
 
-###### 按高位进位加法来遍历
+  - cursor：游标，每次查询返回下一个
 
-####### 保证 rehash 后的操作在遍历顺序上是相邻的
+  - key：正则模式
 
-###### 渐进式 rehash
+  - limit hint
+    - 不精确的限制
+    - 用于限定服务器单次遍历的字典槽位数 (Map Entry[] 的索引)
 
-####### 要同时访问新旧两个数组
+- 遍历指定容器集合
 
-### 排行榜：zset
+  - zscan
+
+  - hscan
+
+  - sscan
+
+- 注意rehash时的处理
+
+  - 按高位进位加法来遍历；保证 rehash 后的操作在遍历顺序上是相邻的
+
+  - 渐进式 rehash：要同时访问新旧两个数组
+
+
+
+## || 排行榜：zset
 
 ZADD user_score score ui
 
-#### 完整排行榜
+- 完整排行榜：`ZREVRANGE user_score 0 -1 WITHSCORES`
 
-##### ZREVRANGE user_score 0 -1 WITHSCORES
+- 前N排行榜：`ZREVRANGE usre_score 0 N`
 
-#### 前N排行榜
+- 查询某人的分数：`ZSCORE user_score uid`
 
-##### ZREVRANGE usre_score 0 N
+- 查询某人的排名：`ZREVRANGE user_score uid`
 
-#### 查询某人的分数
+- 更新分数：`ZINCRBY user_score delta uid`
 
-##### ZSCORE user_score uid
+- 增加删除人
+  - `ZREM user_score uid`
+  - `ZADD user_score score uid`
 
-#### 查询某人的排名
 
-##### ZREVRANGE user_score uid
 
-#### 更新分数
+# | 原理
 
-##### ZINCRBY user_score delta uid
+## || AP: 最终一致性
 
-#### 增加删除人
+- 异步同步
 
-##### ZREM user_score uid
+  - Redis 的主从数据是 **异步同步** 的，所以分布式的 Redis 系统并不满足「一致性」要求。
 
-##### ZADD user_score score uid
+  - Redis 保证「最终一致性」，从节点会努力追赶主节点，最终从节点的状态会和主节点的状态将保持一致。
 
-## 原理
+- 可用性  +  最终一致性
 
-### AP: 最终一致性
+- 可设置强一致性：`wait N t`
 
-- Redis 的主从数据是 **异步同步** 的，所以分布式的 Redis 系统并不满足「一致性」要求。
-- Redis 保证「最终一致性」，从节点会努力追赶主节点，最终从节点的状态会和主节点的状态将保持一致。
+  - N: 等待wait之前的所有写操作 同步到 N 个从节点
 
-#### 异步同步
+  - t: 最多等待 t 时间
 
-#### 可用性  +  最终一致性
+  
 
-#### 可设置强一致性：wait N t
+## || 通讯协议
 
-##### N: 等待wait之前的所有写操作 同步到 N 个从节点
+- RESP, Redis Serialization Protocal
 
-##### t: 最多等待 t 时间
+- 开头字符
 
-### 通讯协议
+  - `+` 单行字符串
+  - `$` 多行字符串
 
-#### RESP, Redis Serialization Protocal
+  - `:`  整数值
+  - `-` 错误消息
+  - `*` 数组
 
-#### 开头字符
+- 特点
 
-##### +
+  - 大量冗余换行符
+  - 浪费流量，但性能依然高
 
-###### 单行字符串
+  
 
-##### $
+## || 线程 IO 模型
 
-###### 多行字符串
+**单线程**
 
-##### :
+- 那为什么快？
+  - 纯内存操作
+  - 避免频繁的上下文切换
+  - IO 多路复用机制
 
-###### 整数值
+- 注意单个命令不能执行太长，会卡顿
 
-##### -
 
-###### 错误消息
 
-##### *
+**多路复用（事件轮询）**
 
-###### 数组
+- **指令队列**
+  - Redis 会将每个客户端 Socket 都关联一个指令队列。
+  - 客户端的指令通过队列来排队进行“顺序处理”，先到先服务。
 
-#### 特点
+- **响应队列**
+  - Redis 服务器通过响应队列来将指令的返回结果回复给客户端。
+  - 如果队列为空，那么意味着连接暂时处于空闲状态，不需要去获取写事件，也就是可以将当前的客户端描述符从write_fds里面移出来。等到队列有数据了，再将描述符放进去。避免select系统调用立即返回写事件，结果发现没什么数据可以写。出这种情况的线程会飙高 CPU。
 
-##### 大量冗余换行符
+- **epoll事件轮询API**
 
-##### 浪费流量，但性能依然高
+  - select 函数
+  - epoll 
+  - 基于事件的回调机制
 
-### 线程 IO 模型
+  > - 最简单的事件轮询 API 是select函数，它是操作系统提供给用户程序的 API。
+  >   输入是读写描述符列表read_fds & write_fds，输出是与之对应的可读可写事件。
+  > - 同时还提供了一个timeout参数，如果没有任何事件到来，那么就最多等待timeout时间，线程处于阻塞状态。
+  > - 一旦期间有任何事件到来，就可以立即返回。时间过了之后还是没有任何事件到来，也会立即返回。拿到事件后，线程就可以继续挨个处理相应的事件。处理完了继续过来轮询。于是线程就进入了一个死循环，我们把这个死循环称为事件循环，一个循环为一个周期。
 
-#### 单线程
+###### 
 
-##### 那为什么快？
+**异步处理线程**
 
-###### 纯内存操作
+- 作用：除了主线程，还有几个异步线程专门用来处理耗时操作
 
-###### 避免频繁的上下文切换
+- 原理：
+  - 操作后，将key的操作包装成一个任务，塞进“异步任务队列”
+  - 后台线程从中取任务
 
-###### IO 多路复用机制
+- 案例
 
-##### 注意单个命令不能执行太长，会卡顿
+  - unlink 删除key
+    - del 删除大key时会卡顿
+    - 而 unlink 则通过异步线程回收内存
 
-#### 多路复用（事件轮询）
+  - flush async
+    - 异步清空
 
-##### 指令队列
+  - AOF sync
 
-Redis 会将每个客户端 Socket 都关联一个指令队列。
+  - 渐进式 rehash 定时任务触发
 
-客户端的指令通过队列来排队进行“顺序处理”，先到先服务。
+## || pipeline
 
-##### 响应队列
+**目的**
 
-Redis 服务器通过响应队列来将指令的返回结果回复给客户端。
+- 节省网络开销
 
-- 如果队列为空，那么意味着连接暂时处于空闲状态，不需要去获取写事件，也就是可以将当前的客户端描述符从write_fds里面移出来。等到队列有数据了，再将描述符放进去。避免select系统调用立即返回写事件，结果发现没什么数据可以写。出这种情况的线程会飙高 CPU。
+**手段**
 
-##### epoll事件轮询API
+- 客户端连续发送请求，而不是每发一个就等回复
 
-最简单的事件轮询 API 是select函数，它是操作系统提供给用户程序的 API。
-输入是读写描述符列表read_fds & write_fds，输出是与之对应的可读可写事件。
 
-同时还提供了一个timeout参数，如果没有任何事件到来，那么就最多等待timeout时间，线程处于阻塞状态。
-
-一旦期间有任何事件到来，就可以立即返回。时间过了之后还是没有任何事件到来，也会立即返回。拿到事件后，线程就可以继续挨个处理相应的事件。处理完了继续过来轮询。于是线程就进入了一个死循环，我们把这个死循环称为事件循环，一个循环为一个周期。
-
-###### select 函数
-
-###### epoll 
-
-###### 基于事件的回调机制
-
-#### 异步处理线程
-
-##### 作用
-
-###### 除了主线程，还有几个异步线程专门用来处理耗时操作
-
-##### 原理
-
-###### 操作后，将key的操作包装成一个任务，塞进“异步任务队列”
-
-###### 后台线程从中取任务
-
-##### 案例
-
-###### unlink 删除key
-
-####### del 删除大key时会卡顿
-
-####### 而 unlink 则通过异步线程回收内存
-
-###### flush async
-
-####### 异步清空
-
-###### AOF sync
-
-####### ？
-
-###### 渐进式 rehash 定时任务触发
-
-### pipeline
 
 客户端通过改变了读写的顺序带来的性能的巨大提升.
 
-``` 
+``` java
 Pipeline pl = jedis.pipelined();
 loop pl.hset("key", "field", "v");
 pl.syncAndReturnAll()
 ```
 
-#### 目的
 
-##### 节省网络开销
 
-#### 手段
+**注意**
 
-##### 客户端连续发送请求，而不是每发一个就等回复
+- 注意每次 pipeline 携带的数据量
 
-#### 注意
+- 注意m操作与 pipeline 的区别：原子 vs 非原子
 
-##### 注意每次 pipeline 携带的数据量
+- pipeline 每次只能作用在一个redis节点上
 
-##### 注意m操作与 pipeline 的区别：原子 vs 非原子
+**pipeline为什么快？**
 
-##### pipeline 每次只能作用在一个redis节点上
+- 发送请求后，连续的write 写入缓冲区立即返回，不消耗IO
 
-#### pipeline为什么快？
+- 读取回复时，等待一个网络来回，后续的 read 则直接从缓冲区拿数据
 
-##### 发送请求后，连续的write 写入缓冲区立即返回，不消耗IO
 
-##### 读取回复时，等待一个网络来回，后续的 read 则直接从缓冲区拿数据
 
-### 事务
+## || 事务
 
-#### 命令
+**命令**
 
-##### MULTI / EXEC / DISCARD
+因为 Redis 的单线程特性，它不用担心自己在执行队列的时候被其它指令打搅，可以保证他们能得到的「原子性」执行
 
-- 因为 Redis 的单线程特性，它不用担心自己在执行队列的时候被其它指令打搅，可以保证他们能得到的「原子性」执行
+- **MULTI / EXEC / DISCARD**
 
-```
-MULTI
+  ```sh
+  MULTI
+  
+  hmset user:001 hero 'zhangfei' hp_max 8341 mp_max 100
+  hmset user:002 hero 'guanyu' hp_max 7107 mp_max 10
+  
+  EXEC
+  ```
 
-hmset user:001 hero 'zhangfei' hp_max 8341 mp_max 100
-hmset user:002 hero 'guanyu' hp_max 7107 mp_max 10
+  
 
-EXEC
+  - 执行 EXEC 之前，所有指令保存到服务端 “事务队列”； 此时服务端返回QUEUED，而不是OK
+  - 执行 EXEC 之后，一次性返回所有指令的运行结果；
+  - 执行 DISCARD，取消。
 
-```
+- **WATCH**
 
-###### 执行 EXEC 之前，所有指令保存到服务端 “事务队列”
+  - ```sh
+    > WATCH books
+    > incr books  # 客户端2 修改
+    > (integer) 1
+    
+    > MULTI
+    > incr books  # 客户端1 修改
+    > QUEUED
+    > EXEC  # 事务执行失败
+    > (nil)
+    ```
 
-####### 此时服务端返回QUEUED，而不是OK
+  - 作用：如果所watch的关键变量被改动，则不执行事务，返回错误。客户端一般可选择重试。
 
-###### 执行 EXEC 之后，一次性返回所有指令的运行结果
+    - WATCH + MULTI 实现乐观锁
+    - 服务器收到了 exec 指令要顺序执行缓存的事务队列时，Redis 会检查关键变量自 watch 之后，是否被修改了 (包括当前事务所在的客户端)。如果关键变量被人动过了，exec 指令就会返回 null 回复告知客户端事务执行失败，这个时候客户端一般会选择重试。
 
-###### 执行DISCARD，取消
+  - 问题：乐观锁不适用于更新频繁的场景
 
-##### WATCH
+    - Redis + Lua 原子化执行多条语句
+      ```lua
+      local current
+      
+      current = redis.call("incr",KEYS[1])
+      if tonumber(current) == 1 then
+         redis.call("expire",KEYS[1],1)
+      end
+      ```
 
-服务器收到了 exec 指令要顺序执行缓存的事务队列时，Redis 会检查关键变量自 watch 之后，是否被修改了 (包括当前事务所在的客户端)。如果关键变量被人动过了，exec 指令就会返回 null 回复告知客户端事务执行失败，这个时候客户端一般会选择重试。
+    - 注意Lua中不要有耗时操作
 
-> WATCH books
-> incr books  # 客户端2 修改
-> (integer) 1
+  - 示例代码
+    ```java
+    jedis.watch(key);
+    
+    Transaction tx = jedis.multi();
+    tx.set(...)
+    tx.set(...)
+    List response = tx.exec()
+    ```
 
-> MULTI
-> incr books  # 客户端1 修改
-> QUEUED
-> EXEC  # 事务执行失败
-> (nil)
+    
 
-###### 作用
+- **结合pipeline**：较少网络IO
 
-####### 如果所watch的关键变量被改动，则不执行事务，返回错误。客户端一般可选择重试
+  ```java
+  pipe = redis.pipeline(transaction=true)
+  
+  pipe.multi()
+  pipe.incr("books")
+  pipe.incr("books")
+  
+  values = pipe.execute()
+  ```
 
-####### WATCH + MULTI 实现乐观锁
 
-###### 问题：乐观锁不适用于更新频繁的场景
 
-####### Redis + Lua 原子化执行多条语句
+**特性**
 
-local current
+- 隔离性
 
-current = redis.call("incr",KEYS[1])
-if tonumber(current) == 1 then
-   redis.call("expire",KEYS[1],1)
-end
+- 不能保证原子性：
+  - 第一个命令执行失败，后续命令仍然会被执行；
+  - Redis 的事务根本不能算「原子性」，而仅仅是满足了事务的「隔离性」，隔离性中的串行化——当前执行的事务有着不被其它事务打断的权利。
 
-####### 注意Lua中不要有耗时操作
 
-###### 示例代码
 
-```
-jedis.watch(key);
+## || 内存回收策略
 
-Transaction tx = jedis.multi();
-tx.set(...)
-tx.set(...)
-List response = tx.exec()
-
-```
-
-##### 结合pipeline
-
-较少网络IO
-
-pipe = redis.pipeline(transaction=true)
-
-pipe.multi()
-pipe.incr("books")
-pipe.incr("books")
-
-values = pipe.execute()
-
-###### pipeline.multi()
-
-###### pipeline.incr()
-
-###### pinpeline.execute()
-
-#### 特性
-
-##### 隔离性
-
-##### 不能保证原子性
-
-Redis 的事务根本不能算「原子性」，而仅仅是满足了事务的「隔离性」，隔离性中的串行化——当前执行的事务有着不被其它事务打断的权利。
-
-###### 第一个命令执行失败，后续命令仍然会被执行
-
-### 内存回收策略
-
-#### 缓存过期策略
+### 缓存过期策略
 
 https://redis.io/topics/lru-cache
 
-##### 定时扫描
+**定时扫描**
 
-###### 设置了过期时间的key，会放入独立的字典中
+- 设置了过期时间的key，会放入独立的字典中
 
-###### 每秒扫描10次
+- 每秒扫描10次
 
-###### 贪心策略
+- 贪心策略
 
-####### 目的
+  - 目的：避免遍历所有key。
 
-######## 避免遍历所有key
+  - 过程：
 
-####### 过程
+    - 从“过期字典”中随机 20 个 key；
+    - 删除这 20 个 key 中已经过期的 key；
+    - 如果过期的 key 比率超过 1/4，那就重复步骤 1；
+    - 扫描时间上限：25ms
 
-######## 从“过期字典”中随机 20 个 key；
+  - 问题：
 
-######## 删除这 20 个 key 中已经过期的 key；
+    - 客户端请求可能会因此多等待25ms，若此时客户端设置的超时时间短，则会timeout；如果正好有大批key过期，可能导致大量timeout；而且不好排查。
+    - 解决：过期时间随机化
 
-######## 如果过期的 key 比率超过 1/4，那就重复步骤 1；
+    
 
-######## 扫描时间上限：25ms
+**惰性策略**
 
-####### 问题
+- 访问key时，检查过期时间
 
-######## 客户端请求可能会因此多等待25ms，若此时客户端设置的超时时间短，则会timeout
+- 能否只用惰性？--> 可能导致太多key没被删除
 
-######## 如果正好有大批key过期，可能导致大量timeout；而且不好排查
 
-######## 解决
 
-######### 过期时间随机化
+**从节点过期策略**
 
-##### 惰性策略
+- 被动过期
 
-###### 访问key时，检查过期时间
+- 等待主节点 AOF 里的del指令
 
-###### 能否只用惰性？
+**原理：过期字典**
 
-####### 可能导致太多key没被删除
+- key = 数据key
+- value = 过期时间
 
-##### 从节点过期策略
 
-###### 被动过期
 
-###### 等待主节点 AOF 里的del指令
+### 内存溢出控制策略
 
-##### 原理
+配置
 
-###### 过期字典
+- maxmemory-policy
 
-####### key = 数据key
+策略
 
-####### value = 过期时间
+- 不删除，拒绝写入：noeviction
+  -  默认策略，拒绝写入操作；
+  - 这个策略作为默认值是否合适？导致数据不可更新
 
-#### 内存溢出控制策略
+- 删除有过期时间的key
+  - volatile-lru：LRU算法删除 有expire的key；
+  - volatile-ttl：删除最近将要过期key；
+  - volatile-random：随机删除过期key
+  - volatile-lfu：LFU算法
 
-##### 配置
+- 删除所有key
+  - allkeys-lru：LRU算法删除所有key；
+  - allkeys-random：随机删除所有key；
+  - allkeys-lfu：LFU 算法
 
-###### maxmemory-policy
-
-##### 策略
-
-###### 不删除，拒绝写入
-
-####### noeviction
-
-######## 默认策略，拒绝写入操作
-
-######## 这个策略作为默认值是否合适？导致数据不可更新
-
-###### 删除有过期时间的key
-
-####### volatile-lru
-
-######## LRU算法删除 有expire的key
-
-####### volatile-ttl
-
-######## 删除最近将要过期key
-
-####### volatile-random
-
-######## 随机删除过期key
-
-####### volatile-lfu
-
-######## LFU算法
-
-###### 删除所有key
-
-####### allkeys-lru
-
-######## LRU算法删除所有key
-
-####### allkeys-random
-
-######## 随机删除所有key
-
-####### allkeys-lfu
-
-######## LFU 算法
-
-#### eviction 算法
+### eviction 算法
 
 https://redis.io/topics/lru-cache
 
