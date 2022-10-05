@@ -1,6 +1,6 @@
-# Redis知识图谱
+[toc]
 
-## 数据类型
+# | 数据类型
 
 ### string
 
@@ -158,7 +158,7 @@ rpush books python java golang
 ### set
 
  sadd books python
- 
+
 
 #### 内部编码
 
@@ -1416,7 +1416,7 @@ GeoHash 算法将二维的经纬度数据映射到一维的整数，这样所有
 
 scan <cursor> match <regex> count <limit>
 在 Redis 中所有的 key 都存储在一个很大的字典中，scan 指令返回的游标就是第一维数组的位置索引，limit 参数就表示需要遍历的槽位数
-  
+
 
 ### Stream
 
@@ -1486,7 +1486,7 @@ mem_allocator 分配的内存量
 client-output-buffer-limit <class> hard_limit soft_limit soft_seconds
 
   - class: normal, slave, pubsub
-  
+
 
 ######## 输出缓冲区
 
