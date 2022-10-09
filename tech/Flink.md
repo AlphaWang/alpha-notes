@@ -2104,6 +2104,237 @@ https://ci.apache.org/projects/flink/flink-docs-release-1.11/dev/table/functions
 
 
 
+# | Flink Connector
+
+> - develop connector tips: https://www.youtube.com/watch?v=ZkbYO5S4z18 
+> - develop connector example，口音重: https://www.youtube.com/watch?v=LCMfbGv38u8
+> - table api? https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks/ 
+
+
+
+## || Develop Source 
+
+https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/ 
+
+**Data Source 核心组件：**
+
+- **Split 分片**
+  - A Split is a portion of data consumed by the source, like a file or a log partition. Splits are the granularity by which the source distributes the work and parallelizes reading data.
+  - source 数据的一部分；Split 是进行任务分配、数据并行读取的基本粒度。
+  - 例：Split = Kafka Topic Partition.
+- **SourceReader 源阅读器**
+  - The SourceReader requests Splits and processes them, for example by reading the file or log partition represented by the Split. The SourceReaders run in parallel on the Task Managers in the `SourceOperators` and produce the parallel stream of events/records.
+  - SourceReader 请求分片，并进行处理。并行运行在 Task Manager 中。
+  - 例：使用 KafkaConsumer 读取所分配的分片（主题分区），并反序列化记录。
+- **SplitEnumerator 分片枚举器**
+  - SplitEnumerator 生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
+  - 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
+- Source
+  - API 入口，将上述三个组件组合起来。
+
+
+
+![image-20221009113212031](../img/flink/flink-connector-source.png)
+
+JobManager:
+
+- 1 **SplitEnumerator** per job
+  - Split discovery / split life-cycle
+  - Failover / split re-assignment
+
+TaskManager
+
+- 1 **SourceReader** per source subtask
+  - Offset management
+  - Reading
+
+
+
+**Sample code**
+
+- Source
+
+```java
+class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState> {
+  
+  SlackSettings settings; //needs to be serializable
+  
+  Boundedness getBoundeness() {
+    return Bondedness.CONTINUOUS_UNBOUNDED;
+  }
+  // Creates a new reader to read data from the splits it gets assigned.
+  // SourceReader: reading the records from the source splits assigned by SplitEnumerator.
+  SourceReader<SlackMsg, SlackNotification> createReader(SourceReaderContext ctx) {
+    return new SlackReader<>(ctx);
+  }
+  // Creates a new SplitEnumerator for this source, starting a new input. 
+  // SplitEnumerator:
+  // 1. discover the splits for the SourceReader to read. 
+  // 2. assign the splits to the source reader.
+  SplitEnumerator<SlackNotification, EnumeratorState> createEnumerator(SplitEnumeratorContext<SlackNotification> ctx) {
+    return new SlackEnumerator(ctx, null);
+  }
+  // Restores an enumerator from a checkpoint.
+  SplitEnumerator<SlackNotification, EnumeratorState> restoreEnumerator(SplitEnumeratorContext<SlackNotification> ctx, EnumeratorState checkpoint) {
+    return new SlackEnumerator(ctx, checkpoint)
+}
+```
+
+- SplitEnumerator
+
+```java
+class EnumeratorState {
+  Queue<SlackNotification> upprocessedNotification;
+}
+
+class SlackEnumerator implements SplitEnumerator<SlackNotificaiton, EnumeratorState> {
+  SplitEnumeratorContext<SlackNotification> context;
+  EnumeratorState state;
+  SlackClient client;
+  
+  // start: invoked just once. 
+  // 注册回调：发现新分片
+  void start() {
+    //  Invoke the given callable periodically and handover the return value to the handler which will be executed by the source coordinator. 
+    context.callAsync(client::getNotifications, (msgs, ex) -> {
+			state.upprocessedNotification.addAll(msgs)
+    }, 0, 60_000);
+  }
+  
+  //
+  void handleSplitRequest(int subtaskId, String requesterHostname) {
+    context.assignSplit(state.unprocessedNotification.poll(), subtaskId);
+  }
+  
+  //SourceReader 失败时会调用 addSplitsBack()。
+  //SplitEnumerator 应当收回已经被分配，但尚未被该SourceReader确认（acknowledged）的分片。
+  void addSplitsBack(List<SlackNotification> msgs, int subtaskId) {
+    state.unprocessedNotification.addAll(msgs);
+  }
+  
+  // failure management
+  EnumeratorState snapshotState(long checkpointId) {
+    return state;
+  }
+}
+```
+
+- Source Reader
+  - 推荐继承 `SourceReaderBase`，减少编码量
+
+```java
+class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
+  SlackClient client;
+  CompletableFuture<Void> available = new CompletableFuture<>();
+  
+  SlackReader(SlackSettings settings, SourceReaderContext context) {
+    client = new SlackClient(settings);
+    context.sendSplitRequest();
+  }
+  
+  //
+  void addSplits(List<SlackNotification> splits) {
+    client.seek(Iterables.getOnlyElement(splits).getMessageOffset());
+    available.complete(null);
+  }
+  
+  // Poll the next available record into the {@link ReaderOutput}.
+  InputStatus pollNext(ReaderOutput<SlackMessage> output) {
+    if (client.hasMoreMessages()) {
+      output.collect(client.nextMessage());
+      return InputStatus.MORE_AVAILABLE;
+    } else {
+      context.sendSplitRequest();
+      available = new CompletableFuture<>();
+      return InputStatus.NOTHING_AVAILABLE;
+    }
+  }
+  
+  List<SlackNotification> snapshotState(long checkpointId) {
+    return Collections.singletonList(client.getCurrentSplit());
+  }
+}
+```
+
+
+
+
+
+## || Develop Sink
+
+
+
+**Sample Code**
+
+- Sink
+
+```java
+class SlackSink implements Sink<SlackReply, Draft, Void, Void> {
+  SlackSettings settings;
+  
+  public SinkWriter<SlackReply, Draft, Void> createWriter(InitContext context, List<void> states) {
+    return new SlackWriter(settings);
+  }
+  
+  public Optional<SimpleVersionedSerializer<Void>> getWriterStateSerializer() {
+    return Optional.empty(); //writer has no state
+  }
+  public Optional<Committer<Draft>> createCommitter() {
+    return Optional.of(new DraftCommitter(settings));
+  }
+  public Optional<SimpleVersionedSerializer<Draft>> getCommittableSerializer() {
+    return Optional.of(new DraftSerializer());
+  }
+}
+
+```
+
+- SinkWriter
+
+```java
+class SlackWriter implements SinkWriter<SlackReply, Draft, Void> {
+  SlackClient client;
+  Queue<Draft> drafts = new ArrayDeque<>();
+  
+  void write(SlackReply element, Context ctx) {
+    drafts.add(client.writeDraft(element));
+  }
+  // call at checkpoint
+  List<Draft> prepareCommit(boolean flush) {
+    ArrayList<Draft> drafts = new ArrayList<>(this.drafts);
+    this.drafts.clear();
+    return drafts;
+  }
+}
+
+```
+
+- Commiter
+
+```java
+class DraftCommitter implements Committer<Draft> {
+  SlackClient client;
+  // the response will be retried.
+  List<Draft> commit(List<Draft> drafts) {
+    List<Draft> unsuccessful = new ArrayList<>();
+    for (Draft d: drafts) {
+      if (!client.undraft(d)) {
+        unsuccessful.add(d);
+      }
+    }
+    return unsuccessful;
+  }
+}
+```
+
+
+
+
+
+
+
+
+
 
 
 
