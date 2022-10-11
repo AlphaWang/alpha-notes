@@ -782,6 +782,26 @@ https://github.com/Rebalanser/rebalanser-net-zookeeper
 
 # | 数据系统设计
 
+## || 图片存储
+
+**Q1：File or Blob**
+
+- 考虑使用 DB 的场景
+
+  - Mutability
+  - Trasaction, ACID
+  - Index, Search
+
+- File 
+
+  - Cheaper
+
+  - Faster
+
+    
+
+
+
 ## || 会话缓存服务
 
 需求
@@ -909,11 +929,13 @@ https://systeminterview.com/design-a-chat-system.php
     - 服务器无法感知客户端是否断链；
     - 效率低，需要为低频客户端保持链接。
 
-- **WebSocket** 
+- **WebSocket**
 
   - 建立持久化双向通道
 
     > It starts its life as a HTTP connection and could be “upgraded” via some well-defined handshake to a WebSocket connection.
+
+- Or **XMPP**? peer-to-peer 
 
 
 
@@ -961,9 +983,9 @@ https://systeminterview.com/design-a-chat-system.php
 
 - 如果 UserB在线，则消息转发给UserB对应的Chat Server2；由Chat Server2通过websocket发送给UserB。
 
-  > Q: 如果转发到 Chat Server2? 
+  > Q: 如何转发到 Chat Server2? 
   >
-  > - A: 增加 User Mapping Service, 存储 user·-server对应关系。
+  > - A: 增加 **User Mapping Service**, 存储 user-server对应关系。
   >
   > Q: 找到server后，如何通信？
   >
