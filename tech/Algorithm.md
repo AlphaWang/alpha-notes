@@ -1389,9 +1389,22 @@ Timsort的合并算法非常巧妙：
 
 - 283 - Move zeros to the end. [1, 2, 0, 3, 0, 8] --> [1, 2, 3, 8, 0, 0]
   https://leetcode.com/problems/move-zeroes/ 
+
 - 344 - Reverse String
   https://leetcode.com/problems/reverse-string/ 
-- 
+
+- 26 - Remove Duplicates from Sorted Array
+
+  https://leetcode.com/problems/remove-duplicates-from-sorted-array/ 
+
+  > 要保持顺序，用同向指针
+
+- 80 - Remove Duplicates from Sorted Array II
+- 11 - Container with Most Water
+- 42 - Trapping Rain Water
+- 1047 Remove All Adjacent Duplicates In String
+
+
 
 ## || 搜索
 
