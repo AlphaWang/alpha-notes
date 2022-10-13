@@ -929,13 +929,13 @@ https://systeminterview.com/design-a-chat-system.php
     - 服务器无法感知客户端是否断链；
     - 效率低，需要为低频客户端保持链接。
 
-- **WebSocket**
+- **WebSocket**, XMPP?
 
   - 建立持久化双向通道
 
     > It starts its life as a HTTP connection and could be “upgraded” via some well-defined handshake to a WebSocket connection.
 
-- Or **XMPP**? peer-to-peer 
+- 
 
 
 
@@ -985,7 +985,7 @@ https://systeminterview.com/design-a-chat-system.php
 
   > Q: 如何转发到 Chat Server2? 
   >
-  > - A: 增加 **User Mapping Service**, 存储 user-server对应关系。
+  > - A: 增加 **User Mapping Service（session service）**, 存储 user-server对应关系。
   >
   > Q: 找到server后，如何通信？
   >
