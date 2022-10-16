@@ -23,7 +23,7 @@
 
 ## || 复杂度分析
 
-### 时间复杂度
+**时间复杂度**
 
 大O表示法
 
@@ -76,7 +76,7 @@
 
 
 
-### 空间复杂度
+**空间复杂度**
 
 渐进空间复杂度，表示存储空间与数据规模之间的增长关系
 
@@ -156,6 +156,8 @@
 
 ### 数组
 
+**概念**
+
 - 插入低效
   - 优化：插入索引K, 则只将原K元素移到数组尾部
 
@@ -167,6 +169,62 @@
 - vs. ArrayList
   - 封装细节
   - 动态扩容：创建时应事先指定大小
+
+
+
+**思路：同向指针**
+
+- 含义
+  - `[0, i)`：已处理
+  - `[i, j)`：已忽略
+  - `[j, max)`：待处理
+- 通用步骤
+  - 初始化指针 i, j = 0
+  - while j < array.length
+    - if need array[j], keep it by array[i] = array[j]; i++
+    - 
+
+
+
+**思路：反向指针**
+
+- 含义
+  - `[0, i)`：已处理
+  - `[i, j)`：待处理
+  - `[j, max)`：已处理
+- 反向指针处理后，不会保留原来的相对位置。
+- 通用步骤
+  - 初始化 i = 0, j = max
+  - while i <= j
+    - 根据 array[i], array[j] 的取值进行处理；
+    - Move i or j forward
+
+
+
+注意：
+
+- 区间闭合保持一致，例如都是左闭右开。
+
+
+
+例题
+
+- **283 - Move zeros to the end**. [1, 2, 0, 3, 0, 8] --> [1, 2, 3, 8, 0, 0]
+  https://leetcode.com/problems/move-zeroes/ 
+
+- **344 - Reverse String**
+  https://leetcode.com/problems/reverse-string/ 
+
+- **26 - Remove Duplicates from Sorted Array**
+
+  https://leetcode.com/problems/remove-duplicates-from-sorted-array/ 
+
+  > 要保持顺序，用同向指针
+
+- 80 - Remove Duplicates from Sorted Array II
+- 11 - Container with Most Water
+- 42 - Trapping Rain Water
+- 1047 Remove All Adjacent Duplicates In String
 
 
 
@@ -194,31 +252,114 @@
 
 
 
-**技巧**
+**思路1：同向双指针**
 
-- 理解指针或引用的含义
+- 两个指针一个快一个慢，距离隔开多数
+- 确定两个指针移动速度
 
-- 警惕指针丢失
+- **技巧**
 
-- 利用**哨兵**简化实现难度
+  - 理解指针或引用的含义
 
-  > 虚拟空头。
-  >
-  > 否则：插入删除操作，需要对插入第一个节点、删除最后一个节点特殊处理
 
-- 留意边界条件处理
+  - 警惕指针丢失
 
-  > 空、1节点、2节点、处理头节点尾节点
 
-- 举例、画图
+  - 利用**哨兵**简化实现难度
+
+    > 虚拟空头。
+    >
+    > 否则：插入删除操作，需要对插入第一个节点、删除最后一个节点特殊处理
+
+
+  - 留意边界条件处理
+
+    > 空、1节点、2节点、处理头节点尾节点
+
+
+  - 举例、画图
+
+
+**思路2：递归**
+
+- 子问题：假设 k 之后的节点已经处理完；
+- 处理当前层
 
 
 
 **例题**
 
-**LRU 缓存**
+- **876 - 求链表中间节点**
+  https://leetcode.com/problems/middle-of-the-linked-list/
 
-https://leetcode.com/problems/lru-cache/
+  ```java
+  //快指针每次前进 2 个节点，慢指针每次前进 1 个节点
+  public ListNode findMiddleNode(ListNode head) {
+    ListNode i = head, j = head;
+    while (j != null && j.next != null) {
+      i = i.next;
+      j = j.next.next;
+    }
+    return i;
+  } 
+  ```
+
+- **Linked List 找倒数第 K 个节点**
+
+  ```java
+  // 两个指针先隔开 K 个位置，再以相同速度前移
+  public ListNode findLastKth(ListNode head, int k) {
+    ListNode i = head, j = head;
+    while (int c = 0; c < k; c++) {
+      j = j.next;
+    }
+    while (j != null) {
+      i = i.next;
+      j = j.next;
+    }
+    return i;
+  }
+  ```
+
+- **206 - 单链表反转**：递归
+  https://leetcode.com/problems/reverse-linked-list/ 
+
+  ```java
+  public ListNode reverse(ListNode head) {
+    // 递归退出条件
+    if (head = null || head.next == null) {
+      return head;
+    }
+    // 子问题：问下一次要结果
+    ListNode reversedHead = reverse(head.next);
+    // 处理当前层
+    head.next.next = head;
+    head.next = null;
+    // 返回
+    return reversedHead;
+  }
+  ```
+
+- 92 - Reverse LinkedList II
+
+- 25 - Reverse Nodes in K-Group
+
+- **234. 判断字符串回文**
+  https://leetcode.com/problems/palindrome-linked-list/
+- 237 - Delete Node in LinkedList
+
+- **141. 链表中环的检测**
+  https://leetcode.com/problems/linked-list-cycle/
+  https://leetcode.com/problems/linked-list-cycle-ii/
+
+- **21. 有序链表合并**
+  https://leetcode.com/problems/merge-two-sorted-lists/
+
+- **19. 删除链表倒数第n个节点**
+  https://leetcode.com/problems/remove-nth-node-from-end-of-list/
+
+- **LRU 缓存**
+  https://leetcode.com/problems/lru-cache/
 
 思路：
 
@@ -251,35 +392,6 @@ https://leetcode.com/problems/lru-cache/
     - 未满：新增尾部节点
 
   
-
-**234. 判断字符串回文**
-
-https://leetcode.com/problems/palindrome-linked-list/
-
-**206. 单链表反转**
-
-No. 206 https://leetcode.com/problems/reverse-linked-list/ 
-
-**141. 链表中环的检测**
-
-No. 141 https://leetcode.com/problems/linked-list-cycle/
-No. 142 https://leetcode.com/problems/linked-list-cycle-ii/
-
-**21. 有序链表合并**
-
-No. 21 https://leetcode.com/problems/merge-two-sorted-lists/
-
-**19. 删除链表倒数第n个节点**
-
-No. 19 https://leetcode.com/problems/remove-nth-node-from-end-of-list/
-
-**876. 求链表中间节点**
-
-No. 876 https://leetcode.com/problems/middle-of-the-linked-list/
-
-
-
-
 
 ### 跳表
 
@@ -320,11 +432,9 @@ No. 876 https://leetcode.com/problems/middle-of-the-linked-list/
 
 **实现**
 
-- 顺序栈
-  - 用数组实现
-
-- 链式栈
-  - 用链表实现
+- 顺序栈：用数组实现
+  
+- 链式栈：用链表实现
 
 **应用**
 
@@ -947,7 +1057,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 ## || 图
 
-### 图的存储
+**图的存储**
 
 - 邻接矩阵
   - 二维数组
@@ -958,7 +1068,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
   - 如果链表过长，可替换为红黑树、跳表
   - 可分片存储
 
-### 操作
+**操作**
 
 - 拓扑排序
 - 最短路径
@@ -967,7 +1077,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 - 二分图
 - 最大流
 
-### 案例
+**案例**
 
 - 微信好友关系：无向图
 
@@ -1343,66 +1453,6 @@ Timsort的合并算法非常巧妙：
 3 仅对这两个位置之间的元素进行合并，之外的元素本身就是有序的
 
 - 并行排序算法 parallelSort
-
-
-
-
-
-## || 数组：双指针
-
-同向指针：
-
-- 含义
-  - `[0, i)`：已处理
-  - `[i, j)`：已忽略
-  - `[j, max)`：待处理
-- 通用步骤
-  - 初始化指针 i, j = 0
-  - while j < array.length
-    - if need array[j], keep it by array[i] = array[j]; i++
-    - 
-
-
-
-反向指针：
-
-- 含义
-  - `[0, i)`：已处理
-  - `[i, j)`：待处理
-  - `[j, max)`：已处理
-- 反向指针处理后，不会保留原来的相对位置。
-- 通用步骤
-  - 初始化 i = 0, j = max
-  - while i <= j
-    - 根据 array[i], array[j] 的取值进行处理；
-    - Move i or j forward
-
-
-
-注意：
-
-- 区间闭合保持一致，例如都是左闭右开。
-
-
-
-例题
-
-- 283 - Move zeros to the end. [1, 2, 0, 3, 0, 8] --> [1, 2, 3, 8, 0, 0]
-  https://leetcode.com/problems/move-zeroes/ 
-
-- 344 - Reverse String
-  https://leetcode.com/problems/reverse-string/ 
-
-- 26 - Remove Duplicates from Sorted Array
-
-  https://leetcode.com/problems/remove-duplicates-from-sorted-array/ 
-
-  > 要保持顺序，用同向指针
-
-- 80 - Remove Duplicates from Sorted Array II
-- 11 - Container with Most Water
-- 42 - Trapping Rain Water
-- 1047 Remove All Adjacent Duplicates In String
 
 
 
