@@ -1426,37 +1426,155 @@ TBD
 
 ### 二分查找
 
-- 复杂度
+- 复杂度 = O(logN): 极其高效
   
-- O(logN): 极其高效
-  
-- 中点的计算
+- 模板
 
-  >  (low + high / 2)  可能溢出
-  >
-  > low + ((high - low) / 2)
-  >
-  > ow + ((high - low) >> 1) 位运算更高效
+  - 找一个准确值
+
+    ```java
+    //循环条件：l <= r
+    //缩减搜索空间：l = mid + 1, r = mid - 1
+    public int binarySearch(int[] arr, int k) {
+      int l = 0, r = arr.length - 1;
+      while (l <= r) {
+        // 中点的计算
+        // (low + high / 2)  可能溢出
+        // low + ((high - low) / 2)
+        // low + ((high - low) >> 1) 位运算更高效
+        int mid = l + (r - l) / 2;
+        
+        if (arr[mid] == k) {
+          return mid;
+        } else if (arr[mid] > k) {
+          r = mid - 1;
+        } else {
+          l = mid + 1;
+        }
+      }
+      return -1;
+    }
+    ```
+
+  - 找一个模糊值：例如找比 4 大的最小数、找 2 出现的第一个位置
+    ```java
+    //循环条件：l < r
+    //缩减搜索空间（注意不能排除潜在答案）：l = mid, r = mid - 1，或者 l = mid + 1, r = mid 
+    // e.g. 找 k 出现的第一个位置
+    public int binarySearch(int[] arr, int k) {
+      int l = 0, r = arr.length - 1;
+      while (l < r) {
+        int mid = l + (r - l) / 2; 
+        if (arr[mid] < k) {
+          l = mid + 1
+        } else {
+          r = mid;
+        }
+      }
+      return l;
+    }
+    ```
+
+  - 万用型
+
+    ```java
+    //循环条件：l < r - 1，最终保留两个数
+    //缩减搜索空间：l = mid, r = mid
+    // e.g. find closet to 2
+    public int binarySearch(int[] arr, int k) {
+      int l = 0, r = arr.length - 1;
+      while (l < r - 1) {
+        int mid = l + (r - l) / 2;   
+        if (arr[mid] < k) {
+          l = mid;
+        } else {
+          r = mid;
+        }
+      }
+      
+      if (arr[r] < k) {
+        return r;
+      } else if (arr[l] > k) {
+        return l;
+      } else {
+        return k - arr[l] < arr[r] - k ? l : r;
+      }
+    }
+    ```
+
+  
+
+- 原则
+
+  - 每次都要缩减搜索区域
+  - 每次缩减不能排除潜在答案
 
 - 缺点
 
   - 不适用链表
-  - 要求有序
-    - 不适合频繁插入删除的场景
+  - 要求有序：不适合频繁插入删除的场景
+    
+  - 不适合数据量太小的情况：小数据量顺序遍历即可
+    
+  - 不适合数据量太大的情况：因为数组要求连续内存
 
-  - 不适合数据量太小的情况
-    - 小数据量顺序遍历即可
+- **例题**
 
-  - 不适合数据量太大的情况
-    - 因为数组要求连续内存
-
-- 变形
   - 31 查找 = value 的起始位置
   - 31 查找 = value 的结束位置
   - 查找 >= value 的起始位置
   - 查找 <= vlaue 的结束位置
     - https://leetcode.com/problems/search-in-rotated-sorted-array/
    - 33 循环有序数组的二分查找
+   - **1062 - Longest Repeating Substring**
+     https://leetcode.com/problems/longest-repeating-substring/ 
+
+     ```java
+     // 思路：l = 0, r = n-1, l < r
+     //mid = l + (r - l + 1) / 2
+     //- Case1: if f(mid) is valid LRS --> l = mid
+     //- Case2: if f(mid) is not valid LRS --> r = mid - 1
+     
+     public int lrs(String s) {
+       int l = 0, r = s.length() - 1;
+       while (l < r) {
+         int mid = l + (r - l + 1) / 2;
+         if (f(s, mid)) {
+           l = mid;
+         } else {
+           r = mid - 1;
+         }
+       }
+       return l;
+     }
+     
+     public boolean f(String s, int length) {
+       Set<String> seen = new HashSet();
+       for (int i = 0; i <= s.length() - length; i++) {
+         int j = i + length - 1;
+         String sub = s.substring(i, j + 1);
+         if (seen.contains(sub)) {
+           return true;
+         }
+         seen.add(sub);
+       }
+       return false;
+     }
+     ```
+
+   - 410 - Spilt Array Largest Sum
+
+   - 1231 - Divide Chocolate
+
+   - 852 - Peak Index in a Mountain Array
+
+   - 1011 - Capacity to Ship Packages within D Days
+
+   - 1292 - Maximum Side Length of a Square with Sum <= Threshold 
+
+
+
+
 
 
 
