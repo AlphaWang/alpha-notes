@@ -935,7 +935,7 @@ https://systeminterview.com/design-a-chat-system.php
 
     > It starts its life as a HTTP connection and could be “upgraded” via some well-defined handshake to a WebSocket connection.
 
-- 
+
 
 
 
@@ -971,9 +971,9 @@ https://systeminterview.com/design-a-chat-system.php
 
 
 
-消息流程
+**一对一聊天**
 
-- UserA 发送消息给 Chat Server 1；
+- UserA 发送消息给 gateway --> Chat Server 1；
 
 - Chat Server1 调用 ID 生成器生成 message id；
 
@@ -985,7 +985,7 @@ https://systeminterview.com/design-a-chat-system.php
 
   > Q: 如何转发到 Chat Server2? 
   >
-  > - A: 增加 **User Mapping Service（session service）**, 存储 user-server对应关系。
+  > - A: 增加 **User Mapping Service（Session Service）**, 存储 user-server对应关系。
   >
   > Q: 找到server后，如何通信？
   >
@@ -997,17 +997,34 @@ https://systeminterview.com/design-a-chat-system.php
 
 
 
-群聊
+**群聊 Group Messaging**
 
-- 群组较小时：PUSH
-- 群组较大时：PULL
+- Group Service 
+  - groupId --> memberId
+  - 群组大小要有限制
+
+- Session Service
+  - User --> Connection map
+
+- 消息模式
+  - 群组较小时：PUSH
+  - 群组较大时：PULL
 
 
 
-上下线状态
+
+**Read Reciepts**
+
+- like reply 
+
+
+
+**上下线状态 - last seen**
 
 - 心跳保活
 - 存储到redis （同时也是 user-server mapping）
+  - User - timestamp
+
 
 
 
