@@ -452,33 +452,73 @@
 
 **例题**
 
-**20. Valid Parentheses**
+- **739 - Daily Temperatures**，多少天后有更高气温
+  https://leetcode.com/problems/daily-temperatures/
 
-No. 20 https://leetcode.com/problems/valid-parentheses/
+  ```java
+  // 栈元素：比当前元素大的右侧元素索引 
+    public int[] dailyTemperatures(int[] t) {
+      int n = t.length;
+      int[] res = new int[n];
+  
+      Deque<Integer> stack = new ArrayDeque<>();
+      for (int i = n - 1; i >= 0; i--) {
+        // 如果栈内元素比当前元素小，则清空
+        // -- 大个子来了，之前的小个子无需存储
+        while(!stack.isEmpty() && t[i] >= t[stack.peek()]) {
+          stack.pop();
+        }
+        
+        // 记录当前 i 位置的结果：栈顶到i的距离
+        if (stack.isEmpty()) {
+          res[i] = 0;
+        } else {
+          res[i] = stack.peek() - i;
+        }
+        stack.push(i);
+      }
+  
+      return res;
+    }
+  ```
 
-**155. Min Stack**
+  
 
-https://leetcode.com/problems/min-stack/
+- 735 - Asteroid Collision
+  https://leetcode.com/problems/asteroid-collision/ 
 
-**232. Implement Queue using Stacks**
+  ```java
+  // 栈元素：目前存活的行星
+  
+  ```
 
-https://leetcode.com/problems/implement-queue-using-stacks/
+  
 
-**844. Backspace String Compare**
+- **20. Valid Parentheses**
+  https://leetcode.com/problems/valid-parentheses/
 
-https://leetcode.com/problems/backspace-string-compare/
+- **155. Min Stack**
+  https://leetcode.com/problems/min-stack/
 
-**224. Basic Calculator**
+- **232. Implement Queue using Stacks**
+  https://leetcode.com/problems/implement-queue-using-stacks/
 
-https://leetcode.com/problems/basic-calculator/
+- **844. Backspace String Compare**
+  https://leetcode.com/problems/backspace-string-compare/
 
-**682. Baseball Game**
+- **224. Basic Calculator**
+  https://leetcode.com/problems/basic-calculator/
 
-https://leetcode.com/problems/baseball-game/
+- **682. Baseball Game**
+  https://leetcode.com/problems/baseball-game/
 
-**496. Next Greater Element I**
-
-https://leetcode.com/problems/next-greater-element-i/
+- **496. Next Greater Element I**
+  https://leetcode.com/problems/next-greater-element-i/
+- **503 - Next Greater Element II**
+- **394 - Decode String**
+- **636 - Exclusive Time of Functions**
+- **84 - Largest Rectangle in Histogram**
+  https://leetcode.com/problems/largest-rectangle-in-histogram/ 
 
 
 
