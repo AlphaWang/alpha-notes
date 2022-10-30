@@ -2898,11 +2898,11 @@ Aka. 序列化
 >
 > 源自 **LSM-Tree： Log-Structured Merged-Tree**
 
-- 定义：类似 log segments，但在每个 segment 内按 key 排序
+- 定义：类似 log segments，但在每个 segment 内按 key 排序；不可变！
 - 优点：
   - Merge segments 更简单高效。
   - 不必索引所有 key。
-  - 进而可以将记录组合成块，并对块压缩
+  - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 Segment 不可变！！！
 - 实现：
   - 写入：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；
   - 读取：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
@@ -3944,7 +3944,38 @@ public String right2(@RequestParam("id") int id) {
     - 客户端长连接、连接池
     -  NIO
 
-    
+
+
+
+## || NoSQL
+
+优点：
+
+- Easy for Insertions & Retrivals，而无需 Join
+- Schema 容易修改
+- Built for Scale
+- Built for aggregations 
+- **Availability** over consistency
+
+
+
+缺点：
+
+- 不适合 Update。——Delete + Insert
+- 不保证 ACID
+- Read time are slower?? ——读取单个字段慢？
+- Relations are not implicit ——没有外键概念
+- Joins are hard 
+
+
+
+**Cassandra**
+
+- 复制协议：Quorum 
+
+
+
+
 
 
 # | 分布式指标
