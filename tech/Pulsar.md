@@ -1063,15 +1063,18 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 - **Retention**
 
-  - Retention 表示当消息被 ack 后，继续在 bk 保留多久。
+  - 目的：acked 消息的保留时间。表示当消息被 ack 后，继续在 bk 保留多久。
   - 只要有 Cursor 存在，则 Cursor 之后的数据不会被删除；除非ack后达到 `Retention` 
   - **ACK 过的数据分为两部分**：超过 Retention 的可以被删除，Retention 之内的不可被删除。
 
   ![image-20220426224056965](../img/pulsar/pulsar-retention.png)
 
+  ![image-20221026103416755](../img/pulsar/pulsar-retention2.png)
+  
+
 - **TTL**
 
-  - 目的：如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
+  - 目的：non-acked 消息的保留时间。如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
 
   - TTL 到期后，相当于**自动 ack**
 
@@ -1084,6 +1087,8 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
     - Kafka 相当于 `TTL = Retention`
 
   ![image-20220426224548840](../img/pulsar/pulsar-ttl.png)
+
+  ![image-20221026103726985](../img/pulsar/pulsar-ttl2.png)
 
 - 相关监控
 
