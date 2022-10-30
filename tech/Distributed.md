@@ -2923,10 +2923,17 @@ Aka. 序列化
   - **页分裂**：当插入key时发现当前页没有足够的存储空间，则将当前页分裂为多个页。--> 页有空洞
   - **深度可控**：O(log n) 深度
 
-- 可靠性
-  - 可靠性问题：例如页分裂、并更新父页对两个子页的引用，如果此时发生崩溃，则可能出现孤儿页；
-  - 解决：**WAL**，必须先写入 WAL（redo log）、再修改页
-
+- 问题
+  - **可靠性问题**：例如页分裂、并更新父页对两个子页的引用，如果此时发生崩溃，则可能出现孤儿页；
+  - **频繁 IO 问题**：如果每次修改都直接更新 B-Tree，IO 太频繁
+  - 解决：**WAL**，必须先写入 WAL（redo log）、Condense 后再修改页
+  
+    > https://www.youtube.com/watch?v=_5vrfuwhvlQ&list=PLMCXHnjXnTnvo6alSjVkgxV-VH6EPyvoX&index=21
+  
+    - WAL 写入很快 O(1)，但读取较慢 O(n) 
+    - 优化：在 DB 端增加 **SST** (sorted array chunks，为什么不用一个大的：否则每次刷数据 都要重排所有), --> **compaction** (merge chunks), + bloomfilter (忽略部分大 chunks)
+  
+  
   
 
 
