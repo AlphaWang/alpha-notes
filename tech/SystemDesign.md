@@ -897,6 +897,33 @@ Canal
 
 
 
+## || LBS
+
+
+
+需求
+
+- Measurable Distance：两点之间的距离不能按直线计算
+  - Uniform assignment
+  - Scalable granularity
+- Proximity：搜索附近
+
+
+
+地点存储
+
+-  QuadTree? 
+
+- 将二维平面转换为一维线条：支持范围查询
+
+  - Hilbert curve
+
+  ![image-20221030204745772](../img/design/lbs-hilbert-curve.png)
+
+  ![image-20221030205200259](../img/design/lbs-hilbert-curve2.png)
+
+
+
 # | 社交系统
 
 ## || Chat 
