@@ -578,6 +578,8 @@ Sharding KEY：
 
 缓解：定期清理Timeline表，只保存最近数据
 
+缓解：只发送给活跃 follower，基于 LRU
+
 - **- 扩展性差**
 
 例如要支持对关注人分组的话，必须新建 Timeline表？
@@ -644,12 +646,59 @@ Sharding KEY：
 - 用户变成活跃时
   - 查询关注了哪些大V，写入到大V活跃粉丝列表
   - 若超长，则剔除最早加入的粉丝
+- 或者对 大V 使用拉模式！
 
 
 
 ## || Twitter 时间线设计
 
 > https://github.com/donnemartin/system-design-primer/blob/master/solutions/system_design/twitter/README-zh-Hans.md 
+
+
+
+## || Instagram
+
+> Design Instagram https://www.youtube.com/watch?v=QmX2NPkJTKg 
+
+**需求**
+
+- Store/get images 
+  - https://www.youtube.com/watch?v=tndzLznxq40
+- Like + Comment images
+  - comment recursive?  -- 两层
+  - like a comment? 
+- Follow someone
+- Publish news feed
+
+
+
+**表设计**
+
+Like + Comment images
+
+- Post: `postId`, `userId`, `text`, `imageUrl`, `ts`
+- Comment: `id`, `text`, `ts`
+- Likes: `parentId` , `type`(post or comment), `userId`, `ts`
+  - 加冗余聚合表：likes count
+
+Follows
+
+- Follow: `followerId`, `followeeId`, `ts`
+  - 查询我的 follower：
+  - 查询我 follow 了谁：
+
+
+
+**访问流程**
+
+- Gateway
+- User feed service：LB
+- Posts service
+  - Limit count
+  - Pre-compute user's posts : 推模式，写扩散；写入 follower's queue 
+  - 
+- Follow service
+- Image service
 
 
 
