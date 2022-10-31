@@ -2894,9 +2894,10 @@ Aka. 序列化
 
 **SSTable：Sorted String Table**
 
-> 实际应用：LevelDB，RocksDB
+> 实际应用：LevelDB，RocksDB，Cassandra，ScyllaDB。源自 **LSM-Tree： Log-Structured Merged-Tree**。 
+> https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
+> https://www.scylladb.com/glossary/sstable
 >
-> 源自 **LSM-Tree： Log-Structured Merged-Tree**
 
 - 定义：类似 log segments，但在每个 segment 内按 key 排序；不可变！
 - 优点：
