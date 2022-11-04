@@ -663,7 +663,7 @@ Sharding KEY：
 **需求**
 
 - Store/get images 
-  - https://www.youtube.com/watch?v=tndzLznxq40
+  - see design Tinder: https://www.youtube.com/watch?v=tndzLznxq40
 - Like + Comment images
   - comment recursive?  -- 两层
   - like a comment? 
