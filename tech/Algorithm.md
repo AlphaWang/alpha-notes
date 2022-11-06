@@ -490,19 +490,19 @@
 
 **例题**
 
-- **739 - Daily Temperatures**，多少天后有更高气温
+- **739 - Daily Temperatures**，多少天后有更高气温 --> 单调栈
   https://leetcode.com/problems/daily-temperatures/
 
   ```java
   // 栈元素：比当前元素大的右侧元素索引 
-    public int[] dailyTemperatures(int[] t) {
+  public int[] dailyTemperatures(int[] t) {
       int n = t.length;
       int[] res = new int[n];
   
       Deque<Integer> stack = new ArrayDeque<>();
       for (int i = n - 1; i >= 0; i--) {
         // 如果栈内元素比当前元素小，则清空
-        // -- 大个子来了，之前的小个子无需存储
+        // --> 大个子来了，之前的小个子无需存储
         while(!stack.isEmpty() && t[i] >= t[stack.peek()]) {
           stack.pop();
         }
@@ -517,21 +517,46 @@
       }
   
       return res;
-    }
+  }
   ```
 
   
 
-- 735 - Asteroid Collision
+- **735 - Asteroid Collision**
   https://leetcode.com/problems/asteroid-collision/ 
 
+  > 碰到下一个行星，需要回头看上一个行星的方向，故用 Stack！
+  
   ```java
   // 栈元素：目前存活的行星
-  
+  public int[] collission(int[] arr) {
+    Deque<Integer> stack = new ArrayDeque<>();
+    for (int a : arr) {
+      if (a > 0) {
+        stack.push(a);
+      } else {
+        // 对于负数，回头看之前的行星：如果质量小，则撞飞
+        while (!stack.isEmpty() && stack.peek() > 0 && stack.peek() < -a) {
+          stack.pop(); 
+        }
+        if (!stack.isEmpty() && stack.peek() == -a) {
+          stack.pop();   //如果之前有行星，且质量相等，则撞飞 + 当前行星不放入
+        } else if (stack.isEmpty() || stack.peek() < 0) {
+          stack.push(a); //如果之前无行星，或之前行星为负数，则放入当前行星
+        }
+      }
+    }
+    
+    int[] res = new int[stack.size()];
+    for (int i = res.length - 1; i >=0; i--) {
+      res[i] = stack.pop();
+    }
+    return res;
+  }
   ```
-
   
-
+  
+  
 - **20. Valid Parentheses**
   https://leetcode.com/problems/valid-parentheses/
 
@@ -1073,11 +1098,13 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 操作
 
-- 插入
+- 查看堆顶 `peek()`
+  
+- 插入 `offer()`
   - 先放到最后；与父节点比较、交换
   - 从下往上堆化
 
-- 删除堆顶，即：获取最大 最小值
+- 删除堆顶 `poll()`
   - 方法一
     - 从左右子节点中找出第二大元素，放到堆顶；再迭代地删除第二大节点
     - 会出现数组空洞，不满足完全二叉树
