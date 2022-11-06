@@ -2,6 +2,48 @@
 
 # | 网络
 
+## || 分层
+
+> https://osi-model.com/physical-layer/ 
+
+**Physical Layer**
+
+- +delimiters：告知消息的开始和结束
+- +time interval：
+
+
+
+**Routing Layer**
+
+> 包含 OSI 层：
+>
+> - Data Link Layer
+> - Network Layer: ip
+> - Transport Layer: Mac
+
+- 否则只能广播
+- Post office(Router) decode the address, & send to the right computer
+- +IP, Mac
+
+
+
+**Behavioral Layer**
+
+> 包含 OSI 层：
+>
+> - Session 层
+
+- +Frequency & Direction of the msg
+- +Context --> Conversation ——session?
+
+
+
+**Presentation Layer**
+
+**Application Layer**
+
+
+
 ## || HTTP
 
 演进
