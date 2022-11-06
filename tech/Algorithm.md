@@ -181,8 +181,8 @@
 - 通用步骤
   - 初始化指针 i, j = 0
   - while j < array.length
-    - if need array[j], keep it by array[i] = array[j]; i++
-    - 
+    - if need array[j], then keep it by array[i] = array[j]; i++
+    - otherwise skip (跳过意味着无需 i++)
 
 
 
@@ -192,7 +192,7 @@
   - `[0, i)`：已处理
   - `[i, j)`：待处理
   - `[j, max)`：已处理
-- 反向指针处理后，不会保留原来的相对位置。
+- 反向指针处理后，**不会**保留原来的相对位置。
 - 通用步骤
   - 初始化 i = 0, j = max
   - while i <= j
@@ -215,16 +215,49 @@
 - **344 - Reverse String**
   https://leetcode.com/problems/reverse-string/ 
 
+  ```java
+  // 反向双指针
+  public char[] reverseString(char[] str) {
+    int i = 0; j = str.length - 1;
+    while (i < j) {
+      swap(str, i, j);
+      i++;
+      j--;
+    }
+    return str;
+  }
+  ```
+  
+  
+  
 - **26 - Remove Duplicates from Sorted Array**
 
   https://leetcode.com/problems/remove-duplicates-from-sorted-array/ 
 
   > 要保持顺序，用同向指针
 
+  ```java
+  public int removeDups(int[] arr) {
+    int i = 0, j = 0;
+    while (j < arr.length) {
+      if (i == 0 || arr[j] != arr[i - 1]) {
+        arr[i] = arr[j];
+        i++;
+        j++;
+      } else {
+        j++; //遇到重复元素，i不动：[i, j) 表示忽略的部分
+      }
+    }
+    return i; // [0, i) 即为去重后的结果
+  }
+  ```
+
+  
+
 - 80 - Remove Duplicates from Sorted Array II
 - 11 - Container with Most Water
 - 42 - Trapping Rain Water
-- 1047 Remove All Adjacent Duplicates In String
+- 1047 - Remove All Adjacent Duplicates In String
 
 
 
@@ -254,9 +287,9 @@
 
 **思路1：同向双指针**
 
-- 两个指针一个快一个慢，距离隔开多数
-- 确定两个指针移动速度
-
+- 思路
+  1. 两个指针一个快一个慢，确定距离隔开多少
+  2. 确定两个指针移动速度
 - **技巧**
 
   - 理解指针或引用的含义
@@ -280,10 +313,12 @@
   - 举例、画图
 
 
+
 **思路2：递归**
 
-- 子问题：假设 k 之后的节点已经处理完；
-- 处理当前层
+1. 子问题：假设 k 之后的节点已经处理完；
+2. 处理当前层
+3. 返回结果
 
 
 
@@ -310,7 +345,7 @@
   // 两个指针先隔开 K 个位置，再以相同速度前移
   public ListNode findLastKth(ListNode head, int k) {
     ListNode i = head, j = head;
-    while (int c = 0; c < k; c++) {
+    for (int c = 0; c < k; c++) {
       j = j.next;
     }
     while (j != null) {
@@ -330,12 +365,12 @@
     if (head = null || head.next == null) {
       return head;
     }
-    // 子问题：问下一次要结果
+    // 1. 子问题：问下一次要结果
     ListNode reversedHead = reverse(head.next);
-    // 处理当前层
-    head.next.next = head;
-    head.next = null;
-    // 返回
+    // 2. 处理当前层
+    head.next.next = head; //下一个节点（已反转的子问题的最后一个节点）的 next --> 指向当前节点
+    head.next = null; //当前节点的next置为null
+    // 3. 返回
     return reversedHead;
   }
   ```
@@ -1151,7 +1186,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 
 
-#### O(n^2)
+**---- O(n^2) ----**
 
 **1. 冒泡排序**
 
@@ -1265,7 +1300,7 @@ for (int i = 0; i < n; i++) {
 
 
 
-#### O(nlogn)
+**---- O(nlogn) ----**
 
 **5. 归并排序**
 
@@ -1336,7 +1371,7 @@ for (int i = 0; i < n; i++) {
 
 
 
-#### O(n)
+**---- O(n) ----**
 
 **8. 桶排序 Bucket Sort**
 
@@ -1521,13 +1556,30 @@ TBD
 
 - 复杂度 = O(logN): 极其高效
   
+- 原则
+  
+  - 每次都要缩减搜索区域
+  - 每次缩减不能排除潜在答案
+  
+- 缺点
+
+  - 不适用链表
+  - 要求有序：不适合频繁插入删除的场景
+
+  - 不适合数据量太小的情况：小数据量顺序遍历即可
+
+  - 不适合数据量太大的情况：因为数组要求连续内存
+
+  
+
 - 模板
 
-  - 找一个准确值
+  - **找一个准确值**
+
+    > //循环条件：`l <= r`
+    > //缩减搜索空间：`l = mid + 1, r = mid - 1`
 
     ```java
-    //循环条件：l <= r
-    //缩减搜索空间：l = mid + 1, r = mid - 1
     public int binarySearch(int[] arr, int k) {
       int l = 0, r = arr.length - 1;
       while (l <= r) {
@@ -1549,35 +1601,38 @@ TBD
     }
     ```
 
-  - 找一个模糊值：例如找比 4 大的最小数、找 2 出现的第一个位置
+  - **找一个模糊值**：例如找比 4 大的最小数、找 2 出现的第一个位置
+    
+    > //循环条件：`l < r`
+    > //缩减搜索空间（注意不能排除潜在答案）：`l = mid, r = mid - 1`，或者 `l = mid + 1, r = mid `
+    
     ```java
-    //循环条件：l < r
-    //缩减搜索空间（注意不能排除潜在答案）：l = mid, r = mid - 1，或者 l = mid + 1, r = mid 
     // e.g. 找 k 出现的第一个位置
     public int binarySearch(int[] arr, int k) {
       int l = 0, r = arr.length - 1;
-      while (l < r) {
+      while (l < r) { //为什么不是 l<=r：可能死循环、无法缩减搜索区域
         int mid = l + (r - l) / 2; 
         if (arr[mid] < k) {
           l = mid + 1
         } else {
-          r = mid;
+          r = mid; //为了不排除潜在答案，r缩减时步子要小
         }
       }
       return l;
     }
     ```
+    
+  - **万用型**
 
-  - 万用型
-
+    > //循环条件：`l < r - 1`，最终保留两个数
+    > //缩减搜索空间：`l = mid, r = mid`
+    
     ```java
-    //循环条件：l < r - 1，最终保留两个数
-    //缩减搜索空间：l = mid, r = mid
     // e.g. find closet to 2
     public int binarySearch(int[] arr, int k) {
       int l = 0, r = arr.length - 1;
       while (l < r - 1) {
-        int mid = l + (r - l) / 2;   
+        int mid = l + (r - l) / 2;
         if (arr[mid] < k) {
           l = mid;
         } else {
@@ -1585,6 +1640,7 @@ TBD
         }
       }
       
+      //因为最终保留了两个数，所以最后要根据情况决定返回哪一个
       if (arr[r] < k) {
         return r;
       } else if (arr[l] > k) {
@@ -1597,19 +1653,7 @@ TBD
 
   
 
-- 原则
-
-  - 每次都要缩减搜索区域
-  - 每次缩减不能排除潜在答案
-
-- 缺点
-
-  - 不适用链表
-  - 要求有序：不适合频繁插入删除的场景
-    
-  - 不适合数据量太小的情况：小数据量顺序遍历即可
-    
-  - 不适合数据量太大的情况：因为数组要求连续内存
+  
 
 - **例题**
 
@@ -1622,18 +1666,17 @@ TBD
    - **1062 - Longest Repeating Substring**
      https://leetcode.com/problems/longest-repeating-substring/ 
 
-     ```java
-     // 思路：l = 0, r = n-1, l < r
-     //mid = l + (r - l + 1) / 2
-     //- Case1: if f(mid) is valid LRS --> l = mid
-     //- Case2: if f(mid) is not valid LRS --> r = mid - 1
+     > 思路：`l = 0, r = n-1, l < r`；`mid = l + (r - l + 1) / 2`
+     > Case1: if `f(mid) is valid LRS` --> l = mid
+     > Case2: if `f(mid) is not valid LRS` --> r = mid - 1
      
+     ```java
      public int lrs(String s) {
        int l = 0, r = s.length() - 1;
        while (l < r) {
          int mid = l + (r - l + 1) / 2;
          if (f(s, mid)) {
-           l = mid;
+           l = mid; //往右缩减时，不可排除mid，否则可能排除掉潜在答案
          } else {
            r = mid - 1;
          }
@@ -1641,6 +1684,7 @@ TBD
        return l;
      }
      
+     //helper: if substring with length is valid Repeating
      public boolean f(String s, int length) {
        Set<String> seen = new HashSet();
        for (int i = 0; i <= s.length() - length; i++) {
@@ -2002,7 +2046,7 @@ TBD
 
 ### 构建步骤
 
-#### 1. 搜集
+**1. 搜集**
 
 - 算法
   - 图的广度优先搜索
@@ -2020,7 +2064,7 @@ TBD
   - doc_id.bin
     - 网页链接 - 编号 对应关系
 
-#### 2. 分析
+**2. 分析**
 
 - 算法
   - AC 自动机
@@ -2037,7 +2081,7 @@ TBD
   - term_id.bin
     - 单词与网页编号的对应关系
 
-#### 3. 索引
+**3. 索引**
 
 - 算法
   - 多路归并排序
@@ -2054,7 +2098,7 @@ TBD
 
 ### 查询步骤
 
-#### 4. 查询
+**4. 查询**
 
 - 步骤
   - 对输入文本进行分词
