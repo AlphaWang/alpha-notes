@@ -809,6 +809,10 @@ public class CircularQueue {
 
 
 
+
+
+
+
 ## || 树
 
 ### 二叉树
@@ -1098,13 +1102,13 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 操作
 
-- 查看堆顶 `peek()`
+- 查看堆顶 `peek()` -- O(1)
   
-- 插入 `offer()`
+- 插入 `offer()` -- O(logN)
   - 先放到最后；与父节点比较、交换
   - 从下往上堆化
 
-- 删除堆顶 `poll()`
+- 删除堆顶 `poll()` -- O(logN)
   - 方法一
     - 从左右子节点中找出第二大元素，放到堆顶；再迭代地删除第二大节点
     - 会出现数组空洞，不满足完全二叉树
@@ -1157,6 +1161,82 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 - 树状数组
 
 - 线段树
+
+
+
+**例题**
+
+- **215 - 数组中的 TopK 元素**
+
+  https://leetcode.com/problems/kth-largest-element-in-an-array/ 
+
+  ```java
+  // 维护最小堆，其大小为 K 
+  // 堆顶元素即为 topK
+  public int findKth(int[] nums, int k) {
+    PriorityQueue<Integer> heap = new PriorityQueue<>();
+    for (int x : nums) {
+      if (heap.size() < k || x > heap.peek()) {
+        heap.offer(x);
+      }
+      if (heap.size() > k) {
+        heap.poll(); //如果堆超过k，则调整大小
+      }
+    }
+    return heap.peek();
+  }
+  ```
+
+- **23 - Merge K Sorted Lists**
+  https://leetcode.com/problems/merge-k-sorted-lists/
+
+  > 如果只有 2 个 list，可用双指针；
+  >
+  > 但如果个数不定（K个）：
+  >
+  > - Linear Scan - O(K)
+  > - Simple Sorting - O(KlogK)
+  > - Min Heap - O(NlogK)
+
+  ```java
+  // 维护最小堆，大小为 K；每次添加并移动最小的 pointer
+  public ListNode mergeKLists(ListNode[] lists) {
+    PriorityQueue<ListNode> heap = new PriorityQueue<>((a, b) -> a.val - b.val);
+    
+    //添加每个list的头节点
+    for (ListNode list : lists) {
+      if (list != null) {
+        heap.offer(list); 
+      }
+    }
+    
+    ListNode res = new ListNode(0); //技巧：虚拟头节点
+    ListNode cur = res;
+    while (!heap.isEmpty()) {
+      //取出堆顶，即取出最小元素
+      ListNode top = heap.poll(); 
+      //堆顶元素加入结果链表
+      cur.next = top; 
+      cur = cur.next;
+      //堆里插入 top.next
+      if (top.next != null) {
+        heap.offer(top.next);
+      }
+    }
+    
+    return res.next;
+  }
+  ```
+
+- 347 - TopK Frequent Elements
+
+- 253 - Meeting Rooms II
+
+- **295 - Find Median From Data Stream** 
+
+- 767 - Reorganize String
+
+- 703 - Kth Largest Element in a Stream
 
 
 
