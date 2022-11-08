@@ -809,7 +809,83 @@ public class CircularQueue {
 
 
 
+**例题**
 
+- **1 - Two Sum**
+
+  > - Brute Force：遍历每一个数，找另一个数是否在数组里
+  > - 使用 HashMap 加速查找：key = 数值，value = 索引
+
+  ```java
+  public int[] twoSum(int[] nums, int target) {
+    Map<Integer, Integer> map = new Hashmap<>();
+    for (int i = 0; i < nums.length; i++) {
+      if (map.containsKey(target - nums[i])) {
+        return new int[]{map.get(target - nums[i]), i};
+      }
+      map.put(nums[i], i)
+    }
+    return new int[2];
+  }
+  ```
+
+  ```java
+  //如果有序且要求返回数值，而非返回索引 --> 双指针
+  public int[] twoSum(int[] nums, int target) {
+    Arrays.sort(nums);
+    int i = 0, j = nums.length - 1;
+    while (i < j) {
+      int sum = nums[i] + nums[j];
+      if (sum == target) {
+        return new int[]{nums[i], nums[j]};
+      } else if (sum > target) {
+        j--;
+      } else {
+        i++;
+      }
+    }
+    return null;
+  }
+  ```
+
+  
+
+- 560 - Subarray Sum Equals K：找到连续子数组，其总和为K，返回个数
+
+  > 思路：subarray sum = sum(0, x) - sum(0, y)
+  >
+  > Map: Key = sum, Value = 次数
+
+  ```java
+  public int subarraySum(int[] nums, int k) {
+    Map<Integer, Integer> map = new HashMap<>();
+    map.put(0, 1);
+    int sum = 0, cnt = 0;
+    
+    for (int x : nums) {
+      sum += x;
+      if (map.containsKey(sum - k)) {
+        // subarray sum = k = sum(0, x) - sum(0, y)
+        // ?
+        cnt += map.get(sum - k); 
+      }
+      map.put(sum, map.getOrDefault(sum, 0) + 1);
+    }
+    return cnt;
+  }
+  ```
+
+- 3 - Longest Substring without Repeating Characters
+
+- 49 - Group Anagrams
+
+- **138 - Copy List with Random Pointer**
+
+- 340 - Longest Substring with At Most K Distinct Characters
+
+- 554 - Brick Wall
+
+- 535 - Encode and Decode TinyURL
 
 
 
