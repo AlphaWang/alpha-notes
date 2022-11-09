@@ -1719,13 +1719,132 @@ Timsort的合并算法非常巧妙：
 
 ## || 搜索
 
-### 深度优先搜索
+### DFS 深度优先搜索
 
 TBD
 
-### 广度优先搜索
+### BFS 广度优先搜索
 
-TBD
+- Breadth-First Search
+
+- 场景：适合解决与层数相关的 Tree 题目
+- 模板
+  - 创建 Queue，初始值为 all entry points
+  - while (queue not empty) 
+    - for each node in the **current** queue, 
+    - poll out node, add to result
+    - expand it, offer children to the queue **in order**.
+    - increase level. 
+- 复杂度 O(n)，每个 node 进出queue 一次。
+
+
+
+**例题**
+
+- **102 - Binary Tree Level Order Traversal**，二叉树按层遍历
+
+  ```java
+  public List<List<Integer>> levelOrder(TreeNode root) {
+    List<List<Integer>> res = new ArrayList<>();
+    if (root == null) 
+      return res;
+    
+    Queue<TreeNode> queue = new LinkedList();
+    queue.offer(root);
+    
+    while (!queue.isEmpty()) {
+      // 先存下size，保证遍历当前队列
+      int size = queue.size();
+      List<Integer> level = new ArrayList<>();
+      for (int i = 0; i < size; i++) {
+        TreeNode cur = queue.poll();
+        level.add(cur.val);
+        
+        //expand, offer children
+        if (cur.left != null) {
+          queue.offer(cur.left);
+        }
+        if (cur.right != null) {
+          queue.offer(cur.right);
+        }
+      }
+      res.add(level);
+    }
+    return res;
+  }
+  ```
+
+  
+
+- **104 - Max depth of binary tree**. 二叉树最大深度
+
+  ```java
+  public int maxDepth(TreeNode root) {
+    int depth = 0;
+    Queue<TreeNode> queue = new LinkedList<>();
+    queue.offer(root);
+    
+    while (!queue.isEmpty()) {
+      int size = queue.size();
+      for (int i = 0; i < size; i++) {
+        TreeNode cur = queue.poll();
+        
+        if (cur.left != null) {
+          queue.offer(cur.left);
+        }
+        if (cur.right != null) {
+  				queue.offer(cur.right);
+        }
+      }
+      depth++;
+    }
+    return depth;
+  }
+  ```
+
+- **109 - Binary Tree Right Side View**，二叉树右视图
+
+  ```java
+  public List<Integer> levelOrder(TreeNode root) {
+    List<Integer> res = new ArrayList<>();
+    Queue<TreeNode> queue = new LinkedList();
+    queue.offer(root);
+    
+    while (!queue.isEmpty()) {
+      // 队列第一个元素 即上一层最右侧节点
+      res.add(queue.peek().val); 
+      
+      int size = queue.size();
+      List<Integer> level = new ArrayList<>();
+      for (int i = 0; i < size; i++) {
+        TreeNode cur = queue.poll();    
+        //expand, offer children；注意先遍历右节点
+        if (cur.right != null) {
+          queue.offer(cur.right);
+        }
+        if (cur.left != null) {
+          queue.offer(cur.left);
+        }
+      }
+      
+    }
+    return res;
+  }
+  ```
+
+- 101 - Symmetric Tree
+
+- 103 - Binary Tree Zigzag Level Order Traversal 
+
+- 111 - Min Depth of Binary Tree
+
+- 515 - Find Largest Value in Each Tree Row 
+
+- 429 - N-ary Tree Level Order Traversal 
+
+
+
+
 
 ### A*启发式搜索
 
