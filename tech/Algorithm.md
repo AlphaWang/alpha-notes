@@ -1719,11 +1719,9 @@ Timsort的合并算法非常巧妙：
 
 ## || 搜索
 
-### DFS 深度优先搜索
 
-TBD
 
-### BFS 广度优先搜索
+### BFS：广度优先搜索
 
 - Breadth-First Search
 
@@ -1736,6 +1734,7 @@ TBD
     - expand it, offer children to the queue **in order**.
     - increase level. 
 - 复杂度 O(n)，每个 node 进出queue 一次。
+- 缺点：对内存不友好，因为越展开越多
 
 
 
@@ -1841,6 +1840,69 @@ TBD
 - 515 - Find Largest Value in Each Tree Row 
 
 - 429 - N-ary Tree Level Order Traversal 
+
+
+
+### DFS：深度优先搜索
+
+- Depth-First Search
+
+- 模板：递归！！！
+
+  - **Top-down DFS**
+
+    - 把值通过参数的形式，从上往下传
+    - 注意 dfs() 本身不返回值
+
+  - **Bottom-up DFS**
+
+    - 把值从下（subproblem）往上传
+
+    - 当前递归层利用 subproblem 传上来的值计算当前层的新值并返回
+
+    - 注意一定会有返回值
+
+      > 1. 处理 base case
+      > 2. 向子问题要答案
+      > 3. 利用子问题的答案，构建当前递归层的答案
+      > 4. 如有必要，做一些额外操作
+      > 5. 返回答案（给父问题）
+
+
+
+- 遍历：preorder
+
+  ```java
+  public void dfs(TreeNode node) {
+    if (node == null) {
+      return;
+    }
+    
+    System.out.println(node.val);
+    dfs(node.left);
+    dfs(node.right);
+  }
+  ```
+
+  
+
+**例题**
+
+- **104 - Max depth of binary tree**. 二叉树最大深度
+
+  ```java
+  public int maxDepth(TreeNode root) {
+    if (root == null) {
+      return 0;
+    }
+    int left = maxDepth(root.left);
+    int right = maxDepth(root.right);
+    int max = Math.max(left, right) + 1;
+    return max;
+  }
+  ```
+
+  
 
 
 
