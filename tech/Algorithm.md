@@ -1852,7 +1852,13 @@ Timsort的合并算法非常巧妙：
   - **Top-down DFS**
 
     - 把值通过参数的形式，从上往下传
+
     - 注意 dfs() 本身不返回值
+
+      > 1. 处理 base case
+      > 2. 利用父问题传下来的值做一些计算
+      > 3. 如有必要，做一些额外处理
+      > 4. 把值传下去给子问题继续递归
 
   - **Bottom-up DFS**
 
@@ -1891,6 +1897,7 @@ Timsort的合并算法非常巧妙：
 - **104 - Max depth of binary tree**. 二叉树最大深度
 
   ```java
+  // Bottom-up DFS
   public int maxDepth(TreeNode root) {
     if (root == null) {
       return 0;
@@ -1902,7 +1909,73 @@ Timsort的合并算法非常巧妙：
   }
   ```
 
+- **124 - Binary Tree Max Path Sum.** 二叉树路径和最大值
+
+  ```java
+  // Bottom-up DFS
+  int max = Integer.MIN_VALUE;
+  public int maxSum(TreeNode root) {
+    dfs(root);
+    return max;
+  }
   
+  private int dfs(TreeNode node) {
+    if (node == null) {
+      return 0;
+    }
+    int left = dfs(node.left);
+    int right = dfs(node.right);
+    left = left < 0 ? 0 : left;
+    right = right < 0 ? 0 : right;
+    // 更新全局最大值 = 当前人字形链路 vs Max
+    max = Math.max(max, left + right + node.val);
+    // 返回给上一层：直线型的最大值
+    return Math.max(left + node.val, right + node.val);
+  }
+  ```
+
+- **129 - Sum Root to Leaf Numbers** 路径转为数值，再取和
+
+  ```java
+  // Top-down DFS 
+  int sum = 0;
+  public int sum(TreeNode root) {
+    if (root == null) {
+      return 0;
+    }
+    
+    dfs(root, 0);
+    return sum;
+  }
+  
+  private int dfs(TreeNode node, int parent) {
+    int curSum = 10 * parent + node.val
+    if (node.left == null && node.right == null) {
+      // base case: for leaf node, add sum
+      sum += curSum; 
+      return;
+    }
+     
+    if (node.left != null) {
+      dfs(node.left, curSum);
+    }
+    if (node.right != null) {
+      dfs(node.right, curSum);
+    }
+  }
+  ```
+
+- 98 - Validate Binary Search Tree
+
+- 110 - Balanced Binary Tree
+
+- 113 - Path Sum II 
+
+- **236 - Lowest Common Ancestor of a Binary Tree**
+
+- 450 - Delete Node in a BST
+
+- 508 - Most Frequent Subtree Sum
 
 
 
