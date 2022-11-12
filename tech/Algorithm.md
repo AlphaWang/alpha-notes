@@ -1146,7 +1146,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 
 
-### 多路查找树
+### -多路查找树
 
 - B 树
 - B+ 树
@@ -1320,12 +1320,12 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 **图的存储**
 
-- 邻接矩阵
+- **邻接矩阵 - Adjacency Matrix**
   - 二维数组
-  - 空间浪费
+  - 空间浪费；需要提前知道节点个数
 
-- 邻接表
-  - 类似散列表
+- **邻接表 - Adjacency List**
+  - 类似散列表 `Map<T, List<T>>`，指向与当前节点邻接的节点列表
   - 如果链表过长，可替换为红黑树、跳表
   - 可分片存储
 
@@ -1346,7 +1346,176 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
   - 可用两个邻接表，分别存储关注关系、被关注关系
 
+
+
+
+### 图的 BFS
+
+- 场景：按层搜索，**适合寻找最短路径**
+- 注意：可能有环，需要查重
+- 模板
+  - Init a queue, 加入所有起始点；Init a HashSet，保存访问过的节点
+  - While (queue is not empty) 
+    - Retrieve current queue size：当前层的节点数
+    - For each current level nodes:
+      - **Poll** out one node
+      - If this is the node we want, return it;
+      - **Offer** all its neighbor to the queue, <u>if not visited and valid</u>
+    - Increase level
+- 技巧：预先存一个 4-direction-array，用于帮助访问 neighbors --> `directions = {{0, 1}, {1, 0}, {0, -1}, {-1, 0}}`
+
+
+
+**例题**
+
+- **542 - 0 1 Matrix**，查找 01 矩阵中离每个节点最近的 0 距离
+
+  > 直接思维：对于每一个1，利用 BFS 找到离他最近的 0。O(mn * mn)
+  >
+  > 逆向思维：对于所有的 0，利用 BFS 填充到每一个 1 的距离。O(mn)
+
+  ```java
+  int[][] dirs = {{0, 1}, {1, 0}, {0, -1}, {-1, 0}};
   
+  public int[][] updateMatrix(int[][] matrix) {
+    int m = matrix.length; n = matrix[0].length;
+    int[][] res = new int[m][n];
+    
+    boolean[][] visited = new boolean[m][n];
+    Queue<int[]> queue = new LinkedList<>();
+    //找到所有0节点，作为队列初始值
+    for (int i = 0; i < m; i++) {
+      for (int j = 0; j < n; j++) {
+        if (matrix[i][j] == 0) {
+          queue.offer(new int[]{i, j});
+          visited[i][j] = true;
+        }
+      }
+    }
+    
+    int cost = 0;
+    while (!queue.isEmpty()) {
+      int size = queue.size();
+      for (int s = 0; s < size; s++) {
+        // 遍历queue node, 如果是1节点，保存cost
+        int[] cur = queue.poll();
+        int i = cur[0], j = cur[1];
+        if (matrix[i][j] == 1) {
+          res[i][j] = cost;
+        }
+        // Offer 邻接节点
+        for (int[] dir : dirs) {
+          int x = i + dir[0], y = j + dir[i];
+          if (x >= 0 && x < m && y >= 0 && y < n && !visited[x][y]) {
+            queue.offer(new int[]{x, y});
+            visited[x][y] = true;
+          }
+        }
+      }
+      cost++;
+    }
+    return res;
+  }
+  ```
+
+- **127 - Word Ladder**，每次只能改变一个字母，并必须在字典中，那么两个单词要经过几次变化
+
+  > 并不明说是图的题目。
+
+  ```java
+  // 首先构造图
+  private Map<String, List<String>> constructGraph(List<String> words) {
+    Map<String, List<String>> graph = new HashMap<>();
+    int n = words.size();
+    // 两次遍历，找到两两相邻的单词
+    for (int i = 0; i < n - 1; i++) {
+      for (int j = i + 1; j < n; j++) {
+        String w1 = words.get(i), w2 = words.get(j);
+        if (oneChangeAway(w1, w2)) {
+          graph.computeIfAbsent(w1, k -> new ArrayList<>()).add(w2);
+          graph.computeIfAbsent(w2, k -> new ArrayList<>()).add(w1);
+        }
+      }
+    }
+    return graph;
+  }
+  
+  // 判断两个单词是否只差一个字符
+  private boolean oneChangeAway(String w1, String w2) {
+    int diff = 0;
+    for (int i = 0; i < w1.length(); i++) {
+      char c1 = w1.charAt(i), c2 = w2.charAt(i);
+      if (c1 != c2) {
+        diff++;
+        if (diff > 1) {
+          return false;
+        }
+      }
+    }
+    return diff == 1;
+  }
+  
+  // BFS 寻找最短路径
+  public int ladderLength(String begin, String end, List<String> dicts) {
+    if (!dicts.contains(end)) {
+      return 0;
+    }
+    if (!words.contains(begin)) {
+      dicts.add(begin);
+    }
+    // 0. 构造图
+    Map<String, List<String>> graph = constructGraph(dicts);
+    
+    // BFS遍历图：1. 构造队列，初始化为初始单词
+    Set<String> visited = new HashSet<>();
+    Queue<String> queue = new LinkedList<>();
+    queue.offer(begin);
+    visited.add(begin);
+    
+    // BFS遍历图：2. while queue is not empty
+    int length = 1;
+    while (!queue.isEmpty()) {
+      //2.1 获取当前层size
+      int size = queue.size();
+      //2.2 遍历当前层每个单词
+      for (int i = 0; i < size; i++) {
+        String cur = queue.poll();
+        // 如果满足要求，则返回
+        if (cur.equals(end)) { 
+          return length;
+        }
+        // Offer邻接节点
+        for (String neighbor : graph.getOrDefault(cur, new ArrayList<>())) { 
+          queue.offer(neighbor);
+          visited.add(neighbor);
+        }
+      }
+      length++;
+    }
+    return 0; 
+  }
+  
+  ```
+
+- 934 - Shortest Bridge
+
+- 310 - Min Height Trees
+
+- 1091 - Shortest Path in Binary Matrix
+
+- 994 - Rotting Oranges
+
+- 863 - All Nodes Distance K in Binary Tree
+
+- 317 - Shortest Distance from All Buildings
+
+
+
+
+
+
+
+
 
 # | 算法场景
 
@@ -1725,9 +1894,9 @@ Timsort的合并算法非常巧妙：
 
 - Breadth-First Search
 
-- 场景：适合解决与层数相关的 Tree 题目
+- 场景：**适合解决与层数相关的 Tree 题目**
 - 模板
-  - 创建 Queue，初始值为 all entry points
+  - Init a Queue，初始值为 all entry points
   - while (queue not empty) 
     - for each node in the **current** queue, 
     - poll out node, add to result
