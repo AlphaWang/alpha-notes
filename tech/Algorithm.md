@@ -1511,6 +1511,95 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 
 
+### 加权图的 Best-First Search
+
+- 优先展开 ”最优“ 的节点，即图中每条边都有**权重**。
+- 技巧：如何快速计算”最优“ --> Heap
+- 模板：与 BFS 基本一致，只是把 Queue 换成 Heap
+  - Init a Heap, with all starting points. Init a HashSet for visited nodes
+  - While heap is not empty
+    - **poll** out one node.
+    - if visited, skip; otherwise mark as visited, & udpate its cost;
+    - if it's the destination, return;
+    - **offer** all its neighbors
+
+
+
+**例题**
+
+- **? 743 - Network Delay Time**，从一个节点出发，多久能渗透到网络中所有节点
+
+  > 即，计算从初始节点，到最远节点的最短路径。
+
+  ```java
+  //输入节点列表:  List<times[start, end, delay]>
+  public int networkDelayTime(int[][] times, int N, in k) {
+    //1. 构造图
+    Map<Integer, List<Cell>> map = constructGraph(times);
+    // visited node & cost. 注意此处要额外保存cost
+    Map<Integer, Integer> costs = new HashMap<>();
+    //2. 初始化堆，放入初始节点 k
+    PriorityQueue<Cell> heap = new PriorityQueue<>();
+    heap.offer(new Cell(k, 0));
+    //3. 遍历堆
+    while (!heap.isEmpty()) {
+      Cell cur = heap.poll();
+      if (costs.containsKey(cur.node)) { 
+        continue; //忽略visited nodes
+      }
+      
+      //update cost: cost值 = 当前节点delay ???
+      costs.put(cur.node, cur.time);
+      
+      //如果还有邻接节点，则遍历之
+      if (map.containsKey(cur.node)) {
+        for (Cell neighbor : map.get(cur.node)) {
+          if (!costs.containsKey(neighbor.node)) {
+            //heap: 加上 neighbor candidate = 到达当前节点的最优cost + 邻接cost
+            heap.offer(new Cell(neighbor.node, cur.time + neighbor.time));
+          }
+        }
+      }
+    }
+    
+    if (costs.size() != N) {
+      return -1; //如果不是所有节点能都reach，则无法完全遍历
+    }
+    
+    //返回值 = cost中的最大值
+    int res = 0;
+    for (int x : costs.values()) {
+      res = Math.max(res, x);
+    }
+    return res; 
+  }
+  
+  //构造图
+  //输入节点列表:  List<times[start, end, delay]>
+  private Map<Integer, List<Cell>> constructGraph(int[][] times) {
+    Map<Integer, List<Cell>> map = new HashMap<>(); //注意 map value 需要附带cost，map[src] = Cell{dst, cost}
+    for (int[] time : times) {
+      List<Cell> edges = map.getOrDefault(time[0], new ArrayList<>());
+      edges.add(new Cell(time[1], time[2])); //Cell(node, cost)
+      map.put(time[0], edges);
+    }
+    return map;
+  }
+  
+  class Cell implements Comparable<Cell> {
+    int node, time;
+    public int compareTo(Cell c2) {
+      return time - c2.time;
+    }
+  }
+  ```
+
+  
+
+
+
+
+
 
 
 
