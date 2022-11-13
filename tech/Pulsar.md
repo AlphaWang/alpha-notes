@@ -1071,7 +1071,6 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
   ![image-20221026103416755](../img/pulsar/pulsar-retention2.png)
   
-
 - **TTL**
 
   - 目的：non-acked 消息的保留时间。如果只有 Retention，Consumer不再消费后，数据岂不一直不会被清理？
@@ -1132,7 +1131,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-## || 主题归属 - bundle
+## || 主题归属 - Bundle
 
 
 
@@ -1212,7 +1211,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-## || 压缩主题 - compact
+## || 压缩主题 - Compact
 
 > https://pulsar.apache.org/zh-CN/docs/next/cookbooks-compaction/
 >
@@ -1233,7 +1232,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 
 
-## || 事务消息
+## || 事务消息 - Transaction 
 
 目的：用于保证精确一次语义。
 
