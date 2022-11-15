@@ -1535,7 +1535,7 @@ https://leetcode.com/problems/delete-node-in-a-bst/
   //输入节点列表:  List<times[start, end, delay]>
   public int networkDelayTime(int[][] times, int N, in k) {
     //1. 构造图
-    Map<Integer, List<Cell>> map = constructGraph(times);
+    Map<Integer, List<Cell>> graph = constructGraph(times);
     // visited node & cost. 注意此处要额外保存cost
     Map<Integer, Integer> costs = new HashMap<>();
     //2. 初始化堆，放入初始节点 k
@@ -1552,8 +1552,8 @@ https://leetcode.com/problems/delete-node-in-a-bst/
       costs.put(cur.node, cur.time);
       
       //如果还有邻接节点，则遍历之
-      if (map.containsKey(cur.node)) {
-        for (Cell neighbor : map.get(cur.node)) {
+      if (graph.containsKey(cur.node)) {
+        for (Cell neighbor : graph.get(cur.node)) {
           if (!costs.containsKey(neighbor.node)) {
             //heap: 加上 neighbor candidate = 到达当前节点的最优cost + 邻接cost
             heap.offer(new Cell(neighbor.node, cur.time + neighbor.time));
@@ -1577,24 +1577,81 @@ https://leetcode.com/problems/delete-node-in-a-bst/
   //构造图
   //输入节点列表:  List<times[start, end, delay]>
   private Map<Integer, List<Cell>> constructGraph(int[][] times) {
-    Map<Integer, List<Cell>> map = new HashMap<>(); //注意 map value 需要附带cost，map[src] = Cell{dst, cost}
+    Map<Integer, List<Cell>> graph = new HashMap<>(); //注意 map value 需要附带cost，map[src] = Cell{dst, cost}
     for (int[] time : times) {
-      List<Cell> edges = map.getOrDefault(time[0], new ArrayList<>());
+      List<Cell> edges = graph.getOrDefault(time[0], new ArrayList<>());
       edges.add(new Cell(time[1], time[2])); //Cell(node, cost)
-      map.put(time[0], edges);
+      graph.put(time[0], edges);
     }
-    return map;
+    return graph;
   }
   
   class Cell implements Comparable<Cell> {
     int node, time;
+    
     public int compareTo(Cell c2) {
       return time - c2.time;
     }
   }
   ```
-
   
+- **787 - Cheapest Flights within K Stops.** 有向加权图
+
+  > Heap 中除了存储 {node, cost}，还要存一个 stop，如果stop > K，就不能再展开该节点。
+
+  ```java
+  public int findCheapestPrice(int n, int[][] flights, int src, int dst, int K) {
+    //1.构造图
+    Map<Integer, List<int[]>> graph = constructMap(flights);
+    //2.初始化堆: 加初始节点 & stop = K & cost=0
+    PriorityQueue<Cell> heap = new PriorityQueue<>();
+    heap.offer(new Cell(src, K, 0));
+    
+    while (!heap.isEmpty()) {
+      Cell cur = heap.poll();
+      if (cur.dest == dst) { //如果是终点，则返回。因为是按优先级展开，第一次达到终点的一定是最优解
+        return cur.price;
+      }
+      // 展开邻接节点，成本=cur cost + edge cost
+      if (cur.stop >= 0 && graph.containsKey(cur.dst)) {
+        for (int[] next : graph.get(cur.dst)) {
+          heap.offer(new Cell(next[0], cur.stop - 1, cur.price + next[1]));
+        }
+      }
+    }
+    return -1;
+  }
+  
+  // Construct Graph: map[src] = {dst, cost}
+  // value 可以是数组、或者 pojo
+  private Map<Integer, List<int[]>> constructMap(int[][] flights) {
+    Map<Integer, List<int[]>> graph = new HashMap<>(); 
+    for (int[] flight : flights) {
+      List<int[]> to = graph.getOrDefault(flight[0], new ArrayList<>());
+      to.add(new int[] {flight[1], flight[2]});
+      graph.put(flight[0], to);
+    }
+    return graph;
+  }
+  
+  class Cell implements Comparable<Cell> {
+    int dst; //节点 
+    int stop; //换乘数
+    int price;//从出发地开始的累积价格
+    
+    public int compareTo(Cell other) {
+      return price - other.price;
+    }
+  }
+  ```
+  
+- 264 - Ugly Number II
+
+- 373 - Find K Pairs with Smallest Sums
+
+- 778 - Swim in Rising Water
+
+- 378 - Kth Smallest Element in a Sorted Matrix
 
 
 
