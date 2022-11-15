@@ -1655,9 +1655,59 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
 
 
+### 图的 DFS 
+
+- DFS 会一口气扎到最深层，再递归回到原点；然后再一口气扎到另一条路的最深层，如此反复。
+- 模板
+  - Init HashSet, to record visited nodes;
+  - For all entry nodes, call dfs()
+    - Validate current node
+    - Do sth. (Pre-order)
+    - For each neighbor nodes:
+      - Validate neighbor nodes, if visited or invalid, skip
+      - 递归 dfs(neighbor)
+    - Do sth. (post-order)
 
 
 
+例题
+
+- **200 - Number of Islands**
+
+  ```java
+  int[][] dirs = {{0,1}, {0,-1}, {1,0}, {-1,0}};
+  public int numIslands(char[][] grid) {
+    int cont = 0;
+    //1. 遍历矩阵
+    for (int i = 0; i < grid.length; i++) {
+      for (int j = 0; j < grid[i].length; j++) {
+        //2. For all entry nodes, call dfs
+        if (grid[i][j] == '1') {
+          count++;
+          dfs(grid, i, j);
+        }
+      }  
+    }
+    return count;
+  }
+  
+  // dfs染色：[i,j]表示当前位置
+  private void dfs(char[][] grid, int i, int j) {
+    grid[i][j] = 0; //技巧：染色
+    for (int[] dir : dirs) {
+      int x = i + dir[0];
+      int y = j + dir[1];
+      // dfs(neighbor)
+      if (x >= 0 && x < grid.length || y >= 0 || y < grid[i].length && grid[x][y] == '1') {
+        dfs(grid, x, y);
+      }
+    }
+  }
+  ```
+
+  
+
+- 
 
 
 
