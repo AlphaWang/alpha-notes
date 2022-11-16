@@ -1707,7 +1707,47 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 
   
 
-- 
+- **332 - Reconstruct Itinerary** 
+
+  > 每个 array 元素代表一张机票，[["JFK", "PVG"], [JFK, SFO], ["SFO, JFK"]]，返回行程路线。
+  >
+  > --> Post-order traversal on edges. 
+
+  ```java
+  public List<String> findItinerary(List<List<String>> tickets) {
+    //1. 构建图：Adjacency Heap Map
+    //为什么是heap map: 邻接节点需要排序
+    Map<String, PriorityQueue<String>> graph = new HashMap<>();
+    for (List<String> edge: tickets) {
+  		graph.computeIfAbsent(edge.get(0), k -> new PriorityQueue<>())
+        .offer(edge.get(1));
+    }
+    
+    //2. Init result list
+    List<String> res = new LinkedList<>(); //LinkedList支持从头部插入
+    //3. DFS
+    dfs(res, graph, "JFK");
+    return res;
+  }
+  
+  private void dfs(List<String> res, Map<String, PriorityQueue<String>> graph, String cur) {
+    //3.1 for each neighbor of current city, poll out, &dfs
+    PriorityQueue<String> neis = graph.getOrDefault(cur, new PriorityQueue<>());
+    while (!neis.isEmpty()) {
+      dfs(res, graph, neis.poll()); //poll 拿出即删，无需记录visited
+    }
+    //3.2 append current city to result
+    res.add(0, cur);
+  }
+  ```
+
+- 133 - Clone Graph
+
+- 399 - Evaluate Division
+
+- 785 - Is Graph Bipartite
+
+- 841 - Keys and Rooms
 
 
 
