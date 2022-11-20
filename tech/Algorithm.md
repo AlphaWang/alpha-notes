@@ -2847,7 +2847,157 @@ TBD
 
   - 差异：最优子结构、中途可以淘汰次优解
 
+
+
+
+### 搜索
+
+- 搜索是 DP 的原始形态；
+  - 当一个大问题由多个子问题构成时，可以通过不断分解问题来求解。这个过程称为搜索。
+  - 搜索空间（Search Space）可以用 Tree 的形式展现。
+- Search 最重要的是定义好**状态**，保证每个子问题都能用一个状态来描述。
+- **DFS 模板（top-down）**
+  - Define STATE of sub-problems
+  - Init initial-state
+  - call `dfs(init_state)`
+    - Base Case check
+    - For each sub-problem x
+      - Update state = next_state_x
+      - Branch down --> call `dfs(next_state_x)`
+      - **Restore state**
+
+
+
+例题
+
+- **78 - Subsets**
+
+  ```java
+  // e.g. [1, 3, 4] 转换成状态树，每一层代表一个元素 要或不要
+  //                    ()
+  // 1-       ()                   (1)
+  // 3-   ()      (3)        (1)         (1,3)
+  // 4- ()(4)   (3)(3,4)   (1)(1,4)   (1,3)(1,3,4)
   
+  // TOP-DOWN DFS
+  // O(2^n)
+  public List<List<Integer>> subsets(int[] nums) {
+    List<List<Integer>> res = new ArrayList<>();
+    dfs(res, nums, new ArrayList<>(), 0);
+    return res;
+  }
+  
+  private void dfs(List<List<Integer>> res, int[] nums, List<Integer> cur, int index) {
+    //1. base case: 如果已经到最后一层，则得到一个答案
+    if (index >= nums.length) {
+      res.add(new ArrayList<>(cur)); //拷贝cur!
+      return;
+    }
+    //2. update state & branch down: 要当前元素
+    cur.add(nums[index]);
+    dfs(res, nums, cur, index+1);
+    //3. restore state & branch down: 不要当前元素
+    cur.remove(cur.size() - 1);
+    dfs(res, nums, cur, index+1;)
+  }
+  
+  ```
+
+- 90 - Subsets II
+
+- 22 - Generate Parentheses
+
+
+
+### DP
+
+- 如果 search space 中有重复子问题，则可以记录下子问题的答案，保证不重复计算。DP = Search + Memoization
+- DP 重点仍然是定义好**状态、递归规则**。
+- 模板：所有 DP 都可以携程 **bottom-up DFS** 的形式。
+  - Define STATE of sub-problems  
+  
+    > 对于单个 array 或 string，一般只有两种状态定义：
+    >
+    > - `dp[i]` 代表 [0,i) 的答案
+    > - `dp[i, j]` 代表 array[i] ~ array[j] 这段subarray的答案
+  
+  - Init MEMO to record calculated sub-problems
+  
+  - return **dfs**(top_level_answer_state) 
+  
+    - Base case check
+    - If current problems is calculated, return 
+    - For each sub-problem 
+      - call dfs(sub_problem_state)
+      - build up current state problem answer based on sub-problem answers
+    - Store current problem answer 
+
+
+
+例题
+
+- **139 - Word Break**：给定单词，是否可以用字典中的单词拼接出来
+
+  > STATE 构思：
+  >
+  > - DP 一定是利用子问题的答案构建当前大问题的答案；
+  > - 子问题：如果子问题 j 的答案是 true --> we can break the `word.substring(0, j)`
+  > - 那么剩下来的部分就是 `x = word.substring(j, n)`，如果 x 是字典中的一个单词，则整个问题 i 的答案就是 true
+  > - 把所有可能的 j = [0, i) 都试一遍，只要其中一个满足，则整个问题 i 的答案就是 true
+
+  ```java
+  // state = (length) --> state[i]: if we can break word.substring(0, length)
+  // Time: O(n^2)
+  
+  Boolean[] memo;
+  public boolean wordBreak(String s, List<String> wordDict) {
+    int n = s.length;
+    memo = new Boolean[n + 1];
+    return dfs(s, n, new HashSet<> wordDict));
+  }
+  
+  // dfs() len即是i
+  private boolean dfs(String s, int len, Set<String> dict) {
+    //1. base case: 子问题长度是0，即空字符串，可以break
+    if (len == 0) {
+      return true;
+    }
+    //2. if current problem is calculated, return answer
+    if (memo[len] != null) {
+      return memo[len];
+    }
+    
+    memo[len] = false;   
+    //3. for each sub-problem j from [0, len)
+    for (int j = 0; j < len; j++) { // 遍历[0, len)
+      // 3.1 分成两部分，right 找字典
+      boolean right = dict.contains(s.subsctring(j, len));
+      if (!right) {
+        continue;
+      }
+      // 3.2 左侧子问题，dfs(sub_problem)
+      boolean left = dfs(s, j, dict);
+      if (left) {
+        //记录memo
+        memo[len] = true;
+        break;
+      }
+    }
+    return memo[len];
+  }
+  ```
+
+- 
+
+- 746 - Min Cost Climbing Stairs
+
+- 70 - Climbing Stairs
+
+- 35 - Maximum Subarray 
+
+
+
+
 
 ## || 枚举算法
 
