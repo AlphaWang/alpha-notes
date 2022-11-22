@@ -2997,6 +2997,73 @@ TBD
 
 
 
+### 一维 DP
+
+
+
+例题
+
+- **96 - Unique Binary Search Trees**：给定数组，能构成多少个二叉搜索树？
+
+  > 子问题：
+  >
+  > - 当前节点作为 root，左右子树的构造 就是子问题
+  >
+  > 
+  >
+  > ![image-20221122223217297](../img/alg/dp_96-0.png)
+  >
+  > - 注意相同的区间大小是重复子问题，与元素值无关，只与个数有关；可泛化为：
+  >
+  > ![image-20221122223012130](../img/alg/dp_96.png)
+  > (左右镜像，一半都是重复子问题)
+
+  ```java
+  // State: (n) 表示 [1,n]数组能构成多少个 BST
+  // 左子问题：i-1 个元素
+  // 右子问题：n-i 个元素
+  Integer[] memo;
+  public int numTrees(int n) {
+    memo = new Integer[n+1];
+    return dfs(n);
+  }
+  
+  private int dfs(int n) {
+    //1. base case
+    if (n <= 1) {
+      return 1;
+    }
+    // 2. check memo
+    if (memo[n] != null) {
+      return memo[n];
+    }
+    
+    int res = 0;
+    for (int i = 1; i <= n; i++) {
+      // 3. sub-problems
+      int left = dfs(i - 1);
+      int right = dfs(n - i);
+      res += left * right;
+    }
+    memo[n] = res;
+    return res;
+  }
+  
+  // 另一个思路：从底层子问题开始计算
+  public int numTrees(int n) {
+    int[] dp = new int[n + 1];
+    dp[0] = dp[1] = 1;
+    for (int i = 2; i <= n; i++) {
+      for (int j = 1; j <= i; j++) {
+        dp[i] += dp[j-1] * dp[i-j];
+      }
+    }
+    return dp[n];
+  }
+  ```
+
+  
+
 
 
 ## || 枚举算法
