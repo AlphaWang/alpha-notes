@@ -2119,17 +2119,28 @@ https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources
 **Data Source 核心组件：**
 
 - **Split 分片**
+  
   - A Split is a portion of data consumed by the source, like a file or a log partition. Splits are the granularity by which the source distributes the work and parallelizes reading data.
-  - source 数据的一部分；Split 是进行任务分配、数据并行读取的基本粒度。
-  - 例：Split = Kafka Topic Partition.
+  
+  - 是 source 数据的一部分；Split 是进行任务分配、数据并行读取的基本粒度。
+  
+    > 例：Split = Kafka Topic Partition.
+  
 - **SourceReader 源阅读器**
+  
   - The SourceReader requests Splits and processes them, for example by reading the file or log partition represented by the Split. The SourceReaders run in parallel on the Task Managers in the `SourceOperators` and produce the parallel stream of events/records.
-  - SourceReader 请求分片，并进行处理。并行运行在 Task Manager 中。
-  - 例：使用 KafkaConsumer 读取所分配的分片（主题分区），并反序列化记录。
+  
+  - SourceReader 请求分片，并处理分片。SourceReader 并行运行在 Task Manager 中。
+  
+    > 例：使用 **KafkaConsumer** 读取所分配的分片（主题分区），并反序列化记录。
+  
 - **SplitEnumerator 分片枚举器**
   - SplitEnumerator 生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
-  - 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
-- Source
+  
+    > 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
+  
+- **Source**
+  
   - API 入口，将上述三个组件组合起来。
 
 
@@ -2162,11 +2173,13 @@ class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState
   Boundedness getBoundeness() {
     return Bondedness.CONTINUOUS_UNBOUNDED;
   }
-  // Creates a new reader to read data from the splits it gets assigned.
+  
+  // Creates a new SourceReader to read data from the splits it gets assigned.
   // SourceReader: reading the records from the source splits assigned by SplitEnumerator.
   SourceReader<SlackMsg, SlackNotification> createReader(SourceReaderContext ctx) {
     return new SlackReader<>(ctx);
   }
+  
   // Creates a new SplitEnumerator for this source, starting a new input. 
   // SplitEnumerator:
   // 1. discover the splits for the SourceReader to read. 
@@ -2174,7 +2187,8 @@ class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState
   SplitEnumerator<SlackNotification, EnumeratorState> createEnumerator(SplitEnumeratorContext<SlackNotification> ctx) {
     return new SlackEnumerator(ctx, null);
   }
-  // Restores an enumerator from a checkpoint.
+  
+  // restoreEnumerator: Restores an enumerator from a checkpoint.
   SplitEnumerator<SlackNotification, EnumeratorState> restoreEnumerator(SplitEnumeratorContext<SlackNotification> ctx, EnumeratorState checkpoint) {
     return new SlackEnumerator(ctx, checkpoint)
 }
