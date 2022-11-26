@@ -3062,7 +3062,104 @@ TBD
   }
   ```
 
+- **94 - Decode Ways** : 给定的数字可以代表多少种字符串？
+
+  > 子问题：
+  >
+  > - 拆出右侧一位，或二位数字；左侧部分即是子问题
+  >
+  > ![image-20221125231416075](../img/alg/dp_94_0.png)
+  >
+  > - 泛化：
+  >
+  > ![image-20221125231518174](../img/alg/dp_94_1.png)
+
+  ```java
+  Integer[] memo;
+  //State: n = 子字符串[0, n] 
+  public int numDecodings(String s) {
+    int n = s.length();
+    memo = new Integer[n + 1];
+    return dfs(s, n);
+  }
   
+  private int dfs(String s, int n) {
+    //1. base case: n<=1 --> 1
+    if (n == 0) {
+      return 1;  //空串也是一种decode方式
+    }
+    if (n == 1) {
+      return s.charAt(0) == '0' ? 0 : 1; //0: 无法decode
+    }
+    //2. check memo
+    if (memo[n] != null) {
+      return memo[n];
+    }
+    
+    //3. sub-problem：问子问题要答案
+    int res = 0;
+    char x = s.charAt(n - 1);
+    char y = s.charAt(n - 2);
+    //3.1 如果个位合法，则去掉个位，看左边
+    if (x != '0') {
+      res += dfs(s, n-1);
+    }
+    //3.2 如果十位合法（10~26），则去掉后两位，看左边
+    int yx = (y - '0') * 10 + (x - '0');
+    if (yx >= 10 && yx <= 26) {
+      res += dfs(s, n - 2);
+    }
+    
+    memo[n] = res;
+    return res;
+  }
+  
+  ```
+
+  ```java
+  // 正向 DP
+  public int numDecoding(String s) {
+    int n = s.length();
+    if (n == 0 || s.charAt(0) == '0') {
+      return 0;
+    }
+    
+    int[] dp = new int[n + 1];
+    dp[0] = dp[0] = 1;
+    for (int i = 2; i <= n; i++) {
+      char cur = s.charAt(i - 1);
+      char prev = s.charAt(i - 2);
+      int code = (prev - '0') * 10 + (cur - '0');
+      if (cur == '0') {
+        if (prev == '0' || prev > '2') {
+          return 0;
+        }
+        dp[i] = dp[i - 2];
+      } else {
+        dp[i] = dp[i - 1];
+        if (code > 10 && code <= 26) {
+          dp[i] += dp[i - 2];
+        }
+      }
+    }
+    
+    return dp[n];
+  }
+  ```
+
+  
+
+- 53 - Max Subarray
+
+- 343 - Integer Break
+
+- 279 - Perfect Squares
+
+- 338 - Counting Bits
+
+- 303 - Range Sum Query - Immutable
+
+- 140 - Word Break II
 
 
 
