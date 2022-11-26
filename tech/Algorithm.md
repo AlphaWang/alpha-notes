@@ -3163,6 +3163,167 @@ TBD
 
 
 
+### 二维 DP
+
+场景：
+
+- 输入是 2D Array --> state = (row, col)
+- 输入是 两个 1D Array --> each 1D state
+- 1D Array + K --> state = (i, k)
+- 1D Array --> 2D state (subarray)
+
+
+
+例题
+
+- **63 - Unique Path II** - 机器人有多少个方法能走到棋盘上的目标格 
+
+  > 场景：输入是 2D array
+  >
+  > 子问题：
+  >
+  > - 从上面达到当前格
+  > - 从左边达到当前格
+  >
+  > 例如终点是 (3, 3) 
+  > ![image-20221126143629950](../img/alg/dp_63_0.png)
+
+  ```java
+  Integer[][] memo;
+  int m, n;
+  
+  public int uniquePathsWithObstacles(int[][] obstacleGrid) {
+    m = obstacleGrid.length;
+    n = obstacleGrid[0].length;
+    memo = new Integer[m][n];
+    return dfs(obstacleGrid, m-1, n-1);
+  }
+  
+  private int dfs(int[][] grid, int i, int j) {
+    //1. base case-1: 越界 --> 0
+    if (i < 0 || i >= m || j < 0 || j >= n || grid[m][n] == 1) {
+      return 0;
+    }
+    // base case-2: 第一行或第一列 --> 1
+    if (i == 0 || j == 0) {
+      return 1;
+    }
+    //2. check memo
+    if (memo[i][j] != null) {
+      return memo[i][j];
+    }
+    
+    //3. sub-problem: 从上方来 + 从左方来
+    int res = 0;
+    res += dfs(grid, i - 1, j);
+    res += dfs(grid, i, j - 1);
+    memo[i][j] = res;
+    returnres ;
+  }
+  ```
+
+  ```java
+  // 正向 DP
+  public int uniquePathsWithObstacles(int[][] obstacleGrid) {
+    int m = obstacleGrid.length;
+    int n = obstacleGrid[0].length;
+    int[][] memo = new Integer[m+1][n+1];
+    memo[1][1] = 1;
+    
+    for (int i = 1; i <= m; i++) {
+      for (int j = 1; j <= n; j++) {
+        if (obstacleGrid[i-1][j-1] == 1) { // 注意 memo 和输入grid的索引有错位
+          memo[i][j] = 0;
+        } else {
+          memo[i][j] += memo[i-1][j] + memo[i][j-1];
+        }
+      }
+    }
+    return memo[m][n];
+  }
+  ```
+
+  
+
+- **1143 - Longest Common Subsequence**: 两个字符串的最长公共子序列，允许不连续
+
+  > 场景：输入是两个 1D array
+  >
+  > 状态：state(i, j) = string1(0, i) 与 string2(0, j) 的最长公共子序列
+  >
+  > 子问题：
+  >
+  > - 如果当前位置 c1 == c2，则同时去掉当前位，答案 = `(i-1, j-1)` + 1；
+  > - 如果 c1 != c2，则分别去掉当前为，答案 = max( `(i-1, j)`,  `(i, j-1)` )
+  >
+  > ![image-20221126150712260](../img/alg/dp_1143.png)
+
+  ```java
+  Integer[][] memo;
+  public int longestCommonSubsequence(String text1, String text2) {
+    int m = text1.length();
+    int n = text2.length();
+    return dfs(text1, text2, m-1, n-1)
+  }
+  
+  private int dfs(String t1, String t2, int i, int j) {
+    //1. base case: 越界
+    if (i < 0 | j < 0) {
+      return 0;
+    }
+    //2. check memo
+    if (memo[i][j] != null) {
+      return memo[i][j];
+    }
+    
+    //3. sub-problem
+    int res = 0;
+    if (t1.charAt(i) == t2.charAt(j)) {
+      res = dfs(t1, t2, i - 1, j - 1) + 1;
+    } else {
+      res = Math.max(
+        dfs(t1, t2, i - 1, j), 
+        dfs(t1, t2, i, j - 1));
+    }
+    memo[i][j] = res;
+    return res;
+  }
+  ```
+
+  ```java
+  // 正向DP，先解决小问题
+  public int longestCommonSubsequence(String t1, String t2) {
+    int m = t1.length();
+    int n = t2.length();
+    int[][] memo = new int[m+1][n+1];
+    
+    for (int i = 1; i <= m; i++) {
+      for (int j = 1; j <= n; j++) {
+        if (t1.charAt(i-1) == t2.charAt(j-1)) {
+          memo[i][j] = memo[i-1][j-1] + 1;
+        } else {
+          memo[i][j] = Math.max(memo[i-1][j], memo[i][j-1]);
+        }
+      }
+    }
+    return memo[m][n];
+  }
+  ```
+
+- Longest Common Subarray
+
+- 931 - Min Falling Path Sum
+
+- 62 - Unique Paths
+
+- 120 - Triangle
+
+- 304 - Range Sum Query 2D - Immutable
+
+- 115 - Distinct Subsequences
+
+
+
 ## || 枚举算法
 
 TBD
