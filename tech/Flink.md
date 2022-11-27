@@ -2110,6 +2110,29 @@ https://ci.apache.org/projects/flink/flink-docs-release-1.11/dev/table/functions
 > - develop connector example，口音重: https://www.youtube.com/watch?v=LCMfbGv38u8
 > - table api? https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks/ 
 
+## || Design
+
+**Key Challenges**
+
+- How to **parallelize** your data source/sink?
+  - subdivide source data --> partition
+  - support parallelism changes
+- How to provide **fault tolerance**
+  - Exactly-once semantic? 
+  - Support flink checkpoints & savepoints
+- How to support **historical** and **real-time** processing?
+
+- Security 
+
+
+
+**Connector Lifecycle**
+
+- Construction
+- State Init
+- Run
+- Cancel/Stop
+
 
 
 ## || Develop Source 
@@ -2142,6 +2165,7 @@ https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources
 - **Source**
   
   - API 入口，将上述三个组件组合起来。
+  - Configuration Holder
 
 
 
@@ -2149,19 +2173,27 @@ https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources
 
 JobManager:
 
-- 1 **SplitEnumerator** per job
+- **1 SplitEnumerator** per job
   - Split discovery / split life-cycle
   - Failover / split re-assignment
 
 TaskManager
 
-- 1 **SourceReader** per source subtask
+- **1 SourceReader** per source subtask
   - Offset management
   - Reading
+
+通用模板
+
+- Batch processing
+
+![image-20221127232423795](../img/flink/flink-source-template.png)
 
 
 
 **Sample code**
+
+需求：接收 slack 消息，并自动回复
 
 - Source
 
@@ -2174,13 +2206,13 @@ class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState
     return Bondedness.CONTINUOUS_UNBOUNDED;
   }
   
-  // Creates a new SourceReader to read data from the splits it gets assigned.
+  // createReader: Creates a new SourceReader to read data from the splits it gets assigned.
   // SourceReader: reading the records from the source splits assigned by SplitEnumerator.
   SourceReader<SlackMsg, SlackNotification> createReader(SourceReaderContext ctx) {
     return new SlackReader<>(ctx);
   }
   
-  // Creates a new SplitEnumerator for this source, starting a new input. 
+  // createEnumerator: Creates a new SplitEnumerator for this source, starting a new input. 
   // SplitEnumerator:
   // 1. discover the splits for the SourceReader to read. 
   // 2. assign the splits to the source reader.
@@ -2195,6 +2227,10 @@ class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState
 ```
 
 - SplitEnumerator
+  - Split = slack notification
+  - 1 `SlackEnumerator` keeps track of notifications. 
+  - 每当收到消息时，SlackEnumerator 创建一个新 split，assign split on request to reader. 
+
 
 ```java
 class EnumeratorState {
@@ -2203,13 +2239,14 @@ class EnumeratorState {
 
 class SlackEnumerator implements SplitEnumerator<SlackNotificaiton, EnumeratorState> {
   SplitEnumeratorContext<SlackNotification> context;
-  EnumeratorState state;
+  //queue of unprocessed msg
+  EnumeratorState state; 
   SlackClient client;
   
   // start: invoked just once. 
   // 注册回调：发现新分片
   void start() {
-    //  Invoke the given callable periodically and handover the return value to the handler which will be executed by the source coordinator. 
+    //Invoke the given callable periodically and handover the return value to the handler which will be executed by the source coordinator. 
     context.callAsync(client::getNotifications, (msgs, ex) -> {
 			state.upprocessedNotification.addAll(msgs)
     }, 0, 60_000);
@@ -2234,7 +2271,11 @@ class SlackEnumerator implements SplitEnumerator<SlackNotificaiton, EnumeratorSt
 ```
 
 - Source Reader
-  - 推荐继承 `SourceReaderBase`，减少编码量
+  - 推荐继承 `SourceReaderBase`，减少编码量。
+  - 1 `SourceReader` per subtask, reads all msgs belonging to split.
+  - After reader is done with a notification
+    - It goes idle;
+    - Requests a new split from enumerator.
 
 ```java
 class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
@@ -2250,6 +2291,10 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
   void addSplits(List<SlackNotification> splits) {
     client.seek(Iterables.getOnlyElement(splits).getMessageOffset());
     available.complete(null);
+  }
+  
+  CompletableFuture<Void> isAvailable() {
+    return available;
   }
   
   // Poll the next available record into the {@link ReaderOutput}.
