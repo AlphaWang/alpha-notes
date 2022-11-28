@@ -2165,7 +2165,7 @@ https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources
 - **Source**
   
   - API 入口，将上述三个组件组合起来。
-  - Configuration Holder
+  - *Configuration Holder*
 
 
 
@@ -2196,6 +2196,8 @@ TaskManager
 需求：接收 slack 消息，并自动回复
 
 - Source
+  - Configuration holder
+
 
 ```java
 class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState> {
@@ -2321,15 +2323,26 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 ## || Develop Sink
 
+![image-20221128224546373](../img/flink/flink-sink-arch.png)
+
+- **Streaming**: *Committed on checkpoints*
+  - Failed committables are **retried** after some time
+  - Committables of failed checkpoints carry over to new checkpoint;
+  - On **recovery**, recommit all committables of last checkpoint.
+- **Batch**: Committed after all data has been processed
+  - Indefinite retries on committables
+
 
 
 **Sample Code**
 
 - Sink
+  - Configuration holder
+
 
 ```java
 class SlackSink implements Sink<SlackReply, Draft, Void, Void> {
-  SlackSettings settings;
+  SlackSettings settings; //need to be serializable
   
   public SinkWriter<SlackReply, Draft, Void> createWriter(InitContext context, List<void> states) {
     return new SlackWriter(settings);
@@ -2349,15 +2362,19 @@ class SlackSink implements Sink<SlackReply, Draft, Void, Void> {
 ```
 
 - SinkWriter
+  - 写入数据
+
 
 ```java
 class SlackWriter implements SinkWriter<SlackReply, Draft, Void> {
   SlackClient client;
   Queue<Draft> drafts = new ArrayDeque<>();
   
+  // write == client call + save draft
   void write(SlackReply element, Context ctx) {
     drafts.add(client.writeDraft(element));
   }
+  
   // call at checkpoint
   List<Draft> prepareCommit(boolean flush) {
     ArrayList<Draft> drafts = new ArrayList<>(this.drafts);
@@ -2369,10 +2386,14 @@ class SlackWriter implements SinkWriter<SlackReply, Draft, Void> {
 ```
 
 - Commiter
+  - Optional, 两阶段提交
+  - Exactly-once
+
 
 ```java
 class DraftCommitter implements Committer<Draft> {
   SlackClient client;
+  
   // the response will be retried.
   List<Draft> commit(List<Draft> drafts) {
     List<Draft> unsuccessful = new ArrayList<>();
