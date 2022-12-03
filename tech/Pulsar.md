@@ -1237,6 +1237,8 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 目的：用于保证精确一次语义。
 
 - Producer 生产到不同分区时，要么同时失败，要么同时成功。
+
+  > Idempotent producer (精确一次生产) 无法保证这一点。
 - Consumer 消费多条消息时，要么同时确认失败，要么同时确认成功。
 - Producer / Consumer 在同一个事务时，要么同时失败，要么同时成功。
 
@@ -1281,10 +1283,73 @@ tx.commit().get();
 
 **原理**
 
-- Transaction Coordinator
-  - 记录每个 tx 状态
+> - https://pulsar.apache.org/docs/2.10.x/txn-how/
+>
+> - 概述 https://www.streamnative.cn/blog/tech/2021-06-16-a-deep-dive-of-transactions-in-apache-pulsar/ 
+> - 设计文档：https://docs.google.com/document/d/145VYp09JKTw9jAT-7yNyFU255FptB2_B2Fye100ZXDI/
+
+- **Transaction Coordinator**: https://streamnative.io/blog/engineering/2022-09-29-deep-dive-into-transaction-coordinators-in-apache-pulsar/ 
+
+  - TC manages transactions of messages sent by producers and acknowledgements sent by consumers, and commit or abort the operations as a whole. 
+  - 记录每个 tx 状态 --> Transaction Log
   - 记录每个 tx 参与发送过消息的topic
   - 记录每个 tx 参与 ack过消息的subsscription
+
+  
+
+  
+
+- 内部流程
+
+  - **1 - Begin Txn** 
+
+    - 客户端联系 TC，由 TC 分配 TxnID、并记录 transaction log: id + status.
+
+  - **2 - Txn Loop**
+
+    - **2.1 Add partition to Txn**：生产消息之前，客户端请求 TC 将分区加入事务。
+      —— 目的：持久化，以便 TC 知晓当前事务关联的分区、从而在事务结束时提交或取消相关分区的改动。
+    - **2.2 Produce msgs to partitions**：消息中附带 TxnID，**Broker** 将其写入 Transaction Buffer。
+    - **2.3 Add subscription to Txn**：
+      ——目的：持久化，以便 TC 知晓当前事务关联的订阅、从而在事务结束时提交或取消相关订阅的改动。
+    - **2.4 ACK msgs on subscriptions**：ack 请求中附带 TxnID，**Broker** 将消息标记为 PENDING_ACK 状态
+
+  - **3 - End Txn**
+
+    - **3.1 End txn request**：客户端发起结束事务请求，
+      1）TC 向 Transaction Log 中写入 COMMITTING 或 ABORTING 消息；
+      2）TC 开始提交或取消，见 3.2；
+      3）TC 向 Transation Log 中写入 COMMITTED 或 ABORTED 消息；
+
+    - **3.2 Finalizing Process**：
+      1）提交已生产的消息：让其对消费者可见，TB 保证写入的幂等性。——写入主题分区？
+
+      2）取消已生产的消息：清除 TB 中的消息。
+      3）提交 ACK：将消息从 PENDING_ACK 移到 ACK 状态；
+      4）取消 ACK：neg ack 
+
+    - **3.3 Mark Txn as COMMITTED / ABORTED**：TC 写入 Transaction Log，标志事务已完成；此后 transaction log 中相关的记录可以安全删除。
+
+    
+
+![image-20221202175858947](../img/pulsar/txn-coordinator.png)
+
+- **Transaction Log**
+   - The transaction log topic stores the metadata changes of a transaction instead of the actual messages in the transaction.
+     ![image-20221202175537415](../img/pulsar/txn-log.png)
+- **Transaction Buffer** : https://streamnative.io/blog/engineering/2022-10-24-a-deep-dive-into-transaction-buffer-in-apache-pulsar/ 
+  - Messages produced within a transaction will be stored in **Transaction Buffer** (aka TB). The messages in TB will not be materialized (visible) to consumers until their transactions are committed. ——不存到原始topic?
+  - The messages in the buffered state will not be available to consumers until the transaction is committed.
+
+- **Transaction Mark**：
+  - 提交回滚事务的标记，对consumer不可见。用于 Transaction Buffer 的恢复。
+  - When TB detects a committed mark or an aborted mark in the ledger, it removes the transaction from `ongoingTxns` and updates `maxReadPosition` accordingly 
+    - `maxReadPosition` 此位置之前的消息 对消费者可见；
+    - `ongoingTxns` 记录进行中的事务，以便更新 maxReadPosition = 第一个进行中事务位置 - 1。
+
+  - 示例
+    ![](../img/pulsar/txn-mark-example.png)
+
 
 
 
