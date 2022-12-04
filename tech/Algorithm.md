@@ -3163,14 +3163,19 @@ TBD
 
 
 
-### 二维 DP
+### 二维 DP：2D Array
 
 场景：
 
 - 输入是 2D Array --> state = (row, col)
+
 - 输入是 两个 1D Array --> each 1D state
-- 1D Array + K --> state = (i, k)
+
 - 1D Array --> 2D state (subarray)
+
+- 1D Array + K --> state = (i, k)
+
+  
 
 
 
@@ -3321,6 +3326,192 @@ TBD
 - 304 - Range Sum Query 2D - Immutable
 
 - 115 - Distinct Subsequences
+
+
+
+### 二维 DP：2D State
+
+1D Array --> 2D state (subarray)
+
+例题
+
+- **877 - Stone Game** - 从两头取石头，最终比大小
+  https://leetcode.com/problems/stone-game/  - M
+
+  > 二维状态：区间！！！
+  >
+  > - `(i, j)` = 子区间 [i...j] 内能获得的相对分数。
+  >
+  > - 为什么 1D DP不行？因为从头或从尾取都可以。
+  >
+  > ![image-20221126182646698](../img/alg/dp_877.png)
+  >
+  > ![image-20221126194137845](../img/alg/dp_877_1.png)
+
+  ```java
+  Integer[][] memo;
+  public boolean stoneGame(int[] piles) {
+    int n = piles.length;
+    memo = new Integer[n][n];
+    dfs(piles, 0, n-1);
+    return memo[0][n-1] > 0; //最高层问题是整个区间：[0, n-1]
+  }
+  
+  private int dfs(int[] piles, int i, int j) {
+    if (i > j) {
+      return 0; //没有元素，平手，得零分
+    }
+    //1. base case: 单一元素，谁拿谁得分
+    if (i == j) {
+      return piles[i];
+    }
+    //2. check memo
+    if (memo[i][j] != null) {
+      return memo[i][j];
+    }
+    //3. sub-problems: 拿走头或拿走尾的得分，减去子区间(另一选手)的得分
+    int res = Math.max(
+      piles[i] - dfs(piles, i + 1, j), //拿走头
+      piles[j] - dfs(piles, i, j - 1));//拿走尾
+    return memo[i][j] = res;
+  }
+  ```
+
+  ```java
+  //正向DP --TODO
+  public boolean stoneGame(int[] plates) {
+    int n = plates.length;
+    int[][] memo = new int[n][n];
+    for (int i = 0; i < n; i++) {
+      //1. 单一元素
+      memo[i][i] = piles[i]; 
+      //2. i>j 的情况填充0
+      // 默认就是0
+    }
+    
+    //l表示子问题长度
+    for (int l = 2; l <= n; l++) { 
+      for (int i = 0; i < n; i++) {
+        int j = i + l - 1;
+        memo[i][j] = Math.max(
+        	piles[i] - memo[i + 1, j],
+          piles[j] - memo[i, j - 1]);
+      }
+    }
+    return memo[0][n-1] > 0;
+    
+    //TODO 待验证
+    for (int i = 0; i < n - 1; i++) {
+      for (int j = 1; j < n; j++) {
+          memo[i][j] = Math.max(
+          	piles[i] - memo[i + 1, j],
+          	piles[j] - memo[i, j - 1]);      
+      }
+    }
+  }
+  ```
+
+  
+
+- **5 - Longest Palindromic Substring** ：最长回文子串
+
+  > 二维状态：区间！
+  >
+  > - `(i, j)` ： 子串(i, j+1) 是否回文
+  > - Base case: j - i + 1 = 1 时为true
+  >
+  > 陷阱
+  >
+  > - 子问题不能只考虑同时去头去尾的情况！
+  > - 每个节点有 3 个子问题：去头、去尾、去头尾
+  >
+  > ![image-20221204112358112](../img/alg/dp-5.png)
+
+  ```java
+  Boolean[][] memo;
+  String res;
+  public String longestPalindrome(String s) {
+    int n = s.length();
+    memo = new Boolean[n][n];
+    dfs(s, 0, n-1);
+    return res;
+  }
+  
+  private void dfs(String s, int i, int j) {
+    int curLength = j - i + 1;
+    //1. base case: 单元素 or 空串 -> true
+    if (i >= j) {
+      if (res.length() < curLength) {
+        res = s.substring(i, j + 1);
+      }
+      return true;
+    }
+    
+    //2. check memo
+    if (memo[i][j] != null) {
+      return memo[i][j];
+    }
+    
+    boolean res = false;
+    //3. sub-problems
+    //3.1 去头尾
+    if (dfs(s, i + 1, j - 1) && s.charAt(i) == s.charAt(j)) {
+      res = true;
+      if (res.length() < curLength) {
+        res = s.substring(i, j + 1);
+      }
+    } else { //注意是else，是个优化：当前已经是回文的情况下无需看更小的子问题
+      //3.2 去头
+      dfs(s, i + 1, j);
+      //3.3 去尾
+      dfs(s, i, j - 1);
+    }
+    
+    return memo[i][j] = res;
+  }
+  ```
+
+  ```java
+  //正向DP -TODO, 代码更短，但难以理解
+  public String longestPalindrome(String s) {
+    int n = s.length();
+    if (n == 0) {
+      return "";
+    }
+    String lps = s.substring(0, 1);
+    
+    boolean[][] memo = new boolean[n][n];
+    for (int i = 0; i < n; i++) {
+      memo[i][i] = true; //Base case: 单元素
+    }
+    for (int i = 1; i < n; i++) {
+      memo[i][i - 1] = true; //Base case: empty string
+    }
+    
+    for (int l = 2; l <= n; l++) { // l = 子问题长度
+      for (int i = 0; i <=n; i++) {
+        int j = i + l -1;
+        memo[i][j] = s.charAt[i] == s.charAt[j] && memo[i + 1][j - 1];
+        // update global result
+        if (memo[i][j] && lps.length() < l) {
+          lps = s.substring(i, j + 1);
+        }
+      }
+    }
+    
+    return lps;
+  }
+  ```
+
+- 516 - Longest Palindromic Subsequence
+
+- 873 - Length of Longest Fibonacci Subsequence
+
+- 1312 - Min Insertion Steps to Make a String Palindrome
+
+- 312 - Burst Balloons
+
+- 1000 - Min Cost to Merge Stones
 
 
 
