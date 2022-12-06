@@ -3604,6 +3604,32 @@ http://localhost:7750/bkvm/
 
 
 
+## || 内存使用
+
+**Broker 内存使用**
+
+- **Heap**：记录处理过程中的缓存信息
+  - ManagedLedgerImpl：主题和 ledger信息
+  - ManagedCursorImp：消费偏移量信息
+  - 延迟消息的时间和元数据：timestamp + ledgerId + entryId 优先级队列
+- **Direct Memory**：
+  - **发送 message 对象构造 Cache**：缓存生产者发送来的消息，等待这些消息写入 Bookie 中。配置 `maxMessagePublishBufferSizeInMB`
+  - **尾部数据 Cache**：
+
+
+
+**Bookie 内存使用**
+
+- **Heap**：
+  - 元数据信息
+- **Direct Memory**
+  - **Read Cache**： 大小默认为MaxDirectMemorySize 大小的 1/4，可配置 `dbStorage_writeCacheMaxSizeMb`
+  - **Write Cache**：大小默认为MaxDirectMemorySize 大小的 1/4，可配置 `dbStorage_readAheadCacheMaxSizeMb`
+  - **Index Cache**：Bookie 的 IO 模式避免了随机写的情况，意味着不同 Topic 的数据会混在一起，在读取时需借助 index 来提升查询效率，同时对 Index 文件进行缓存。大小默认为MaxDirectMemorySize 大小的 1/10，可配置 `dbStorage_rocksDB_blockCacheSize`
+  - Netty 出入队列
+
+
+
 ## || 常见问题
 
 
