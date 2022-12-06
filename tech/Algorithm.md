@@ -3329,7 +3329,7 @@ TBD
 
 
 
-### 二维 DP：2D State
+### 二维 DP：2D State (subarray)
 
 1D Array --> 2D state (subarray)
 
@@ -3512,6 +3512,225 @@ TBD
 - 312 - Burst Balloons
 
 - 1000 - Min Cost to Merge Stones
+
+
+
+### 二维 DP：1D Array + K
+
+State = (i, k)
+
+
+
+例题
+
+- **410 - Split Array Largest Sum ?** - 拆为 m 个子数组中，get min largest sum。
+
+  > 状态：
+  >
+  > - `(m, n)` = Largest sum to split first n numbers into m groups. 
+  >
+  > Base case:
+  >
+  > - `(1, n)` = sum(n)
+  > - m > n = Invalid
+  >
+  > ![image-20221204221134154](../img/alg/dp-410-0.png)
+  >
+  > Tree
+  >
+  > - e.g 5 个数分成 4 组：
+  >   - 
+  >
+  > ![image-20221204173532398](../img/alg/dp-410.png)
+
+  参考 **303 - Range Sum Query** : prefix sum 优化求和
+
+  ```java
+  Integer[][] memo;
+  int[] prefix; //prefix[i] = sum(0...i)
+  
+  public int splitArray(int[] nums, int m) {
+    int n = nums.length;
+    memo = new Integer[m + 1][n + 1];
+    prefix = new int[n + 1];
+    for (int i = 0; i < n; i++) {
+      prefix[i + 1] = prefix[i] + nums[i];
+    }
+    
+    return dfs(nums, m, n);
+  }
+  
+  // n个数分成m组
+  private int dfs(int[] nums, int m, int n) {
+    //1. Base case: 
+    if (m == 1) {
+      return prefix[n]; //1.1 分成一组，return sum(0...n)
+    }
+    if (m > n) {
+      return -1; //1.2 m > n：无效分组
+    }
+    //2. Check memo
+    if (memo[m][n] != null) {
+      return memo[m][n];
+    }
+    
+    int res = Integer.MAX_VALUE;
+    //3. 子问题
+    for (int k = 1; k < n; k++) {
+      // left = dfs(m-1, k)
+      int left = dfs(nums, m - 1, k);
+      if (left == -1) {
+        continue;
+      }
+      // right = sum(k...n)
+      int right = prefix[n] - prefix[k]; //sum(k...n)
+      // res = min(max(left, right))
+      int sub = Math.max(left, right);
+      res = Math.min(res, sub);
+    }
+    res = res == Integer.MAX_VALUE ? -1 : res;
+    return memo[m][n] = res;
+  }
+  ```
+
+  ```java
+  //正向 DP
+  public int splitArray(int[] nums, int m) {
+    int n = nums.length;
+    int[][] memo = new int[m+1][n+1]; 
+    //base case: memo[1][0...n] = sum(0...n)
+    for (int i = 0; i < n; i++) {
+      memo[1][i + 1] = memo[1][i] + nums[i]; 
+    }
+    
+    //Transition Rule
+    for (int i = 2; i <= m; i++) {
+      for (int j = i; j <= n; j++) {
+        memo[i][j] = Integer.MAX_VALUE;
+        for (int k = 1; k < j; k++) {
+          int left = memo[i - 1][k];
+          int right = memo[1][j] - memo[1][k];
+          int sub = Math.max(left, right);
+          memo[i][j] = Math.min(memo[i][j], sub);
+        }
+      }
+    }
+    return memo[m][n];
+  }
+  
+  ```
+
+  
+
+- **188 - Best Time to Buy and Sell Stock IV**: 先买再买，最多交易 k 次；
+
+  > State: 
+  >
+  > - `(k, n)` = max profit using `k` trans on `price[0...n)` 
+  >
+  > Base case
+  >
+  > - `k == 0` : 不做交易，res = 0
+  > - `n <= 1`：只有一个price，res = 0
+  >
+  > Tree
+  >
+  > - left: 当前不做交易
+  >
+  > ![image-20221204221225006](../img/alg/dp-188.png)
+  >
+  > ![image-20221204221816256](../img/alg/dp-188-1.png)
+
+  ```java
+  Integer[][] memo;
+  
+  public int maxProfit(int k, int[] prices) {
+    int n = prices.length;
+    if (n == 0) {
+      return 0;
+    }
+    // 
+    if (k >= n / 2) {
+      int max = 0;
+      for (int i = 0; i < n - 1; i++) {
+        if (prices[i] < prices[i+1]) {
+          max += prices[i+1] - prices[i];
+        }
+      }
+      return max;
+    }
+    
+    memo = new Integer[k+1][n+1];
+    return dfs(prices, k, n);
+  }
+  
+  private int dfs(int[] prices, int k, int n) {
+    //1. Base case: k==0 不做交易，n <= 1 只有一个 price
+    if (k == 0 || n <= 1) {
+      return 0;
+    }
+    //2. Check memo
+    if (memo[k][n] != null) {
+      return memo[k][n];
+    }
+    //3. Sub-problems 
+    //3.1 当前不做交易，收益 = dfs(k, n-1)
+    int res = dfs(prices, k, n-1);
+    //3.2 尝试所有可能的交易，记录最大值
+    for (int i = 1; i < n; i++) { //i买入，n卖出
+      res = Math.max(res, 
+      	dfs(prices, k-1, i) + prices[n-1] - prices[i-1]); //子问题比父问题少了一个txn
+    }
+    return memo[k][n] = res;
+  }
+  ```
+
+  ```java
+  //正向DP - TODO
+  public int maxProfit(int k, int[] prices) {
+    int n = prices.length;
+    if (n == 0) {
+      return 0;
+    }
+    // 
+    if (k >= n / 2) {
+      int max = 0;
+      for (int i = 0; i < n - 1; i++) {
+        if (prices[i] < prices[i+1]) {
+          max += prices[i+1] - prices[i];
+        }
+      }
+      return max;
+    }
+    
+    int[][] memo = new int[k+1][n+1];
+    for (int i = 1; i <= k; i++) {
+      for (int j = 1; j <= n; j++) {
+        memo[i][j] = memo[i][j-1];
+        
+        for (int x = 1; x < j; x++) {
+          memo[i][j] = Math.max(memo[i][j],
+                               memo[i-1][x] + prices[j-1] - prices[x-1]);
+        }
+      }
+    }
+    return memo[k][n];
+  }
+  ```
+
+- 322 - Coin Change
+
+- 123 - Best Time to Buy and Sell Stock III
+
+- 887 - Super Egg Drop
+
+- 1335 - Min Difficulty of a Job Schedule
+
+- 1216 - Valid Palindrome III
+
+
+
+
 
 
 
