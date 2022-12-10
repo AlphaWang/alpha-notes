@@ -2807,35 +2807,33 @@ TBD
 
   
 
-## || 回溯算法
 
-- 解决问题
-  - 解决广义的搜索问题：从一组可能的解中，选出一个满足要求的解
-  - 贪心算法不一定得到最优解
-
-- 思路
-  - 问题求解过程分成多个阶段
-  - 每个阶段随意选一条路，当发现走不通时，回退到上一路口，另选一条路
-  - 本质是枚举解法
-
-- 应用
-
-  - 八皇后问题
-
-  - 0-1 背包问题
-
-  - 正则表达式
-
-  
 
 ## || 动态规划
 
+- 场景
+  
+  - 求最值：最长递增子序列、最小编辑距离
+  
 - 思路
+
   - 把问题分解为多个阶段，每个阶段对应一个决策。
   - 我们记录每一个阶段可达的状态集合（去掉重复的），
   - 然后通过当前阶段的状态集合，来推导下一个阶段的状态集合，动态地往前推进。
 
+- 三要素
+
+  - 找到重叠子问题
+
+  - 最优子结构
+
+  - 状态转移方程 
+    -  --> 解决“如何穷举”
+
+    - 备忘录 --> 解决“如何聪明地穷举”
+
 - 实现
+
   - 分解子问题、保存之前的运算结果
   - 根据之前的运算结果对当前进行选择，可回退
 
@@ -2847,6 +2845,30 @@ TBD
 
   - 差异：最优子结构、中途可以淘汰次优解
 
+- 模板
+
+  - Top - Down DFS
+    ```python
+    # 自顶向下递归的动态规划
+    def dp(status1, status2, ...) {
+      for 选择 in 所有可能的选择
+        # 此时的状态已经因为做了选择而改变 
+        res = 求最值(res, dp(status1, status2, ...))
+      return res;  
+    }
+    
+
+  - Bottom - Up DFS
+    ```python
+    # 自底向上迭代的动态规划
+    dp[][] = base case;
+    for status1
+      for status2 
+        dp[status1][status2][...] = 求最值(选择1, 选择2, ...);
+    ```
+
+    
+
 
 
 
@@ -2857,14 +2879,15 @@ TBD
   - 搜索空间（Search Space）可以用 Tree 的形式展现。
 - Search 最重要的是定义好**状态**，保证每个子问题都能用一个状态来描述。
 - **DFS 模板（top-down）**
-  - Define STATE of sub-problems
-  - Init initial-state
-  - call `dfs(init_state)`
-    - Base Case check
-    - For each sub-problem x
-      - Update state = next_state_x
-      - Branch down --> call `dfs(next_state_x)`
-      - **Restore state**
+  
+  > - Define STATE of sub-problems
+  > - Init initial-state
+  > - call `dfs(init_state)`
+  >   - Base Case check
+  >   - For each sub-problem x
+  >     - Update state = next_state_x
+  >     - Branch down --> call `dfs(next_state_x)`
+  >     - Restore state
 
 
 
@@ -2913,7 +2936,7 @@ TBD
 
 - 如果 search space 中有重复子问题，则可以记录下子问题的答案，保证不重复计算。DP = Search + Memoization
 - DP 重点仍然是定义好**状态、递归规则**。
-- 模板：所有 DP 都可以携程 **bottom-up DFS** 的形式。
+- 模板：所有 DP 都可以写成 **bottom-up DFS** 的形式。
   - Define STATE of sub-problems  
   
     > 对于单个 array 或 string，一般只有两种状态定义：
@@ -3720,6 +3743,26 @@ State = (i, k)
 
 - 322 - Coin Change
 
+  ```java
+  // 伪码框架
+  int coinChange(int[] coins, int amount) {
+      // 题目要求的最终结果是 dp(amount)
+      return dp(coins, amount)
+  }
+  
+  // 定义：要凑出金额 n，至少要 dp(coins, n) 个硬币
+  int dp(int[] coins, int n) {
+      // 做选择，选择需要硬币最少的那个结果
+      for (int coin : coins) {
+          res = min(res, 1 + dp(n - coin))
+      }
+      return res
+  }
+  
+  ```
+
+  
+
 - 123 - Best Time to Buy and Sell Stock III
 
 - 887 - Super Egg Drop
@@ -3732,11 +3775,189 @@ State = (i, k)
 
 
 
+## || 回溯算法
+
+概念
+
+- Backtrack 是 DFS 的一种形式，写法类似 top-down DFS；
+
+- 但是引入了**状态回溯**：每次搜索一个分支，首先记录当前节点状态，尝试完一个分后，把状态回溯到记录的状态，再去尝试另外的分支。 
+
+  
+
+  - 问题求解过程分成多个阶段
+  - 每个阶段随意选一条路，当发现走不通时，回退到上一路口，另选一条路
+  - 本质是枚举解法
+
+- 如果 不回溯，则各个分支状态互相干扰：例如 dfs 遍历从 root --> leaf 的所有路径。
+
+解决问题
+
+- 解决广义的搜索问题：从一组可能的解中，选出一个满足要求的解
+- 贪心算法不一定得到最优解
+
+模板
+
+```python
+def backtrack(路径, 选择列表) {
+  if 满足结束条件: { #base case
+    res.add(路径);
+    return;
+  }
+  
+  for 选择 in 选择列表 {
+    做选择;   #从“选择列表”中拿出一个选择，放入“路径”
+    backtrack(路径, 选择列表);
+    撤销选择; #从“路径”中拿出一个选择，放回“选择列表”
+  }
+}
+```
 
 
-## || 枚举算法
 
-TBD
+> 1. base case
+> 2. for each possibility p
+>      2.1 记录 memo current state
+>      2.2 递归 backtrack(next_state)
+>      2.3 回溯 restore current state
+
+
+
+应用
+
+- 八皇后问题
+
+- 0-1 背包问题
+
+- 正则表达式
+
+
+
+例题
+
+- **46 - Permutations**: 给定数组，找到所有排列
+
+  > 对于第一个位置，有 n 种选择；
+  >
+  > 对于第二个位置，有 n-1 种选择，因为前一个位置用掉一个元素。
+  >
+  > 递归树：
+  >
+  > ![image-20221206230738896](../img/alg/backtrack-46.png)
+
+  ```java
+  public List<List<Integer>> permute(int[] nums) {
+    List<List<Integer>> res = new ArrayList<>();
+    dfs(res, nums, 0);
+    return res;
+  }
+  
+  private void dfs(List<List<Integer>> res, int[] nums, int index) {
+    //Base case: 处理到最后一个元素，把当前array作为答案
+    if (index >= nums.length) {
+      List<Integer> ans = new ArrayList<>();
+      for (int i = 0; i < nums.length; i++) {
+        ans.add(nums[i]);
+      }
+      res.add(ans);
+      return res;
+    }
+    // [0, index) 区间已固定，从 [index, n) 之间依次选取所有元素进行搜索
+    for (int i = index; i < nums.length; i++) {
+      // 每次将 i & index元素交换
+      swap(nums, index, i);
+      // dfs下一层 
+      dfs(res, nums, index+1);
+      // 将 i & index元素交换回来
+      swap(nums, index, i);
+    }
+  }
+  ```
+
+   
+
+  ```java
+  //方法二：不做元素交换，更好理解，用额外空间存储路径
+  List<List<Integer>> res = new ArrayList<>();
+  List<List<Integer>> permute(int[] nums) {
+    List<Integer> track = new LinkedList<>();
+    boolean[] used = new boolean[nums.length];
+    backtrack(nums, track);
+    return res;
+  }
+  
+  // 路径：track
+  // 选择列表：nums 中不存在于 track 的那些元素
+  void backtrack(int[] nums, List<Integer> track, boolean[] used) {
+    //满足结束条件：nums 中的元素全都在 track 中出现，达到路径末尾
+    if (track.size() == nums.length) {
+      res.add(new LinkedList(track));
+      return;
+    }
+    
+    //做选择
+    for (int i = 0; i < nums.length; i++) {
+      if (used[i]) { //tracks.contains(nums[i])
+        continue;
+      }
+      track.add(nums[i]);
+      used[i] = true;
+      
+      backtrack(nums, track);
+      
+      track.removeLast();
+      used[i] = false;
+    }
+  }
+  ```
+
+  
+
+- **47 - Permutations II** : 求排列，元素可能重复
+
+  > 引入查重机制：
+  >
+  > - 从 [index, n) 尝试所有可能性是，利用 HashSet 来判断同一元素是否已被使用过，如果已被使用则跳过
+  >
+  > ![image-20221206233605095](../img/alg/backtrack-47.png)
+
+  ```java
+  public List<List<Integer>> permuteUnique(int[] nums) {
+    List<List<Integer>> res = new ArrayList<>();
+    dfs(res, nums, 0);
+    return res;
+  }
+  
+  private void dfs(List<List<Integer>> res, int[] nums, int index) {
+    //Base case: 处理到最后一个元素，把当前array作为答案
+    if (index == nums.length) {
+      List<Integer> ans = new ArrayList<>();
+      for (int i = 0; i < nums.length; i++) {
+        ans.add(nums[i]);
+      }
+      res.add(ans);
+      return res;
+    }
+    
+    // [0, index) 区间已固定，从 [index, n) 之间依次选取所有元素进行搜索
+    Set<Integer> visited = new HashSet<>();
+    for (int i = index; i < nums.length; i++) {
+      // 每次将 i & index元素交换
+      swap(nums, index, i);
+      // dfs下一层：查重机制 ！！！！！！！！
+      if (visited.add(nums[index])) {
+        dfs(res, nums, index+1);
+      }
+      
+      // 将 i & index元素交换回来
+      swap(nums, index, i);
+    }
+  }
+  ```
+
+  
+
+
 
 ## 对比：贪心 / 回溯 / 动规
 
