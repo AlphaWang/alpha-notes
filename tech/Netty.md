@@ -2,6 +2,32 @@
 
 # | 网络
 
+
+
+概念
+
+- **DNS**：Domain Name Server, handles the mapping of business domain name --> IP address. 
+- **CDN**：Content Delivery Network, saves bandwidth, faster, 
+  - Akamai
+- **NAT**: Network Address Translation, 
+
+协议
+
+- **TCP**: Transimission Control Protocol, 保证投递、有序投递、支持重试
+- **UDP**: no ack，不保证投递、不保证有序；
+  - 适用于 1. real-time delivery, 2. Best effort delivery
+- **HTTP-DASH**: Dynamic Adaptive Streaming over HTTP. 
+  - 适用于视频传输
+- **WebRTC**：client - to - client, over UDP
+  - 适用于视频会议，
+  - Fast
+  - Save bandwidth
+  - Robust, server 宕机不碍事
+
+
+
+
+
 ## || 分层
 
 > https://osi-model.com/physical-layer/ 
@@ -83,9 +109,11 @@ HTTPS
 
 
 
-## || websocket
+## || WebSockets
 
 https://www.tutorialspoint.com/websockets/
+
+- 双向通信，Peer to Peer
 
 请求
 
@@ -118,15 +146,17 @@ Upgrade: websocket
 
 
 
-## || STOMP
-
-目的
+**STOMP**
 
 - 包装 websocket
 
 
 
 ## || REST
+
+特点
+
+- Stateless，需要请求中包含所有信息
 
 动词
 
