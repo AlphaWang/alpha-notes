@@ -172,7 +172,7 @@
 
 
 
-**思路：同向指针**
+**思路：双指针（同向）**
 
 - 含义
   - `[0, i)`：已处理
@@ -186,7 +186,7 @@
 
 
 
-**思路：反向指针**
+**思路：双指针（反向）**
 
 - 含义
   - `[0, i)`：已处理
@@ -285,7 +285,7 @@
 
 
 
-**思路1：同向双指针**
+**思路1：双指针（同向）**
 
 - 思路
   1. 两个指针一个快一个慢，确定距离隔开多少
@@ -327,6 +327,8 @@
 - **876 - 求链表中间节点**
   https://leetcode.com/problems/middle-of-the-linked-list/
 
+  > 应用：找到中点后，对链表进行归并排序。
+  
   ```java
   //快指针每次前进 2 个节点，慢指针每次前进 1 个节点
   public ListNode findMiddleNode(ListNode head) {
@@ -338,7 +340,7 @@
     return i;
   } 
   ```
-
+  
 - **Linked List 找倒数第 K 个节点**
 
   ```java
@@ -1354,14 +1356,37 @@ https://leetcode.com/problems/delete-node-in-a-bst/
 - 场景：按层搜索，**适合寻找最短路径**
 - 注意：可能有环，需要查重
 - 模板
-  - Init a queue, 加入所有起始点；Init a HashSet，保存访问过的节点
-  - While (queue is not empty) 
-    - Retrieve current queue size：当前层的节点数
-    - For each current level nodes:
-      - **Poll** out one node
-      - If this is the node we want, return it;
-      - **Offer** all its neighbor to the queue, <u>if not visited and valid</u>
-    - Increase level
+  ```java
+  int bfs(Node start, Node target) {
+    Queue<Node> queue;
+    Set<Node> visited;
+    
+    queue.offer(start); //Init a queue, 加入所有起始点
+    visited.add(start); //Init a HashSet，保存访问过的节点
+    int step = 0;
+    
+    while (!queue.isEmpty()) {
+      int size = queue.size(); //Retrieve current queue size：当前层的节点数
+      for (int i = 0; i < size; i++) { //For each current level nodes:
+        //Poll out one node
+        Node cur = queue.poll(); 
+        //If this is the node we want, return it;
+        if (cur == target) {
+          return step;
+        }
+        //Offer all its neighbor to the queue, if not visited and valid
+        for (Node next : cur.adj()) {
+          if (!visited.contains(next)) {
+            queue.offer(next);
+            visited.add(next);
+          }
+        }
+      }
+      //Increase level
+      step++;
+    }
+  }
+  ```
 - 技巧：预先存一个 4-direction-array，用于帮助访问 neighbors --> `directions = {{0, 1}, {1, 0}, {0, -1}, {-1, 0}}`
 
 
@@ -2129,7 +2154,6 @@ Timsort的合并算法非常巧妙：
 ### BFS：广度优先搜索
 
 - Breadth-First Search
-
 - 场景：**适合解决与层数相关的 Tree 题目**
 - 模板
   - Init a Queue，初始值为 all entry points
@@ -2588,6 +2612,44 @@ TBD
 TBD
 
 
+
+## || 滑动窗口
+
+模板
+
+```java
+void slideWindow(String s, String t) {
+  Map<Char, Integer> need, window;
+  for (char c : t) {
+    need[c]++;
+  }
+  
+  int left = 0, right = 0;
+  int valid = 0;
+  //滑动到最右端为止
+  while (right < s.size()) {
+    char c = s[right]; //处理新加入的元素
+    right++; //右移窗口
+    ... //更新窗口内数据
+      
+    //判断左侧窗口是否要收缩
+    while (window needs shrink) {
+      char d = s[left]; //移出左侧元素
+      left++; //移动窗口左侧
+      ... //更新窗口内数据
+    }  
+  }
+}
+```
+
+
+
+例题
+
+- 最小覆盖子串
+- 字符串排列
+- 找所有字母异位词
+- 最长无重复子串
 
 ## || 哈希
 
