@@ -708,7 +708,61 @@ Follows
 
 
 
+## || 邮箱服务
 
+> https://interviewready.io/learn/system-design-course/gmail_design/service_registration_and_proxies
+
+**服务组件**
+
+- **API gateway**: 服务注册、代理
+
+  - Service Registry：存储映射：路径 - 服务注册、心跳
+  - Routing requests: 缓存上述映射
+  - Black list IPs：限流
+  - Translate requests：将外部的http请求，转换为内部的TCP请求；避免 large headers、提高效率
+
+- **Auth Service**
+
+  - DB: uid / pwd(token) / phone
+  - 问题：每个请求都要调 auth？—— cache data in API gateway --> 进一步优化为 Global cache，decouple
+
+- SMS Service
+
+- **Profile Service**
+
+  - Image: drive service，上传存储照片
+
+  - layout template -- NoSQL 存储
+
+    
+
+
+
+**发送、搜索邮件**
+
+- Email Store Table: 
+  - 邮件元数据：id / to / from / subject / ts
+  - 邮件内容：Json content
+
+- Virous Checker: for json content
+- Spam Detector: cron job, or MQ streaming 
+- Tag Table: id / tags. 
+  - 消费 MQ，打tag
+- Search:
+  - 相关表：email, content, tag；不适合 join
+  - ES：消费 MQ，存入es 
+
+![image-20221225132656964](../img/design/email.png)
+
+
+
+
+
+**Contacts & Groups**
+
+- 联系人存储：userId / userId / ts
+- 分组存储：groupId / userId
+- 消费MQ，自动存储联系人
 
 
 
