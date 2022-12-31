@@ -2875,7 +2875,7 @@ TBD
 
 - 场景
   
-  - 求最值：最长递增子序列、最小编辑距离
+  - **求最值**：最长递增子序列、最小编辑距离
   
 - 思路
 
@@ -3234,6 +3234,20 @@ TBD
 
   
 
+- 编辑距离
+
+  > 扩展：
+  >
+  > - 不光返回编辑距离，还返回具体的编辑方法？
+  > - 如果每个操作权重不同，如何计算最短编辑距离？
+
+  ```java
+  
+  
+  ```
+
+  
+
 - 53 - Max Subarray
 
 - 343 - Integer Break
@@ -3335,16 +3349,20 @@ TBD
 
   
 
-- **1143 - Longest Common Subsequence**: 两个字符串的最长公共子序列，允许不连续
+- **1143 - LCS, Longest Common Subsequence**: 两个字符串的最长公共子序列，允许不连续
 
+  > 只要涉及到子序列问题，十有八九需要动态规划解决。
+  >
+  > 
+  >
   > 场景：输入是两个 1D array
   >
-  > 状态：state(i, j) = string1(0, i) 与 string2(0, j) 的最长公共子序列
+  > 状态：`state(i, j)` = string1(0, i) 与 string2(0, j) 的最长公共子序列
   >
   > 子问题：
   >
   > - 如果当前位置 c1 == c2，则同时去掉当前位，答案 = `(i-1, j-1)` + 1；
-  > - 如果 c1 != c2，则分别去掉当前为，答案 = max( `(i-1, j)`,  `(i, j-1)` )
+  > - 如果 c1 != c2，则分别去掉当前位，答案 = max( `(i-1, j)`,  `(i, j-1)` )
   >
   > ![image-20221126150712260](../img/alg/dp_1143.png)
 
@@ -3588,11 +3606,75 @@ TBD
   }
   ```
 
-- 516 - Longest Palindromic Subsequence
+- **516 - Longest Palindromic Subsequence**，最长回文子串
+
+  ```java
+    Integer[][] memo;
+    public int longestPalindromeSubseq(String s) {
+      int n = s.length();
+      memo = new Integer[n][n];
+      return dp(s, 0, n - 1);
+    }
+  
+    private int dp(String s, int i, int j) {
+      if (i == j) {
+        return 1;
+      }
+      if (i > j || i < 0 || j >= s.length()) {
+        return 0;
+      }
+  
+      if (memo[i][j] != null) {
+        return memo[i][j];
+      }
+  
+      if (s.charAt(i) == s.charAt(j)) {
+        return memo[i][j] = dp(s, i + 1, j - 1) + 2;
+      } else {
+        return memo[i][j] = Math.max(
+            dp(s, i + 1, j    ),
+            dp(s, i,     j - 1));
+      }
+    }
+  
+  ```
+
+  
 
 - 873 - Length of Longest Fibonacci Subsequence
 
-- 1312 - Min Insertion Steps to Make a String Palindrome
+- **1312 - Min Insertion Steps to Make a String Palindrome**
+
+  ```java
+    Integer[][] memo;
+    public int minInsertions(String s) {
+      int n = s.length();
+      memo = new Integer[n][n];
+      return dp(s, 0, n - 1);
+    }
+  
+    private int dp(String s, int i, int j) {
+      if (i >= j || i < 0 || j >= s.length()) {
+        return 0;
+      }
+      if (memo[i][j] != null) {
+        return memo[i][j];
+      }
+      //如果首位字符相等，则无需更多步骤
+      if (s.charAt(i) == s.charAt(j)) {
+        return memo[i][j] = dp(s, i+1, j-1);
+      } else {
+      //否则优先将 [i, j-1]或[i+1, j]变成回文
+      // 注意此时不能 dp[i+1][j-1] + 2，因为这样肯定步骤更多！  
+        return memo[i][j] = Math.min(
+          dp(s, i+1, j),
+          dp(s, i, j-1)
+        ) + 1;
+      }
+    }
+  ```
+
+  
 
 - 312 - Burst Balloons
 
