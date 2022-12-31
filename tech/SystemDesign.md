@@ -1157,6 +1157,34 @@ https://systeminterview.com/design-a-chat-system.php
 
 
 
+## || Online Chess
+
+需求
+
+- Matching engine
+  - 匹配规则：rating + preference (country/hard)
+  - 请求存入 cache， TTL = 30s
+- Latency
+  - WebRTC，不要经过服务端——缺点是无法校验，可能出现 cheat
+  - WebSocket
+
+- Analysis engine：统计胜率，batching/streaming
+
+
+
+技术点
+
+- 缓存
+  - Consistent Hashing：如果宕机，涉及到数据迁移
+  - Sharding：不好扩展？如果要加机器，要停机维护
+- Thundering Herd：突发大量请求
+  - 例如gateway部署时，许多请求需要重连
+  - 缓解：让gateway轻量化，把connection管理剥离到新的服务上。
+
+
+
+
+
 
 
 
