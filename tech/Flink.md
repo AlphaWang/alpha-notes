@@ -176,16 +176,16 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 
 三大子组件
 
-- **Resource Manager**
-  - **指派 TaskManager 槽**：当 JM 申请 `TaskManager 处理槽`时，`ResourceManager` 会指示一个拥有空闲处理槽的 TaskManager 将其处理槽提供给 JobManager。
-  - **申请创建 TaskManager**：如果当前处理槽无法满足 JM 的请求，则`ResourceManager` 与资源提供者通信，让它们提供额外容器来启动更多 TM 进程。
 - **Dispatcher** 
-  - 启动 Web UI
-  - 处理 job 提交
-  - 创建 JobMaster
+  - Rest Interface
+  - Web UI
+  - 处理 job 提交，为每个 Job 启动 JobMaster
 - **JobMaster**
   - 每个 Job 对应一个 JobMaster；二者生命周期一致。
   - 将 job 分配到处理槽、监控 task 执行、协调 checkpointing
+- **Resource Manager**
+  - **指派 TaskManager 槽**：当 JM 申请 `TaskManager 处理槽`时，`ResourceManager` 会指示一个拥有空闲处理槽的 TaskManager 将其处理槽提供给 JobManager。
+  - **申请创建 TaskManager**：如果当前处理槽无法满足 JM 的请求，则`ResourceManager` 与资源提供者通信，让它们提供额外容器来启动更多 TM 进程。
 
 
 
@@ -706,43 +706,75 @@ API：同时指定 timestamp & watermark
 
 ![image-20220118000234100](../img/flink/flink-window-flow.png)
 
-- **Window Assigners**: assign events to windows (creating new window objects as necessary),  
-- **Window Functions**:  applied to the events assigned to a window.
-- **Triggers**: determine when to call the window function.
-- **Evictors**: remove elements collected in a window.
+- `Window Assigners`: assign events to windows (creating new window objects as necessary),  
+- `Window Functions`:  applied to the events assigned to a window.
+- `Window Triggers`: determine when to call the window function.
+- `Window Evictors`: remove elements collected in a window.
 
 
 
-### **Window Assigner**
-
-- **Session Window 会话窗口** 
-
-  - page views per session. 
-
-- **Sliding Time Window 滑动窗口**
-
-  - page views per minute computed every 10 seconds.
-
-- **Tumbling Time Window 滚动窗口**
-
-  - page views per minute. 
-  - 是特殊的滑动窗口：Window size == Window slide
-
-- **Tumbling Count Window**
-
-- **Global Window**
-
-  - 用户自己指定window策略
-
-  
+**1. Window Assigner**
 
 ![image-20220116233806080](../img/flink/time-window.png)
 
+- 用法
+  ```java
+  DataStream<T> input = ...;
+  // tumbling event-time windows
+  input.keyBy(<key selector>)
+    //or TumblingProcessingTimeWindows
+    .window(TumblingEventTimeWindows.of(Time.seconds(5))) 
+    .<windowed transformation>(<window function>);
+  ```
+
+  
+
+- **Session Window 会话窗口** 
+
+  - 例：page views per session. 
+  - Unaligned, variable-length
+    ![image-20230106202543874](../img/flink/agg-session-window.png)
+
+- **Sliding Time Window 滑动窗口 （HOP?）**
+
+  - 例：page views per minute computed every 10 seconds.
+
+  - 时间窗口大小固定、可以重叠；Aligned, fixed-length, overlapping
+
+    ![flink-windows-sliding](../img/flink/flink-windows-sliding.svg)
+
+- **Tumbling Time Window 滚动窗口**
+
+  - 将每条记录分配到特定的时间窗口；是特殊的滑动窗口：Window size == Window slide
+  - 例：page views per minute.；
+  - 时间窗口大小固定、不重叠，Aligned, fixed-length, non-overlapping
+
+  ![flink-windows-tumbling](../img/flink/flink-windows-tumbling.svg)
+
+- **Global Window**
+
+  - 用于自己指定window策略
+    ```java
+    stream.keyBy(...)
+      .window(GlobalWindows.create())
+      .trigger(new MyCustomTrigger()) //何时启动 Window Function 来处理窗口中的数据
+      .evictor(new MyCustomEvictor()) //剔除 window 中不需要的数据。
+      .process(...)
+    ```
+
+  
+
+- **Count Window**
+
+  
 
 
-### Window Trigger
 
-决定何时启动 Window Function 来处理窗口中的数据、何时将窗口内的数据清理。
+
+
+**2. Window Trigger**
+
+- 作用：决定何时启动 Window Function 来处理窗口中的数据、何时将窗口内的数据清理。
 
 | Window Trigger                  | 触发频率 | 功能                                                         |
 | ------------------------------- | -------- | ------------------------------------------------------------ |
@@ -756,12 +788,14 @@ API：同时指定 timestamp & watermark
 
 
 
-### Window Evictor
+**3. Window Evictor**
 
-作用：
+- 作用：
 
-- 剔除 window 中不需要的数据。
-- 可用于 Window Function 之前，或之后。
+  - 剔除 window 中不需要的数据。
+
+  - 可用于 Window Function 之前，或之后。
+
 
 | Window Evictor | 作用                                                         |
 | -------------- | ------------------------------------------------------------ |
@@ -773,7 +807,7 @@ API：同时指定 timestamp & watermark
 
 
 
-### Window Function
+**4. Window Function**
 
 3 种：reduce, aggregate, process
 
@@ -785,7 +819,7 @@ API：同时指定 timestamp & watermark
 
 - **全量元素 Function** 
 
-  - `ProcessWindowFunction`：性能较差
+  - `ProcessWindowFunction.java`：性能较差
 
     ```java
     //ProcessWindowFunction: 计算传感器的最大值
@@ -821,7 +855,7 @@ API：同时指定 timestamp & watermark
 
 - **增量元素 Function**
 
-  - `ReduceFunction`：类似 map reduce，累积
+  - **reduce()** - `ReduceFunction`：类似 map reduce，累积
 
     ```java
     // ReduceFunction：累加
@@ -838,10 +872,10 @@ API：同时指定 timestamp & watermark
 
     
 
-  - `AggregateFunction`：
+  - **aggregate()** - `AggregateFunction`：
 
     ```java
-    // AggregateFunction: 统计平均数
+    // AggregateFunction: 例如统计平均数
     DataStream<Tuple2<String, Long>> input = ...; 
     input
       .keyBy(<key selector>) 
@@ -854,16 +888,19 @@ API：同时指定 timestamp & watermark
       public Tuple2<Long, Long> createAccumulator() { 
         return new Tuple2<>(0L, 0L);
     	}
+      
       // 累加时：增加 sum & count
     	@Override
     	public Tuple2<Long, Long> add(Tuple2<String, Long> value, Tuple2<Long, Long> accumulator) {
     		return new Tuple2<>(accumulator.f0 + value.f1, accumulator.f1 + 1L); 
       }
+      
       // 结果：sum/count
     	@Override
     	public Double getResult(Tuple2<Long, Long> accumulator) { 
         return ((double) accumulator.f0) / accumulator.f1;
     	}
+      
       // 非核心：用于并发合并
       @Override
       public Tuple2<Long, Long> merge(Tuple2<Long, Long> a, Tuple2<Long, Long> b) { 
@@ -871,9 +908,9 @@ API：同时指定 timestamp & watermark
       } 
     }
     ```
-
+  
     
-
+  
   - `FoldFunction`
 
 
@@ -902,7 +939,7 @@ Q: 能否集成全量+增量的优点？
 
 
 
-## || 多流合并
+## || Join
 
 e.g. 每个用户的点击 **JOIN** 该用户最近十分钟的浏览
 
@@ -1016,6 +1053,8 @@ Q: Join 操作中的watermark 如何更新？对于不同输入流中的 waterma
 
 
 ## || ProcessFunction
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/process_function/ 
 
 ProcessFunction 可以访问：
 
@@ -1528,7 +1567,7 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 
 ### Windowing TVF
 
-> Windowing table-valued functions
+> Windowing Table-Valued Functions
 >
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-tvf/
 
@@ -1536,18 +1575,13 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 
 **TUMBLE**
 
-- 将每条记录分配到特定的时间窗口；
-- 时间窗口大小固定、不重叠；
-
-![flink-windows-tumbling](../img/flink/flink-windows-tumbling.svg)
+- 
 
 
 
 **HOP**
 
-- 时间窗口大小固定、可以重叠；
-
-![flink-windows-sliding](../img/flink/flink-windows-sliding.svg)
+- 
 
 
 
