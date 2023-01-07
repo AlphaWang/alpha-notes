@@ -101,14 +101,16 @@
 
 keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。另外，Operator state 也保存在机器节点本地。
 
-Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对于 `ValueState`，更建议使用 `MapState` 和 `ListState`，因为使用 RocksDBStateBackend 的情况下， `MapState` 和 `ListState` 比 `ValueState` 性能更好。 
+Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对于 `ValueState`，更建议使用 `MapState` 和 `ListState`。
+
+> 因为使用 RocksDBStateBackend 的情况下， `MapState` 和 `ListState` 比 `ValueState` 性能更好。 
 
 **State backend**
 
-- EmbeddedRocksDBStateBackend
+- `EmbeddedRocksDBStateBackend`
   - 本地磁盘
   - 慢10倍
-- HashMapStateBackend：Jvm heap.
+- `HashMapStateBackend`：Jvm heap.
   - 更快
 
 
@@ -172,6 +174,21 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 
 ### JobManager
 
+三大子组件
+
+- **Resource Manager**
+  - **指派 TaskManager 槽**：当 JM 申请 `TaskManager 处理槽`时，`ResourceManager` 会指示一个拥有空闲处理槽的 TaskManager 将其处理槽提供给 JobManager。
+  - **申请创建 TaskManager**：如果当前处理槽无法满足 JM 的请求，则`ResourceManager` 与资源提供者通信，让它们提供额外容器来启动更多 TM 进程。
+- **Dispatcher** 
+  - 启动 Web UI
+  - 处理 job 提交
+  - 创建 JobMaster
+- **JobMaster**
+  - 每个 Job 对应一个 JobMaster；二者生命周期一致。
+  - 将 job 分配到处理槽、监控 task 执行、协调 checkpointing
+
+
+
 流程
 
 - **JobGraph --> ExecutionGraph**：JM 将 JobGraph 转化成物理 Dataflow 图（ExecutionGraph），其中包含哪些可以并行执行的任务。
@@ -181,7 +198,7 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 
 
 
-要点
+要点：**协调**
 
 - Checkpoint 协调
 - JobGraph --> Execution Graph
@@ -193,13 +210,6 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 ![image-20220116234001575](../img/flink/flink-components-jobmanager.png)
 
 
-
-### ResourceManager
-
-流程
-
-- **指派 TaskManager 槽**：当 JM 申请 `TaskManager 处理槽`时，`ResourceManager` 会指示一个拥有空闲处理槽的 TaskManager 将其处理槽提供给 JobManager。
-- **申请创建 TaskManager**：如果当前处理槽无法满足 JM 的请求，则`ResourceManager` 与资源提供者通信，让它们提供额外容器来启动更多 TM 进程。
 
 
 
@@ -225,15 +235,18 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 
 - RPC 通信（Actor System）
 
-- Heartbeat with JobManager / RM
+- Heartbeat with JM (RM): 存活、状态、资源消耗信息
 
-- Data Exchange
+- TM 之间的 Data Exchange：数据流动到下一个节点
 
 - Memory Management
 
 - Register to RM
 
 - Offer Slots to JobManager
+
+  - 每个slot是一个线程
+
 
 ![image-20220116234053630](../img/flink/flink-components-taskmanager.png)
 
@@ -258,9 +271,12 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 ### JobGraph
 
 - 通过有向无环图，表达用户程序
+
 - 是不同接口程序的抽象表达：方便与 JobManager 通信
+
 - 是客户端和集群之间 Job 描述载体
-- 
+
+  
 
 
 
@@ -336,7 +352,7 @@ StreamGraph --> JobGraph
 
 # | DataStream API
 
-流程
+编码
 
 - 获取一个 Execution Env
 - 加载、创建初始数据
@@ -373,7 +389,6 @@ public class WindowWordCount {
             }
         }
     }
-
 }
 ```
 
@@ -388,7 +403,7 @@ StreamExecutionEnvironment 功能
 - TimeCharacteristic 管理
 - Transformation 存储与管理
 - StreamGraph 创建和获取
-- CacheFile 注册于管理
+- CacheFile 注册与管理
 - 任务提交与运行
 - 重启策略管理
 - StateBackend 管理
@@ -414,40 +429,46 @@ DataStream 转换操作
 - 合并多条流：
   - NonKeyed: `union`, `join`, `connect`
   - Keyed: `Interval join`
-- 拆分单条流：`split`
+- 拆分单条流：`split`, `keyBy`
 
 ![image-20220116233344476](../img/flink/flink-datastream-operators.png)
 
 
 
-## || 时间
+# | 时间
 
-时间设置：
+**时间设置：**
 
 ```java
 StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 ```
 
+
+
+## || 四种时间
+
 ![image-20220116233422906](../img/flink/flink-time.png)
 
-**Event Time**
+- **Event Time**
 
-- 事件发生的时间
-- 可以处理乱序数据
+  - 事件发生的时间
 
-**Storage Time**
+  - 可以处理乱序数据
 
-- 
 
-**Ingestion Time**
+- Storage Time
+  - 例如写入主题的时间
 
-- 
+- Ingestion Time
+  - SourceOperator 消费到的时间
 
-**Processing Time**
+- **Processing Time**
 
-- 处理时的机器本地时间
-- 处理过程最小延迟
+  - 处理时的机器本地时间
+
+  - 处理过程最小延迟
+
 
 
 
@@ -457,34 +478,33 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 >
 > In order to handle out-of-order events and distinguish between on-time and late events in streaming, we need to extract timestamps from events and make some kind of progress in time (so-called watermarks).
 >
-> When we receive a watermark, we think the event before the watermark should all be processed.
+> - 一旦收到 wm，则可以认为该 wm 之前的所有事件都已被处理。
+> - watermark defines when to stop waiting for earlier events.
+
+
 
 
 
 概念
 
-- Watermark 用于标记 Event-Time 的前进过程；
+- Watermark 本身也属于特殊的事件；用于标记 Event-Time 的前进过程；
 - Watermark 跟随 DataStream Event-Time 变动，并自身携带 TimeStamp；
 - Watermark 用于表明所有较早的时间已经（可能）达到；
-- Watermark 本身也属于特殊的事件；
-
-
 
 更新时机
 
 - 每当有新的最大时间戳事件出现时，则产生新的 Watermark；
 
-迟到事件
-
-- “迟到事件”：比当前 Watermark 更小的时间戳 会被忽略、不会触发统计操作。
-- watermark defines when to stop waiting for earlier events.
-
 
 
 并行中的 Watermark 
 
-- Source Operator 产生 watermark，下发给下游 Operator
-- 每个 Operator 根据 watermark 对 “自己的时钟” 进行更新、并将 watermark 发送给下游算子
+- **Source Operator 产生 watermark**，下发给下游 Operator
+- 每个 Operator 根据 watermark 对 “自己的时钟” 进行更新、并将 watermark 发送给下游算子。
+- 默认情况，多个input的wm是其中最小的wm，保证数据不丢。
+  - 例如消费多个 partition时，发到下游的 `wm = min(max hwm)`
+  - 如果某个partition没有数据，则无法计算出 min hwm，阻塞下游。——解决办法：标记为 **Idle Source**
+
 
 
 
@@ -492,12 +512,11 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 **Watermark & Window**
 
-- Watermark = Max EventTime - Late Threashold；
-- Late Threashold 越高，数据处理延时越高；
+- Watermark = Max EventTime - Late Threshold；Late Threshold 越高，数据处理延时越高；
 - 启发式更新；
 - 解决一定范围内的乱序事件；
 - 窗口触发条件：`Current Watermark > Window EndTime`
-- Watermark 的主要目的是告诉窗口不再会有比当前 Watermark 更晚的数据达到。
+- Watermark 的主要目的是告诉窗口不再会有比当前 Watermark 更晚的数据达到。——原理：Trigger event time *timers*.
 
 
 
@@ -509,33 +528,51 @@ env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
 
 API：同时指定 timestamp & watermark 
 
-- assignTimestampsAndWatermarks
-
-![image-20220117235238031](../img/flink/flink-watermark-timestamp-sample.png)
-
-- Connector 指定
-
+- assignTimestampsAndWatermarks 指定策略
   ```java
-  FlinkKafkaConsumer<MyType> kafkaSource = new FlinkKafkaConsumer<>("myTopic", schema, props);
+  //方式一：FlinkKafkaConsumer.assignTimestampsAndWatermarks
+  //Pre-partition watermarking.
+  DataStream<MyType> stream = env.addSource(
+    new FlinkKafkaConsumer<>().assignTimestampsAndWatermarks(WatermarkStrategy.forBoundedOutOfOrderness(Duration.ofSeconds(20))));
   
-  kafkaSource.assignTimestampsAndWatermarks(
-     WatermarkStrategy.forBoundedOutOfOrderness(Duration.ofSeconds(20))); 
-  
-  DataStream<MyType> stream = env.addSource(kafkaSource);
-  
+  //方式二：DataStream.assignTimestampsAndWatermarks
+  //Normal datastream watermarking.
+  env.addSource(new FlinkKafkaConsumer<>())
+     ..assignTimestampsAndWatermarks()
   ```
 
   
 
+- SourceOperator 指定固定值
+
+  ```java
+  collect(T element);
+  collectWithTimestamp(T element, long timestamp);
+  emitWatermark(Watermark wm);
+  
+  ```
+  
   
 
+- Watermark 是 StreamElement的子类，存储一个 timestamp
+  ```java
+  public final class Watermark extends StreamElement {
+    priate final long timestamp;
+  }
+  
+  public final class StreamRecord<T> extends StreamElement {
+    private T value; //Watermark 不包含value
+    private long timestamp;
+  }
+  ```
 
+  
 
 两种类型
 
-- Periodic Watermark
+- **Periodic Watermark**
 
-  - 常用。基于事件时间。
+  - 常用。based on a timer，间隔固定的时间插入 wm。
 
   - 原理：
 
@@ -559,7 +596,7 @@ API：同时指定 timestamp & watermark
 
     
 
-- Punctuated Watermark
+- **Punctuated Watermark**
 
   - Based on something in the event stream.
 
@@ -583,13 +620,77 @@ API：同时指定 timestamp & watermark
 
     
 
-
-
-
-
 **Watermark 选择：Latency vs. Completeness**
 
+- Longer delay: 越谨慎 越不会有数据丢失，但延时会增加。
+- Shorter delay: 如果希望更实时，则需容忍数据丢失。
 
+
+
+## || Late Event
+
+迟到事件
+
+> 例：
+>
+> - 插入 Watermark = ts - 6
+>
+> - W(15) 表示后续不会再出现 < 15 的事件。
+>
+> ![image-20230106114346387](../img/flink/watermark-example.png)
+
+
+
+- 但实际W(15)之后还是可能出现 < 15 的事件，例如6；Late Event 即是指比当前 Watermark 更小的时间戳事件。
+
+- **如何处理 Late Event**
+
+  - 默认忽略
+
+  - **Side Output**：发送到另一个stream 
+    https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/event_driven/#side-outputs 
+
+  ```java
+  OutputTag<Event> lateTag = new OutputTag<Event>("late"){};
+  
+  SingleOutputStreamOperator<Event> result = stream.
+      .keyBy(...)
+      .window(...)
+      //sideOutputLateData
+      .sideOutputLateData(lateTag)
+      .process(...);  
+  DataStream<Event> lateStream = result.getSideOutput(lateTag);
+  
+  //or
+  SingleOutputStreamOperator<Event> mainDataStrem = stream.process(
+  	new ProcessFunction<Event, Event>() {
+      @Override
+      public void processElement(Event v, Context ctx, Collector<Event> out) {
+        //emit data to regular output
+        out.collect(v);
+        //emit data to side output
+        ctx.output(outputTag, v);
+      }
+    });
+  ```
+
+  
+
+  - **allowedLateness**：specify an interval of *allowed lateness* during which the late events will continue to be assigned to the appropriate window(s)
+    ——收到 watermark 之后在等 N 个 timestamp.
+    —— N 即是 **Lateness**
+
+    ![image-20230106121102018](../img/flink/watermark-lateness.png)
+
+  ```java
+  stream.
+      .keyBy(...)
+      .window(...)
+      .allowedLateness(Time.seconds(10)) //为何不把watermark设长10s？
+      .process(...);
+  ```
+
+​		
 
 ## || Window
 
@@ -801,39 +902,6 @@ Q: 能否集成全量+增量的优点？
 
 
 
-**如何处理 Late Events:**
-
-- 默认忽略
-
-- **Side Output**：发送到另一个stream 
-  https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/event_driven/#side-outputs 
-
-  ```java
-  OutputTag<Event> lateTag = new OutputTag<Event>("late"){};
-  
-  SingleOutputStreamOperator<Event> result = stream.
-      .keyBy(...)
-      .window(...)
-      .sideOutputLateData(lateTag)
-      .process(...);
-    
-  DataStream<Event> lateStream = result.getSideOutput(lateTag);
-  ```
-
-  
-
-- **allowedLateness**：specify an interval of *allowed lateness* during which the late events will continue to be assigned to the appropriate window(s)
-
-  ```java
-  stream.
-      .keyBy(...)
-      .window(...)
-      .allowedLateness(Time.seconds(10)) //为何不把watermark设长10s？
-      .process(...);
-  ```
-
-
-
 ## || 多流合并
 
 e.g. 每个用户的点击 **JOIN** 该用户最近十分钟的浏览
@@ -901,7 +969,51 @@ Q: Join 操作中的watermark 如何更新？对于不同输入流中的 waterma
 
 # | Stateful Stream Processing
 
-底层 API，灵活性更大。
+## || Stateful
+
+- 为什么流式处理需要 Stateful? 
+  - 所有 DataStream function 都可以是 stateful: filter, map, flatmap, ...
+  - State 的存储：on-heap, off-heap, local-disk-backed storage.
+- 存储的内容：Keyed State
+  - ValueState<T>
+  - ListState<T>
+  - MapState<UK, UV>
+  - ReducingState<T>
+  - AggregatingState<IN, OUT>
+- 何时被 GC
+  - Flink 默认永久保留 state；
+  - 可以在 ProcessFunction 的同时使用 Timer 来清理状态；
+  - 使用 StateTtlConfig 来配置清理策略。
+
+
+
+## || Data Type
+
+- 基本类型：String, Long, Integer, Boolean, ... Array
+
+- 组合类型：
+
+  - Row：常用于 Table / SQL API
+    ```java
+    Row person = Row.of("Alpha", 30);
+    String name = person.get(0);
+    ```
+
+  - Tuples
+    ```java
+    Tuple2<String, Integer> person = new Tuple2<>("Alpha", 30);
+    String name = person.get(0);
+    ```
+
+  - POJOs
+
+- 数据序列化
+
+  - 因为数据会在不同TM之前传输，所以需要序列化、反序列化。
+  - 或自定义序列化器：`env.getConfig().registerTypeWithKyroSerializer(Type.class, Serializer.class)`
+  - 禁止 fallback to kyro，减少消耗: `env.getConfig().disableGenericTypes();`
+
+
 
 ## || ProcessFunction
 
@@ -910,6 +1022,21 @@ ProcessFunction 可以访问：
 - 时间
 - 状态
 - 定时器
+
+接口
+
+- 两个回调均有 Collector，可以 emit results
+- Context 可以访问 TimerService：获知当前的处理时间、Watermark、当前的time window
+
+```java
+//Process one element from the input stream.
+void processElement(I value, Context ctx, Collecot<O> out);
+
+//Called when a timer fires.
+void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
+```
+
+
 
 
 
@@ -2104,11 +2231,33 @@ https://ci.apache.org/projects/flink/flink-docs-release-1.11/dev/table/functions
 
 
 
-# | Flink Connector
+# | Connector
 
 > - develop connector tips: https://www.youtube.com/watch?v=ZkbYO5S4z18 
 > - develop connector example，口音重: https://www.youtube.com/watch?v=LCMfbGv38u8
 > - table api? https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks/ 
+
+
+
+## || Client
+
+用法：
+
+```java
+source = ...
+streamExecEnv.addSource(source);
+
+DataStream<SomeObject> dataStream = (...);
+sink = dataStream.addSink(sink);
+```
+
+例子：
+
+- Kafka Source
+  - Flink 自己管理 offset；
+  - 提交 offset：一般在 checkpointing 时提交；
+
+
 
 ## || Design
 
