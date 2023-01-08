@@ -137,7 +137,7 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 **概念**
 
 - **Snapshot**
-  - 包括指向每个数据源的指针（例如，到文件或 Kafka 分区的偏移量）、以及每个作业的有状态运算符的状态副本
+  - 包括指向每个数据源的指针（例如，到文件或 Kafka 分区的偏移量）、以及每个作业的有状态运算符的**状态副本**
 - **Checkpoint**
   - Flink 自动生成的 snapshot。可全量可增量。
 - **Externalized Checkpoint**
@@ -147,7 +147,41 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 
 
 
+**Fault Tolerance Guarantee**
 
+- Exactly once 
+  - Each event *affects the managed state* exactly once  
+  - Note: This does not mean that events are processed exactly once! 
+- At least once  
+  - Each event *affects the managed state* of a program at least once 
+- At most once 
+  - All state is lost in case of a failure
+
+
+
+原理
+
+- 利用 stream **replay** + **checkpointing**
+- 定期生成 Snapshot；恢复时加载最新快照
+- 挑战：如何在不暂停的情况下，生成一致性快照？
+  - Asynchronous Barrier Snapshotting (Chandy-Lamport) ——TODO
+
+
+
+### Backpressure
+
+- TM 之间的背压
+  ![image-20230107165135485](../img/flink/backpressure-tms.png)
+
+- TM 内部 Task 的背压
+  ![image-20230107165223975](../img/flink/backpressure-task.png)
+
+- 1.5 之后基于 Credit 的背压原理
+  ![image-20230107165351908](../img/flink/backpressure-credit.png)
+
+  - InputChannel 往下游发数据时，会告知 credit；下游返回剩余 local buffer 大小；上游只发送合适的数据大小。
+
+    
 
 
 
@@ -766,7 +800,14 @@ API：同时指定 timestamp & watermark
 
 - **Count Window**
 
-  
+- **CUMULATE Window** 
+
+  - 时间窗口大小**不固定**、可以重叠
+  - The `CUMULATE` function assigns elements to windows that cover rows within an initial interval of step size and expand to one more step size (keep window start fixed) every step until the max window size. 
+  - For example, you could have a cumulating window for 1 hour **step** and 1 day **max size**, and you will get windows: `[00:00, 01:00)`, `[00:00, 02:00)`, `[00:00, 03:00)`, …, `[00:00, 24:00)` for every day.
+
+  ![flink-windows-cumulating](../img/flink/flink-windows-cumulating.png)
+
 
 
 
@@ -1020,7 +1061,11 @@ Q: Join 操作中的watermark 如何更新？对于不同输入流中的 waterma
 - 何时被 GC
   - Flink 默认永久保留 state；
   - 可以在 ProcessFunction 的同时使用 Timer 来清理状态；
-  - 使用 StateTtlConfig 来配置清理策略。
+  - 使用 `StateTtlConfig` 来配置清理策略。
+- State Backend
+  - RocksDBStateBackend
+  - FsStateBackend
+  - MemoryStateBackend
 
 
 
@@ -1147,7 +1192,9 @@ tableEnvironment
 
 ## || Dynamic Table
 
-动态表：基于无界序列，dynamic tables change over time. 
+定义
+
+- 动态表：基于无界序列，dynamic tables change over time. 
 
 
 
@@ -1565,7 +1612,7 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 
 
 
-### Windowing TVF
+**Windowing TVF**
 
 > Windowing Table-Valued Functions
 >
@@ -1573,39 +1620,15 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 
 
 
-**TUMBLE**
-
-- 
 
 
-
-**HOP**
-
-- 
-
-
-
-**CUMULATE**
-
-- 时间窗口大小**不固定**、可以重叠
-- The `CUMULATE` function assigns elements to windows that cover rows within an initial interval of step size and expand to one more step size (keep window start fixed) every step until the max window size. 
-- For example, you could have a cumulating window for 1 hour **step** and 1 day **max size**, and you will get windows: `[00:00, 01:00)`, `[00:00, 02:00)`, `[00:00, 03:00)`, …, `[00:00, 24:00)` for every day.
-
-![flink-windows-cumulating](../img/flink/flink-windows-cumulating.png)
-
-**SESSION**
-
-- will be supported soon
-
-
-
-### Window Aggregation
+**Window Aggregation**
 
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/#group-window-aggregation
 >
 > Group Window Aggregation 不推荐使用，更推荐 Window TVF Aggregation. 
 
-**Group Window Function**
+- **Group Window Function**
 
 | Group Window Function                | Description                                                  |
 | :----------------------------------- | :----------------------------------------------------------- |
@@ -1615,16 +1638,14 @@ Windows are at the heart of processing infinite streams. Windows split the strea
 
 
 
-**Auxiliary Function**
+- **Auxiliary Function**
 
-| Auxiliary Function                                           | Description                                                  |
-| :----------------------------------------------------------- | :----------------------------------------------------------- |
-| ***_START**<br /> `TUMBLE_START(time_attr, interval)` | `HOP_START(time_attr, interval, interval)` | `SESSION_START(time_attr, interval)` | Returns the timestamp of the inclusive lower bound of the corresponding tumbling, hopping, or session window. |
-| ***_END**<br />`TUMBLE_END(time_attr, interval)` | `HOP_END(time_attr, interval, interval)` | `SESSION_END(time_attr, interval)` | Returns the timestamp of the *exclusive* upper bound of the corresponding tumbling, hopping, or session window.**Note:** The exclusive upper bound timestamp *cannot* be used as a [rowtime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/) in subsequent time-based operations, such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
-| ***_ROWTIME**<br />`TUMBLE_ROWTIME(time_attr, interval)` | `HOP_ROWTIME(time_attr, interval, interval)` | `SESSION_ROWTIME(time_attr, interval)` | Returns the timestamp of the *inclusive* upper bound of the corresponding tumbling, hopping, or session window.The resulting attribute is a [rowtime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/) that can be used in subsequent time-based operations such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
-| ***_PROCTIME**<br />`TUMBLE_PROCTIME(time_attr, interval)`  | `HOP_PROCTIME(time_attr, interval, interval)`  | `SESSION_PROCTIME(time_attr, interval)` | Returns a [proctime attribute](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/concepts/time_attributes/#processing-time) that can be used in subsequent time-based operations such as [interval joins](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/joins/#interval-joins) and [group window](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-agg/) or [over window aggregations](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/over-agg/). |
-
-
+| Auxiliary Function                                     | Description                                   |
+| :----------------------------------------------------- | :-------------------------------------------- |
+| *_START<br /> `TUMBLE_START(time_attr, interval)`      | `HOP_START(time_attr, interval, interval)`    |
+| *_END<br />`TUMBLE_END(time_attr, interval)`           | `HOP_END(time_attr, interval, interval)`      |
+| *_ROWTIME<br />`TUMBLE_ROWTIME(time_attr, interval)`   | `HOP_ROWTIME(time_attr, interval, interval)`  |
+| *_PROCTIME<br />`TUMBLE_PROCTIME(time_attr, interval)` | `HOP_PROCTIME(time_attr, interval, interval)` |
 
 ```sql
 INSERT INTO ConsoleSink
@@ -1641,13 +1662,11 @@ INSERT INTO ConsoleSink
 
 
 
-### Window TopN
+**Window TopN**
 
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/topn/
 >
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-topn/
-
-
 
 ```sql
 SELECT *
@@ -1671,7 +1690,7 @@ SELECT *
 
 
 
-### Window Join
+**Window Join**
 
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/sql/queries/window-join/
 
@@ -2594,7 +2613,68 @@ class DraftCommitter implements Committer<Draft> {
 
 
 
+# | Ops
 
+## || Metrics
+
+
+
+- 是否运行正常告警 `fullRestarts > threshold`
+- 恢复是否顺利告警 `restartingTime > threshold`
+- 吞吐量 `numRecords(In|Out)PerSecond`
+- **处理进度** 告警`currentProcessingTime - currentOutputWatermark > threshold` 
+  - 也有可能是 watermark 生成策略有问题
+- Lag 告警 `records-lag-max > threshold`
+  - flink 是在checkpoint 成功后才提交 offset，所以lag是周期性的。
+- Checkpoint 
+  - 失败告警`numberOfFailedCheckpoints > threshold`
+  - `numberOfCompletedCheckpoints`
+  - `lastCheckpointSize`
+
+
+
+## || Troubleshooting
+
+Production Readiness
+
+- 设置 max parallelism
+- 每个 Operator 都要设置 UUID
+- 选择合适的 State backend
+- 设置 JobManager HA
+
+
+
+Q：Memory 问题
+
+- TM 内存粒度：JVM, Slot, SubTask
+- Slot sharing 可能影响内存
+- 配置参数
+  - Total Flink Memory `taskmanager.memory.flink.size`
+  - Total Process Memory `taskmanager.memory.process.size`
+
+
+
+Q：消费没有进度、有 Lag
+
+- 确保上游有流量
+- 检查 Backpressure （从web ui）
+- 找到 block operator、检查其 metrics
+
+
+
+Q：Checkpoint Fail
+
+- 检查 Backpressure：插入的 barrier 会因为背压导致无法及时处理；
+- 检查 Operator 逻辑是否超时
+- State 太大
+
+
+
+Q：Connector Fail
+
+- 检查服务状态：kafka cluster, ...
+- 加入重试逻辑、处理通用 Exception
+- 检查防火墙
 
 
 
