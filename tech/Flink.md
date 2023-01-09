@@ -1140,13 +1140,16 @@ void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
 
 **DataStream 转为 Table**
 
+- 每条记录相当于是对 table 的 INSERT，类似 CDC
+
 ```java
-// Convert the DataStream into a Table with default fields "f0", "f1" 
+//Convert the DataStream into a Table with default fields "f0", "f1" 
 Table table1 = tableEnv.fromDataStream(stream);
-// Convert the DataStream into a Table with fields "myLong", "myString" 
+
+//Convert the DataStream into a Table with fields "myLong", "myString" 
 Table table2 = tableEnv.fromDataStream(stream, $("myLong"), $("myString"));
 
-// 逻辑表 register the DataStream as View "myTable" with fields "f0", "f1" 
+//逻辑表 register the DataStream as View "myTable" with fields "f0", "f1" 
 tableEnv.createTemporaryView("myTable", stream);
 // register the DataStream as View "myTable2" with fields "myLong", "myString" 
 tableEnv.createTemporaryView("myTable2", stream, $("myLong"), $("myString"));
@@ -1155,9 +1158,6 @@ tableEnv.createTemporaryView("myTable2", stream, $("myLong"), $("myString"));
 
 
 **Table 转为 DataStream**
-
-- Append mode
-- Retract mode
 
 ```java
 // convert the Table into an append DataStream of Row by specifying the class 
@@ -1195,6 +1195,9 @@ tableEnvironment
 定义
 
 - 动态表：基于无界序列，dynamic tables change over time. 
+- Querying dynamic tables yields a `Continuous Query` 
+  - A continuous query never terminates and produces a dynamic table as result.
+  - 持续查询的结果会不断更新。
 
 
 
@@ -1241,33 +1244,51 @@ tableEnvironment
 
 
 
-### Table --> Stream
+### Table to Stream
 
 https://nightlies.apache.org/flink/flink-docs-release-1.11/dev/table/streaming/dynamic_tables.html#table-to-stream-conversion 
+
+
+
+- Convert to **Retract** stream
+  - 
+- Convert to **Upsert** stream
+  - 
 
 -  **append-only 流**：INSERT
   ![image-20220119204144268](../img/flink/flink-dynamictable-stream-insert.png)
   
 - **Retract 流**：INSERT + DELETE
+  >INSERT --> add
+  >
+  >DELETE --> retract
+  >
+  >UPDATE --> retract & add
   
-  - 先 delete 再 insert，实现 update 效果
+  - UPDATE: 先 delete 再 insert，实现 update 效果
     ![image-20220119204247811](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-insertdelete.png)
   
 - **Upsert 流**：UPSERT + DELETE
 
+  > INSERT --> upsert
+  >
+  > DELETE --> delete
+  >
+  > UPDATE --> upsert：更新操作不像 Retract 那样生成多条记录
+  
   - 包含两种类型的 msg: upsert messages 和delete messages；
   
   - 根据 key 进行 update 和 delete
   
   - Q: 与 retract 流的区别？
   
-    The main difference to a retract stream is that `UPDATE` changes are encoded with a single message and hence more efficient.
+    The main difference to a retract stream is that `UPDATE` changes are encoded with a single message and hence more efficient. 
   
   ![image-20220119204343500](/Users/zhongxwang/dev/git/alpha/alpha-notes/img/flink/flink-dynamictable-stream-upsertdelete.png)
 
 
 
-### TimeStamp & Watermark 定义
+### TimeStamp & Watermark
 
 **创建**
 
@@ -1289,7 +1310,7 @@ CREATE TABLE FileSource (
     url VARCHAR,
     userId VARCHAR,
     `timestamp` BIGINT,
-    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`,1000)
+    WATERMARK wk FOR `timestamp` AS withOffset(`timestamp`, 1000)
 ) WITH (
     'connector.type'='File',
     'connector.path'='/tmp/test/test.txt'
@@ -1724,6 +1745,12 @@ SELECT *
 
 
 
+引入 Function:
+
+- `CREATE FUNCTION PARSE_MSG as 'com.ebay.bes.migration.verification.udf.MessageParserUdf';` 
+
+
+
 ### ScalarFunction
 
 **标量函数：ScalarFunction**
@@ -2110,19 +2137,17 @@ public static class LiteralFunction extends ScalarFunction {
 
 | Join type                    | Description                                                  | Left table type    | Right table type       | Scenario                                                     |
 | ---------------------------- | ------------------------------------------------------------ | ------------------ | ---------------------- | ------------------------------------------------------------ |
-| Side join                    | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`. | Dynamic fact table | Static dimension table | your business logic is that consuming the kafka topic and enrich every event with the dimension table in Cassandra/Couchbase/Mongo/Mysql/NuKV/Oracle/Restful |
-| Regular join                 | A dynamic table join another dynamic table. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
-| Interval join                | A dynamic table join another dynamic table within **time interval**. It is a `INNER join`. | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
-| Temporal table function join | A dynamic table join the side(lookup/dimension) table. It is a `LEFT JOIN`.  --> 与 Side Join 的区别？ | Dynamic fact table | Static dimension table | write your user defined side table then use side join or write a temporal table function then use it with Temporal table function join |
+| Side join                    | 动态表 join  side table (lookup/dimension)： `LEFT JOIN`.    | Dynamic fact table | Static dimension table | your business logic is that consuming the kafka topic and enrich every event with the dimension table in Cassandra/Couchbase/Mongo/Mysql/NuKV/Oracle/Restful |
+| Regular join                 | 两个动态表联合： `INNER join`.                               | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
+| Interval join                | 两个动态表在 **time interval** 内联合：`INNER join`.         | Dynamic fact table | Dynamic fact table     | join the data from one kafka topic with the data from another kafka topic |
+| Temporal table function join | 动态表 join  side table (lookup/dimension)： `LEFT JOIN`.  --> 与 Side Join 的区别？ | Dynamic fact table | Static dimension table | write your user defined side table then use side join or write a temporal table function then use it with Temporal table function join |
 
 
 
 
 
-- Side join vs. Temporal table function join
+- Side Join vs. Temporal Table Function Join
   - side join support async query and have cache function. It will take more effect to develop side join user defined table. 
-
-
 
 | Table type         | Operating constraints      |
 | :----------------- | :------------------------- |
@@ -2173,6 +2198,8 @@ Join 动态表
 ### Interval JOIN
 
 - 至少需要一个限制时间的 join 条件；
+
+  - State 会自动在该时间内过期。
 
 - 只支持 INNER JOIN.
 
@@ -2684,7 +2711,10 @@ Q：Connector Fail
 
 # | Reference
 
-- playground https://github.com/apache/flink-playgrounds 
+- playground https://github.com/apache/flink-playgrounds  
+- Sample: https://github.com/apache/flink-training
+  - https://github.com/ververica/flink-training 
+
 
 
 
