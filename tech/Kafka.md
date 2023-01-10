@@ -218,6 +218,242 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 
 
+### 存储
+
+**Partition 分配**
+
+- **选择 Broker**：Round-Robin
+
+  > 1. 先随机选一个 broker-1作为 partition-1 leader；依次选 broker-2 作为 partition-2 leader
+  >
+  > 2. 然后针对每个分区，从 leader broker 开始往后设置 follower
+  >
+  > 例如 partition-A : leader = broker-2, follower1 = broker-3, ...
+
+  - 配置 `broker.rack`，更高的可用性
+
+- **选择 目录**
+
+  - 使用 已有 partition 个数最少的那个目录；
+  - 考虑个数，而不考虑大小！
+
+
+
+**Segment**
+
+- **什么是 Segment**
+
+  - 一个 segment 对应一个数据文件。当达到segment限制时，会关闭当前文件，并创建一个新的。`log.segment.ms | bytes`
+
+  - active segment：当前正在写入的 segment，不会被删除；
+
+    > 可能导致 `log.retention.ms` 不生效：超出很多后才能被过期
+
+- **文件格式**
+
+  - DumpLogSegment 工具：查看segment文件内容
+  - 对于压缩过的消息，Broker 不会解压，而是直接存储为 Wrapper Message。
+
+  
+
+**Indexes**
+
+- 将 offset 映射到 segment 文件 + 文件内的位置
+
+
+
+**Compaction**
+
+- 原理
+  - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中待清理的 Segment：
+    - 条件1：topic `cleanup.policy = compact`
+    - 条件2：TopicPartition 状态为空，即没有其他 CleanerThread 在操作；
+    - 条件3：达到 `max.compaction.lag.ms`
+  - 构造 OffsetMap 记录每个 key 最新的 offset 以及对应的消息时间；
+  - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息、存入新 Segment；
+  - 对于已经完成 Compaction 流程的log进行删除，删除LogStartOffset 之前的所有 Segment
+
+
+
+### 请求处理
+
+> https://time.geekbang.org/column/article/110482
+
+**数据类型请求**
+
+- **PRODUCE**
+
+  > 来自生产者;
+  >
+  > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”
+  >
+  > 如果ack=all，leader 会将其暂存在 `Purgatory`，等到 ISR 复制完该消息
+
+- **FETCH**
+
+  > 来自消费者、Follower Replica；
+  >
+  > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”；
+  >
+  > 返回 response 使用 zero-copy !
+
+- **METADATA request**
+
+  > 可以发往任意 broker；
+  >
+  > 客户端据此才能知道 那个是Leader Replica，才能正确发送PRODUCE / FETCH 请求
+
+
+
+**控制类请求**
+
+- **LeaderAndIsr**
+
+  > Controller 发往--> Replicas
+  >
+  > 通知新的 Leader，开始接收客户端请求
+  >
+  > 通知其他 Follower，从 Leader 复制消息
+
+- **StopReplica**
+
+- **OffsetCommitRequest**
+
+- **OffsetFetchRequest**
+
+
+
+**原理 - Reactor 模式**
+
+- 隔离 控制类请求 vs. 数据类请求
+
+- 两套组件：网络线程池、IO线程池 都有两套
+
+
+
+**请求处理组件**
+
+- **SocketServer** - 接收请求
+
+- **Acceptor 线程** - 请求分发
+
+  - 轮询，将入站请求公平地分发到所有网络线程
+
+- **Processor Thread 网络线程池**
+
+  - `num.network.threads = 3`
+
+  - 负责与客户端通过网络读写数据
+
+    > 网络线程拿到请求后，并不自己处理，而是放入一个共享请求队列（Request Queue）中；
+    >
+    > 最后从 Response Queue 中找到response并返回给客户端
+
+- **Request Queue 共享请求队列**
+
+  > 所有网络线程共享
+
+- **IO 线程池**
+
+  - `num.io.threads = 8`
+  - 从 Request Queue 共享请求队列中取出请求，进行处理；包括写入磁盘、读取页缓存等
+
+- **Response Queue** 请求响应队列
+
+  - 每个网络线程专属，不共享；因为没必要共享了！！！
+
+- **Purgatory** 炼狱
+
+  - 作用：用来缓存延时请求。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
+
+    > case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
+    >
+    > Case-2: fetch requests with `min.bytes=1`
+
+  - 原理：Hierarchical Timing Wheels
+
+    > https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/ 
+    >
+    > - Timeout timer：
+    >   - DelayQueue: 插入复杂度 O(logn)
+    >   - Hierarchical Timing Wheel: 插入复杂度 O(m), m = 时间轮个数
+    >     - Tips: 循环数组取多长为宜？2的N次幂 --> 以便将 `取模运算` 优化为 `位运算` ：a % 2^n == a & (2^n - 1)
+    >     - 时间轮 + 最小堆：堆内存储有请求的时间格，避免空转。
+    > - Watcher list:  
+
+
+
+**TCP 连接管理**
+
+**生产者TCP连接管理**
+
+- TCP
+
+  - 多路复用请求：将多个数据流合并到一条物理连接。
+  - 同时轮询多个连接
+
+- **建立连接**
+
+  - 时机1：创建 Producer 时与 `bootstrap.servers` 建链
+
+    > Sender 线程：new KafkaProducer 时会创建“并启动” Sender 线程，该线程在开始运行时会创建与 `bootstrap.servers` 的连接 
+
+  - 时机2：更新元数据后，如果发现与某些 Broker 没有连接，则建链。
+
+    > 更新元数据的时机：
+    >
+    > 1. 给不存在的主题发送消息时，Broker 返回主题不存在，Producer 会发送 METADATA;
+    > 2. `metadata.max.age.ms` 定期更新元数据；
+    >
+    > 问题：会连接所有 Broker，浪费！
+
+  - 时机3：发送消息时，会连接到目标 Broker；
+
+  - 流程
+
+    1. 创建 KafkaProducer 实例；
+    2. 后台启动 Sender 线程，与 Broker 建立连接：连接到 `bootstrap.servers`；
+    3. 向某一台 broker 发送 METADATA 请求，获取集群信息；
+
+- **关闭连接**
+
+  - 主动关闭：`producer.close()`
+  - 自动清理：`connections.max.idle.ms` (broker端发起)
+
+- **更新集群元数据**
+
+  - 时机1：当给一个不存在的主题发消息：回复主题不存在，producer 会发送 metadata 请求刷新元数据；
+  - 时机2：`metadata.max.age.ms` 到期
+
+
+
+**消费者 TCP 连接管理**
+
+- **创建连接**
+
+  - 执行 poll() 时建链，`new KafkaConsumer()` 时并不创建连接。三个时机：
+
+    - 时机1：首次执行poll()，发送 FindCoordinator 请求时
+
+      > 目的：询问 Broker 谁是当前消费者的协调者；
+      >
+      > 策略：向集群中当前负载最小的 Broker 发送请求
+
+    - 时机2：连接协调者，执行组成员管理操作时
+
+      > 只有连接协调者，才能处理加入组、分配、心跳、位移提交等
+
+    - 时机3：消费数据时
+
+      > 与分区领导者副本所在 Broker 建立连接
+
+- 关闭连接
+
+  - 主动关闭： `KafkaConsumer.close()`、`kill`
+  - 自动关闭：`connection.max.idel.ms` 到期，默认9分钟
+
+
+
 
 
 ## || 生产者
@@ -354,7 +590,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-### 重试 & 乱序
+### 重试&乱序
 
 默认会自动重试；相关参数：`retries`, `delivery.timeout.ms`
 
@@ -1535,235 +1771,6 @@ try {
 
 
 # | 原理
-
-## || 请求处理
-
-> https://time.geekbang.org/column/article/110482
-
-**数据类型请求**
-
-- **PRODUCE**
-
-  > 来自生产者;
-  >
-  > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”
-  >
-  > 如果ack=all，leader 会将其暂存在 `Purgatory`，等到 ISR 复制完该消息
-
-- **FETCH**
-
-  > 来自消费者、Follower Replica；
-  >
-  > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”；
-  >
-  > 返回 response 使用 zero-copy !
-
-- **METADATA request**
-
-  > 可以发往任意 broker；
-  >
-  > 客户端据此才能知道 那个是Leader Replica，才能正确发送PRODUCE / FETCH 请求
-
-
-
-**控制类请求**
-
-- **LeaderAndIsr**
-
-  > Controller 发往--> Replicas
-  >
-  > 通知新的 Leader，开始接收客户端请求
-  >
-  > 通知其他 Follower，从 Leader 复制消息
-
-- **StopReplica**
-
-- **OffsetCommitRequest**
-
-- **OffsetFetchRequest**
-
-
-
-**原理 - Reactor 模式**
-
-- 隔离 控制类请求 vs. 数据类请求
-
-- 两套组件：网络线程池、IO线程池 都有两套
-
-
-
-**请求处理组件**
-
-- **SocketServer** - 接收请求
-
-- **Acceptor 线程** - 请求分发
-  
-  - 轮询，将入站请求公平地分发到所有网络线程
-  
-- **Processor Thread 网络线程池**
-
-  - `num.network.threads = 3`
-
-  - 负责与客户端通过网络读写数据
-
-    > 网络线程拿到请求后，并不自己处理，而是放入一个共享请求队列（Request Queue）中；
-    >
-    > 最后从 Response Queue 中找到response并返回给客户端
-
-- **Request Queue 共享请求队列**
-
-  > 所有网络线程共享
-
-- **IO 线程池**
-  - `num.io.threads = 8`
-  - 从 Request Queue 共享请求队列中取出请求，进行处理；包括写入磁盘、读取页缓存等
-
-- **Response Queue** 请求响应队列
-  
-  - 每个网络线程专属，不共享；因为没必要共享了！！！
-  
-- **Purgatory** 炼狱
-  - 作用：用来缓存延时请求。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
-
-    > case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
-    >
-    > Case-2: fetch requests with `min.bytes=1`
-
-  - 原理：Hierarchical Timing Wheels
-
-    > https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/ 
-    >
-    > - Timeout timer：
-    >   - DelayQueue: 插入复杂度 O(logn)
-    >   - Hierarchical Timing Wheel: 插入复杂度 O(m), m = 时间轮个数
-    >     - Tips: 循环数组取多长为宜？2的N次幂 --> 以便将 `取模运算` 优化为 `位运算` ：a % 2^n == a & (2^n - 1)
-    >     - 时间轮 + 最小堆：堆内存储有请求的时间格，避免空转。
-    > - Watcher list:  
-
-
-
-**TCP 连接管理**
-
-**生产者TCP连接管理**
-
-- TCP
-  - 多路复用请求：将多个数据流合并到一条物理连接。
-  - 同时轮询多个连接
-
-- **建立连接**
-
-  - 时机1：创建 Producer 时与 `bootstrap.servers` 建链
-
-    > Sender 线程：new KafkaProducer 时会创建“并启动” Sender 线程，该线程在开始运行时会创建与 `bootstrap.servers` 的连接 
-
-  - 时机2：更新元数据后，如果发现与某些 Broker 没有连接，则建链。
-
-    > 更新元数据的时机：
-    >
-    > 1. 给不存在的主题发送消息时，Broker 返回主题不存在，Producer 会发送 METADATA;
-    > 2. `metadata.max.age.ms` 定期更新元数据；
-    >
-    > 问题：会连接所有 Broker，浪费！
-
-  - 时机3：发送消息时，会连接到目标 Broker；
-
-  - 流程
-
-    1. 创建 KafkaProducer 实例；
-    2. 后台启动 Sender 线程，与 Broker 建立连接：连接到 `bootstrap.servers`；
-    3. 向某一台 broker 发送 METADATA 请求，获取集群信息；
-
-- **关闭连接**
-  - 主动关闭：`producer.close()`
-  - 自动清理：`connections.max.idle.ms` (broker端发起)
-
-- **更新集群元数据**
-  - 时机1：当给一个不存在的主题发消息：回复主题不存在，producer 会发送 metadata 请求刷新元数据；
-  - 时机2：`metadata.max.age.ms` 到期
-
-
-
-**消费者 TCP 连接管理**
-
-- **创建连接**
-
-  - 执行 poll() 时建链，`new KafkaConsumer()` 时并不创建连接。三个时机：
-
-    - 时机1：首次执行poll()，发送 FindCoordinator 请求时
-
-      > 目的：询问 Broker 谁是当前消费者的协调者；
-      >
-      > 策略：向集群中当前负载最小的 Broker 发送请求
-
-    - 时机2：连接协调者，执行组成员管理操作时
-
-      > 只有连接协调者，才能处理加入组、分配、心跳、位移提交等
-
-    - 时机3：消费数据时
-
-      > 与分区领导者副本所在 Broker 建立连接
-
-- 关闭连接
-  - 主动关闭： `KafkaConsumer.close()`、`kill`
-  - 自动关闭：`connection.max.idel.ms` 到期，默认9分钟
-
-
-
-## || 存储
-
-**Partition 分配**
-
-- **选择 Broker**：Round-Robin
-
-  > 1. 先随机选一个 broker-1作为 partition-1 leader；依次选 broker-2 作为 partition-2 leader
-  >
-  > 2. 然后针对每个分区，从 leader broker 开始往后设置 follower
-  >
-  > 例如 partition-A : leader = broker-2, follower1 = broker-3, ...
-
-  - 配置 `broker.rack`，更高的可用性
-
-- **选择 目录**
-  
-  - 使用 已有 partition 个数最少的那个目录；
-  - 考虑个数，而不考虑大小！
-
-
-
-**Segment**
-
-- **什么是 Segment**
-
-  - 一个 segment 对应一个数据文件。当达到segment限制时，会关闭当前文件，并创建一个新的。`log.segment.ms | bytes`
-
-  - active segment：当前正在写入的 segment，不会被删除；
-
-    > 可能导致 `log.retention.ms` 不生效：超出很多后才能被过期
-
-- **文件格式**
-  - DumpLogSegment 工具：查看segment文件内容
-  - 对于压缩过的消息，Broker 不会解压，而是直接存储为 Wrapper Message。
-  
-  
-
-**Indexes**
-
-- 将 offset 映射到 segment 文件 + 文件内的位置
-
-
-
-**Compaction**
-
-- 原理
-  - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中待清理的 Segment：
-    - 条件1：topic `cleanup.policy = compact`
-    - 条件2：TopicPartition 状态为空，即没有其他 CleanerThread 在操作；
-    - 条件3：达到 `max.compaction.lag.ms`
-  - 构造 OffsetMap 记录每个 key 最新的 offset 以及对应的消息时间；
-  - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息、存入新 Segment；
-  - 对于已经完成 Compaction 流程的log进行删除，删除LogStartOffset 之前的所有 Segment
-
-
 
 
 
@@ -3195,7 +3202,7 @@ Kafka Retention 为什么不能过长？
 
 # | 运维
 
-## || 安装
+## || 安装&测试
 
 **Broker安装**
 
@@ -3305,7 +3312,9 @@ Kafka Retention 为什么不能过长？
     --entity-name test
   ```
 
-## || 测试
+
+
+**测试**
 
 - 发布消息 kafka-console-producer.sh
 
@@ -3368,47 +3377,6 @@ Kafka Retention 为什么不能过长？
   ```
 
   
-
-
-
-## || 流处理应用搭建
-
-组件
-
-- Kafka Connect + Kafka Core + Kafka Streams
-
-其他方案
-
-- Flume + Kafka + Flink
-- Spark Streaming
-- Flink
-
-
-
-安装
-
-- **Kafka Connect 组件：**
-
-  > 负责收集数据：KV存储，数据库，搜索系统，文件
-
-  ```shell
-  cd kafka_2.12-2.3.0
-  
-  bin/connect-distributed.sh config/connect-distributed.properties
-  
-  # 创建
-  $ curl -H "Content-Type:application/json" -H "Accept:application/json" http://localhost:8083/connectors -X POST --data '
-  {"name":"file-connector","config":{"connector.class":"org.apache.kafka.connect.file.FileStreamSourceConnector","file":"/var/log/access.log","tasks.max":"1","topic":"access_log"}}'
-  {"name":"file-connector","config":{"connector.class":"org.apache.kafka.connect.file.FileStreamSourceConnector","file":"/var/log/access.log","tasks.max":"1","topic":"access_log","name":"file-connector"},"tasks":[],"type":"source"}
-  ```
-
-
-
-- **Kafka Streams 组件**
-
-  > 负责实时处理
-
-
 
 ## || 管理工具
 
@@ -3568,10 +3536,6 @@ try (AdminClient client = AdminClient.create(props)) {
   > 验证副本
 
 
-
-
-
-## || 配置参数
 
 ### 操作系统配置
 
@@ -4562,6 +4526,43 @@ kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
 
 
 # | Streaming
+
+组件
+
+- Kafka Connect + Kafka Core + Kafka Streams
+
+其他方案
+
+- Flume + Kafka + Flink
+- Spark Streaming
+- Flink
+
+
+
+安装
+
+- **Kafka Connect 组件：**
+
+  > 负责收集数据：KV存储，数据库，搜索系统，文件
+
+  ```shell
+  cd kafka_2.12-2.3.0
+  
+  bin/connect-distributed.sh config/connect-distributed.properties
+  
+  # 创建
+  $ curl -H "Content-Type:application/json" -H "Accept:application/json" http://localhost:8083/connectors -X POST --data '
+  {"name":"file-connector","config":{"connector.class":"org.apache.kafka.connect.file.FileStreamSourceConnector","file":"/var/log/access.log","tasks.max":"1","topic":"access_log"}}'
+  {"name":"file-connector","config":{"connector.class":"org.apache.kafka.connect.file.FileStreamSourceConnector","file":"/var/log/access.log","tasks.max":"1","topic":"access_log","name":"file-connector"},"tasks":[],"type":"source"}
+  ```
+
+
+
+- **Kafka Streams 组件**
+
+  > 负责实时处理
+
+
 
 ## || Connect
 
