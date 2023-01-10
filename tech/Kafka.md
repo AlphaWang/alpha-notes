@@ -141,13 +141,12 @@ One way to think about the relationship between messaging systems, storage syste
   > 2. 控制器先写入 ZK，然后向包含新 leader、原有 follower 的 broker 发送请求，告知新的 leader/follower 信息；
   > 3. 新 leader 处理生产者消费者请求、follower 则从新 leader 复制消息；
   >
-  > 
-  >
+  
   > 当有Broker加入
   >
   > 1. 控制器根据 Broker ID 检查新 broker 是否已有 repilcas；
   > 2. 如果已有，则通知 brokers，新 broker 则会从已有的 leader 处复制消息；
-
+  
 - **主题管理**
 
   - 创建、删除、增加分区：kafka-topics 执行时，后台大部分工作是控制器完成
@@ -219,19 +218,29 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 
 
+
+
 ## || 生产者
 
 ### 发送流程
+
+![image-20230108224804050](../img/kafka/produce-flow-highlevel.png)
+
+![image-20230108224918462](../img/kafka/produce-flow.png)
 
 **准备**
 
 - **0. 创建 KafkaProducer** 
 
+  - 线程安全！可以在多个线程中使用同一个 KafkaProducer，建议全局变量。
+
+  - 
+
 - **1. 创建 ProducerRecord**
 
-  > 必选：Topic / Value
+  > 必选：Topic, Value
   >
-  > 可选：Key / Partition
+  > 可选：Key, Partition
   >
   > - Batch 批量发送：权衡吞吐量 vs. 延时
   > - 元数据
@@ -263,30 +272,32 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
   > 分区机制
   >
-  > - 如果已指定 Partition：不做处理
+  > - **如果已指定 Partition**：不做处理
   >
-  > - 如果已指定 Key: 按Key分区
+  > - **如果已指定 Key**: 按 Key Hash 分区
   >
   >   ```java
-  >     List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
-  >     return Math.abs(key.hashCode()) % partitions.size();
+  >   List<PartitionInfo> partitions = cluster.partitionsForTopic(topic);
+  >   return Math.abs(key.hashCode()) % partitions.size();
   >   ```
   >
   >   - 使用 Kafka 自己特定的散列算法
   >   - 如果增加 Partition，相同 key 可能会分到另一个Partition --> 建议提前规划，不要随意增加分区
   >
-  > - 自定义分区器：场景 - 某个 key 数据量超大，需要写入专门的分区；
+  > - **自定义分区器**：场景 - 某个 key 数据量超大，需要写入专门的分区；
   >
   >   ```java
   >   // 实现Partitioner接口
   >   int partition(String topic, Object key, byte[] keyBytes, Object value, byte[] valueBytes, Cluster cluster);
   >   ```
   >
-  > - key == null && 没有分区器，则 Round-robin 平衡
+  > - key == null && **没有分区器**：则 Round-robin 平衡
 
 - **4. 记录到 batch** 
 
   > 同一个batch的记录，会发送到相同的Topic / Partition
+  >
+  > - 每个分区对应一个 `RecordAccumulator`
 
 - **5. 单独 Sender 线程 发送batch 到相应的 Broker** 
 
@@ -343,7 +354,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-### 重试
+### 重试 & 乱序
 
 默认会自动重试；相关参数：`retries`, `delivery.timeout.ms`
 
@@ -365,7 +376,25 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
   - 实现回调 `onCompletion()` 
 
-    
+
+
+
+### 幂等
+
+- 客户端：发送时引入两个字段
+
+  - `seq`：每条消息赋予唯一ID
+
+  - `PID`：唯一的生产者ID
+
+- 服务端：服务端收到消息，对比存储的**最后一条ID**，如果一样，则认为是重复消息丢弃
+
+- 配置
+
+  - `enable.idempotence = true`
+  - `acks = all`  保证数据一致性，否则seq顺序可能乱
+  - `retries > 1` 否则可能丢消息
+  - `max.in.flight.requests.per.connection <= 5` ——为什么是5？
 
 
 
@@ -410,9 +439,13 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 ### 消费流程
 
+![image-20230108233205178](../img/kafka/consume-workflow-highlevel.png)
+
 **准备**
 
 - **0. 创建 kafkaConsumer** 
+
+  - 非线程安全！
 
 - **1. subscribe(topics)** 
 
@@ -422,7 +455,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
   > - 同时注册多个主题，如果有新主题匹配，会触发 Rebalance；
   >
 
-或者作为 standalone 消费者 `consumer.assign(partitions)`
+  - 或者作为 standalone 消费者直接 **assign** 分区： `consumer.assign(Collections.singleton(new TopicPartition("real-donald-trump", 1)));` ——此时无需指定 group.id
 
 
 
@@ -455,12 +488,10 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 - **3. consumer.wakeup()** 
 
-  > 从另一个线程调用，例如 `addShutdownHook()` 中调用；
-  >
-  > 然后 poll() 会抛出 WakeupException，该异常无需处理；
+  > 从另一个线程调用，例如 `addShutdownHook()` 中调用；然后 poll() 会抛出  WakeupException，该异常无需处理；
   >
   > --> Q：wakeup() 用户在其他线程中关闭一个 Consumer
-
+  
 - **4. commit / close** 
 
   > 会马上触发 Rebalance，而无需等待 GroupCoordinator  被动发现；
@@ -487,7 +518,34 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-### 多线程消费
+### Group Coordination
+
+Consumer 的几类请求：
+
+- **1. GroupCoordinatorRequest** 找到 group coordinator
+
+  - 消费者启动时发送，发往任一 broker
+  - broker 返回协调者
+
+- **2. JoinGroupRequest** 加入 group
+
+  - Coordinator 负责选出 `consumer group leader` 
+  - Coordinator 返回 JoinGroupResponse 给 leader：包含各成员的 instanceId
+
+- **3. Leader: 分区分配**
+
+  - 注意是在消费者客户端配置 分区分配策略的！
+  - `PartitionAssignor#assign()`
+
+- **4. Leader: SyncGroupRequest** 同步分区分配信息
+
+  - Coordinator 转发给所有消费者
+
+  
+
+
+
+### Multi-Threading
 
 **1. 粗粒度：每个线程启一个 KafkaConsumer**
 
@@ -552,7 +610,8 @@ while (true)  {
   ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
   
   for (ConsumerRecord record : records) {
-	   executors.submit(new Worker(record));
+    // 每个线程处理一个 Record
+	  executors.submit(new Worker(record)); 
   }
 }
 
@@ -588,8 +647,7 @@ https://www.jianshu.com/p/da62e853c1ea
     - Broker 地址、
     - 版本号、
     - 启动时间
-
-
+  
   ```sh
   ## Schema:
   {
@@ -708,218 +766,6 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-## || Rebalance
-
-**触发条件**
-
-- **消费者组成员数目变更**
-  - 增加、离开、崩溃
-  - 避免不必要的重平衡：被协调者错误地认为消费者已离开
-- **主题数变更**
-  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
-- **分区数变更**
-  - 增加
-
-
-
-**重平衡的问题**
-
-- **Rebalance 过程中，所有 consumer 停止消费**
-  - STW
-  - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
-  
-- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
-  - 未考虑局部性原理
-
-- **Rebalance 过程很慢**
-
-
-
-**什么是不必要的重平衡？**
-
-- 被 coordinator “错误地”认为已停止
-
-- 组员减少导致的 rebalance
-
-
-
-**避免不必要的重平衡**
-
-- **避免“未及时发心跳”而导致消费者被踢出**
-
-  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
-  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
-  
-- **避免“消费时间过长”而导致被踢出**
-
-  - *max.poll.interval.ms* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
-  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
-    
-
-- **GC调优**
-
-  - Full GC导致长时间停顿，会引发 rebalance
-
-  
-
-**重平衡监听器 ConsumerRebalanceListener**
-
-作用
-
-- 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
-
-- 当被分配到一个新分区时，seek 到指定的 offset处
-
-
-
-接口
-
-- `onPartitionsAssigned(partitions)`
-  - 触发时间：消费者停止消费之后、rebalance 开始之前
-  - 常见操作：清理状态、seek()
-
-- `onPartitionsRevoked(partitions)`
-  - 触发时间：rebalance 之后、消费者开始消费之前
-  - 常见操作：提交 offset；注意要用 commitSync()，确保在 rebalance **开始？**之前提交完成
-
-- `subscribe(topics, listener)` 指定监听器
-
-
-
-```java
-Map<TopicPartition, OffsetAndMetadata> currOffsets = new HashMap();
-
-class HandleRebalance implements ConsumerRebalanceListener {
-  // 消费者停止消费之后、rebalance开始之前
-  public void onPartitionsAssigned(Collection<TopicPartition> partitions) {}
-  
-  //Rebalance Revoked: 重平衡之后，commitSync提交偏移量
-  public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-    consumer.commitSync(currOffsets);
-  }
-}
-
-try {
-  //subscribe 时传入监听器
-  consumer.subscribe(topics, new HandleRebalance());
-  
-  while (true) {
-    // 轮询
-    ConsumerRecords<String, String> records =  consumer.poll(100);
-    for (ConsumerRecord record : records) {
-       process(record); 
-       //记录当前处理过的偏移量
-       currOffsets.put();
-    }
- 
-    // commitAysnc 使用异步提交规避阻塞
-    commitAysnc(currOffsets, null);
-  }
-} catch (WakeupException e) {
-  // ignore.
-} catch (Exception e) {
-   handle(e); 
-} finally {
-   try {
-     // 最后一次提交使用同步阻塞式提交
-     consumer.commitSync(currOffsets);     
-	 } finally {
-	   consumer.close();
-   }
-}
-
-```
-
-
-
-**重平衡原理**
-
-如何通知消费者进行重平衡？
-
-- **心跳线程**
-- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
-  - `heartbeat.interval.ms`：控制重平衡通知的频率
-  
-- **Group Coordinator**
-
-  - 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
-
-
-
-**重平衡过程消费者组状态流转**
-
-- 状态
-  - Empty：组内没有任何成员，但可能存在已提交的位移
-  - Dead：组内没有任何成员，且组的元数据信息已在协调者端移除
-  - PreparingRebalance：消费者组准备开启重平衡
-  - CompletingRebalance：消费者组所有成员已加入，正在等待分配方案。= AwaitingSync ?
-  - Stable：分配完成
-
-- 流转
-
-  - 初始化
-
-    > Empty --> PreparingRebalance --> CompletingRebalance --> Stable
-
-  - 成员加入/退出
-
-    > Stable --> PreparingRebalance
-    >
-    > 所有成员重新申请加入组
-
-  - 所有成员退出
-
-    > Stable --> PreparingRebalance --> Empty
-    >
-    > kafka定期自动删除empty状态的过期位移
-
-
-
-**重平衡流程**
-
-- 场景一：Consumer 端重平衡
-
-  - **JoinGroup 请求**
-
-    1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
-    2. 选出 Leader Consumer
-       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
-       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
-       - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
-       - 最后 Leader Consumer 发送 SyncGroup 请求
-  
-    > Q：为什么引入 Leader Consumer？可否协调者来分配？
-    >
-    > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
-
-    
-
-  - **SyncGroup请求**
-  
-    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
-    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
-    3. 消费者进入 Stable 状态
-
-
-
-- 场景二：Broker 端重平衡
-
-  - **新成员入组  JoinGroup**
-
-    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡；
-
-  - **组成员主动离组 close()： LeaveGroup** 
-
-    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
-
-  - **组成员崩溃离组**
-
-    > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
-    >
-    > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
-
-
-
 # | 逻辑组件
 
 
@@ -1008,7 +854,7 @@ try {
     
   - **不对外提供服务**
   
-  > 好处：
+    > 好处：
     >
     > 1. 实现 Read Your Writes：写入后马上读取，没有 lag
     > 2. 实现单调读 Monotonic Reads：不会看到某条消息一会儿存在一会儿不存在
@@ -1105,14 +951,14 @@ try {
 - 分区的高水位  == Leader 副本的高水位
   
 - **HWM 作用**
+  
   - 定义消息可见性：消费者只能拉取高水位之前的消息
-
+  
     > 高水位以上的消息属于未提交消息。即：消息写入后，消费者并不能马上消费到！
-
+  
   - 实现异步的副本同步 - [TBD]
-
+  
     https://time.geekbang.org/column/article/112118
-
 
 
 
@@ -1127,6 +973,7 @@ try {
   - 2. 如果某个 Follower 落后太多，则从 ISR 中删除
 
 - **Leader 副本**
+  
   - 1. 处理生产者写入消息
        - 写入本地磁盘
        - 更新分区高水位值：`HW = max{HW, min(所有远程副本LEO)}`
@@ -1134,7 +981,7 @@ try {
        -  读取磁盘/页缓存中的消息数据；
        - 更新远程副本LEO值 = 请求中的位移值；
        - 更新分区高水位置：`HW = max{HW, min(所有远程副本LEO)}`
-
+  
 - **Follower 副本**：异步拉取
 
   - 1. Leader 副本收到一条消息，更新状态
@@ -1166,12 +1013,6 @@ try {
     > 为何要 Truncate log?
     >
     > 新 Leader 可能并未完全catch up，或者新Leader 上次fsync 更久远，truncate 可以避免出现数据不一致。
-
-  - 
-
-
-
-
 
 
 
@@ -1205,7 +1046,7 @@ try {
 
 - **原因**
   
-- Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
+  - Leader/Follower的高水位更新存在时间错配；因为Follower的高水位要额外一次拉取才能更新
   
 - **解决： Leader Epoch**
   - 取值
@@ -1290,12 +1131,11 @@ kafka-console-consumer.sh
 
   - 位移主题配置
 
-    > 第一个 consumer 启动时，自动创建位移主题
+    > 第一个 consumer 启动时，自动创建位移主题；
     >
-    > 分区数50：`offset.topic.num.partitions=50` 
-  >
-    > 副本数 3： `offset.topic.replication.factor=3`
-
+    > - 分区数50：`offset.topic.num.partitions=50` 
+    > - 副本数 3： `offset.topic.replication.factor=3`
+  
 - Tombstone消息
 
   - 墓碑消息，delete mark；表示要彻底删除这个group信息
@@ -1311,7 +1151,7 @@ kafka-console-consumer.sh
 
   - 每隔 N 秒自动提交一次位移
 
-    > Q: how? 单独线程计时？
+    > Q: how? 单独线程计时？——poll()
 
   - 开始调用 poll() 时，提交上次 poll 返回的所有消息
 
@@ -1321,12 +1161,12 @@ kafka-console-consumer.sh
 
 - 配置
 
-  > `enable.auto.commit=true`
-  >
-  > `auto.commit.interval.ms=5000`
-  >
-  > - vs. poll 间隔？
-  > - interval.ms 表示最小间隔，实际提交间隔可能大于该值
+  - `enable.auto.commit=true`
+  
+  - `auto.commit.interval.ms=5000`  表示最小间隔，实际提交间隔可能大于该值
+  
+  
+  > vs. poll 间隔？
 
 - 缺点
   - **consumer 不关闭 就会一直写入位移消息；导致位移主题越来越大。**
@@ -1390,9 +1230,9 @@ while (true) {
 
 - **组合 同步 + 非同步**
 
-  > 轮询中：commitAsync()，避免阻塞
+  > - 轮询中：commitAsync()，避免阻塞
   >
-  > 消费者关闭前：commitSync()，确保关闭前保存正确的位移， 因为这是rebalance前的最后一次提交机会
+  > - 消费者关闭前：commitSync()，确保关闭前保存正确的位移， 因为这是rebalance前的最后一次提交机会
 
 ```java
 try {
@@ -1465,39 +1305,41 @@ while (true) {
 
   - `Latest` 从最新消息处开始消费
 
-  - `Current` 重设到当前最新提交位移处。
+  - `Current` 重设到当前最新提交位移处。场景：修改了消费者代码，并重启消费者后。
 
-    > 场景：修改了消费者代码，并重启消费者后。
-    >
-    > ```java
-    > consumer.partitionsFor(topic).stream().map(info -> 
-    > 	new TopicPartition(topic, info.partition()))
-    > 	.forEach(tp -> {
-    > 	  long committedOffset = consumer.committed(tp).offset();
-    >        consumer.seek(tp, committedOffset);
-    > });
-    > ```
+    ```java
+    consumer.partitionsFor(topic).stream().map(info -> 
+    	new TopicPartition(topic, info.partition()))
+    	.forEach(tp -> {
+    	  long committedOffset = consumer.committed(tp).offset();
+        consumer.seek(tp, committedOffset);
+    });
+    ```
+    
+    
 
   - `Specified-Offset` 手动跳过错误消息的处理。
 
-    > ```java
-    > long targetOffset = 1234L; // 指定 offset
-    > 
-    > for (PartitionInfo info : consumer.partitionsFor(topic)) {
-    > 	TopicPartition tp = new TopicPartition(topic, info.partition());
-    > 	consumer.seek(tp, targetOffset);
-    > }
-    > ```
+    ```java
+    long targetOffset = 1234L; // 指定 offset
+    
+    for (PartitionInfo info : consumer.partitionsFor(topic)) {
+    	TopicPartition tp = new TopicPartition(topic, info.partition());
+    	consumer.seek(tp, targetOffset);
+    }
+    ```
+
+    
 
   - `Shift-By-N` 
-
-    > ```java
-    > for (PartitionInfo info : consumer.partitionsFor(topic)) {
-    >     TopicPartition tp = new TopicPartition(topic, info.partition());
-    >     long targetOffset = consumer.committed(tp).offset() + 123L; //SHIFT
-    >     consumer.seek(tp, targetOffset);
-    > }
-    > ```
+  
+    ```java
+    for (PartitionInfo info : consumer.partitionsFor(topic)) {
+     TopicPartition tp = new TopicPartition(topic, info.partition());
+     long targetOffset = consumer.committed(tp).offset() + 123L; //SHIFT
+     consumer.seek(tp, targetOffset);
+    }
+    ```
 
 
 
@@ -1556,24 +1398,26 @@ while (true) {
 
 - **seek()**
 
-  >  调用时机
-  >
-  > 1. 消费者启动时
-  >
-  > - subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 `consumer.seek(partition, offset)` 
-  > - 其中offset 自己管理，从存储中读取
-  >
-  > 2. onPartitionAssigned()
-  >
-  > - 对每个新分配的 partition，执行`consumer.seek(partition, offset)`
-  > -  其中offset 自己管理，从存储中读取
+
+  - **调用时机一：消费者启动时**
+
+    - subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 `consumer.seek(partition, offset)` 
+
+    - 其中offset 自己管理，从存储中读取
+
+  - **调用时机二：onPartitionAssigned()**
+
+    - 对每个新分配的 partition，执行`consumer.seek(partition, offset)`
+
+    - 其中offset 自己管理，从存储中读取
+
 
   ```java
   void seek(TopicPartition partition, long offset);
   void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata);
   ```
 
--  **seekToBeginning() / seekToEnd()**
+- **seekToBeginning() / seekToEnd()**
 
   ```java
   void seekToBeginning(Collection<TopicPartition> partitions);
@@ -1587,19 +1431,22 @@ while (true) {
 ```java
 // 重平衡 RebalanceListener
 class HandleRebalance implements ConsumerRebalanceListener {
-  // Assigned: 找到偏移量
+  
+  //Assigned: 找到偏移量
   public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
     for (TopicPartition p : partitions) 
       consumer.seek(p, getOffsetFromDB(p));
   }
-  // Revoked: 提交偏移量
+  
+  //Revoked: 提交偏移量
   public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
     commitDbTrx();
+    //直接commit到kfk?
+    //consumer.commitSync(currOffsets);
   }
 }
 
 try {
-  
   consumer.subscribe(topics, new HandleRebalance());
   consumer.poll(0);
   // subscribe 时恢复offset
@@ -1636,52 +1483,54 @@ try {
 
 
 
-
-
-**CommitFailedException**
-
-含义
-
-- 提交位移时发生**不可恢复**的错误
-
-- 而对于可恢复异常，很多 api 都是支持自动错误重试，例如 commitSync()
-
-
-
-**可能原因**
-
-- 消费者组开启 rebalance，并将要提交位移的分区分配给了另一个消费者
-
-  > 当超过 `max.poll.interval.ms` 配置的时间，Kafka server 认为 consumer 掉线了，于是就执行分区再均衡将这个 consumer踢出消费者组。但是 consumer 又不知道服务端把自己给踢出了，下次在执行 poll() 拉取消息的时候（**在poll()拉取消息之前有个自动提交offset的操作**），就会触发该问题。 
-
-- 深层原因：连续两次调用 poll 的间隔 超过了`max.poll.interval.ms`
-
-  > 因为触发了重平衡？
-
-- 冷门原因：Standalone 消费者的 groupId 与其他消费者组重复
-
-
-
-**规避**
-
-- 缩短单条消息处理的时间
-
-- 增大消费一批消息的最大时长：增大 `max.poll.interval.ms`
-
-- 减少poll方法一次性返回的消息数量：减小 `max.poll.records`
-
-- 多线程消费
-
-
-
 ### 问题
 
-Q: 消费者重启后，如何获取 offset？
+**Q: 消费者重启后，如何获取 offset？**
 
 -  去 位移主题 里查询？
 - Coordinator 会缓存
 
 
+
+**Q：CommitFailedException**
+
+- 含义
+
+  - 提交位移时发生**不可恢复**的错误
+
+
+  - 而对于可恢复异常，很多 api 都是支持自动错误重试，例如 commitSync()
+
+
+- **可能原因**
+
+  - 消费者组开启 rebalance，并将要提交位移的分区分配给了另一个消费者
+
+    > 当超过 `max.poll.interval.ms` 配置的时间，Kafka server 认为 consumer 掉线了，于是就执行分区再均衡将这个 consumer踢出消费者组。但是 consumer 又不知道服务端把自己给踢出了，下次在执行 poll() 拉取消息的时候（**在poll()拉取消息之前有个自动提交offset的操作**），就会触发该问题。 
+
+
+  - 深层原因：连续两次调用 poll 的间隔 超过了`max.poll.interval.ms`
+
+    > 因为触发了重平衡？
+
+
+  - 冷门原因：Standalone 消费者的 groupId 与其他消费者组重复
+
+
+
+
+- **规避**
+
+  - 缩短单条消息处理的时间
+
+
+  - 增大消费一批消息的最大时长：增大 `max.poll.interval.ms`
+
+
+  - 减少poll方法一次性返回的消息数量：减小 `max.poll.records`
+
+
+  - 多线程消费
 
 
 
@@ -1707,7 +1556,7 @@ Q: 消费者重启后，如何获取 offset？
   >
   > 必须发往 leader replica；否则会报错 “Not a Leader for Partition”；
   >
-  > 返回response使用 zero-copy !
+  > 返回 response 使用 zero-copy !
 
 - **METADATA request**
 
@@ -1872,9 +1721,7 @@ Q: 消费者重启后，如何获取 offset？
   >
   > 例如 partition-A : leader = broker-2, follower1 = broker-3, ...
 
-  - 配置 `broker.rack`
-
-    > 更高的可用性
+  - 配置 `broker.rack`，更高的可用性
 
 - **选择 目录**
   
@@ -1887,14 +1734,10 @@ Q: 消费者重启后，如何获取 offset？
 
 - **什么是 Segment**
 
-  - 一个 segment 对应一个数据文件
+  - 一个 segment 对应一个数据文件。当达到segment限制时，会关闭当前文件，并创建一个新的。`log.segment.ms | bytes`
 
-    > 当达到segment限制时，会关闭当前文件，并创建一个新的。`log.segment.ms | bytes`
+  - active segment：当前正在写入的 segment，不会被删除；
 
-  - active segment
-
-    > 当前正在写入的 segment，不会被删除；
-    >
     > 可能导致 `log.retention.ms` 不生效：超出很多后才能被过期
 
 - **文件格式**
@@ -1919,6 +1762,222 @@ Q: 消费者重启后，如何获取 offset？
   - 构造 OffsetMap 记录每个 key 最新的 offset 以及对应的消息时间；
   - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息、存入新 Segment；
   - 对于已经完成 Compaction 流程的log进行删除，删除LogStartOffset 之前的所有 Segment
+
+
+
+
+
+## || Rebalance
+
+**触发条件**
+
+- **消费者组成员数目变更**
+  - 增加、离开、崩溃
+  - 需要避免不必要的重平衡：被协调者错误地认为消费者已离开
+- **主题数变更**
+  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
+- **分区数变更**
+  - 增加
+
+
+
+**重平衡的问题**
+
+- **Rebalance 过程中，所有 consumer 停止消费**
+  - STW
+  - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
+
+- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
+  - 未考虑局部性原理
+
+- **Rebalance 过程很慢**
+
+
+
+**什么是不必要的重平衡？**
+
+- 被 coordinator “错误地”认为已停止
+
+- 组员减少导致的 rebalance
+
+
+
+**避免不必要的重平衡**
+
+- **避免“未及时发心跳”而导致消费者被踢出**
+
+  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
+
+- **避免“消费时间过长”而导致被踢出**
+
+  - *`max.poll.interval.ms`增大* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
+  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
+
+- **GC调优**
+
+  - Full GC导致长时间停顿，会引发 rebalance
+
+  
+
+**重平衡监听器 ConsumerRebalanceListener**
+
+作用
+
+- 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
+
+- 当被分配到一个新分区时，seek 到指定的 offset处
+
+
+
+接口
+
+- `onPartitionsAssigned(partitions)`
+  - 触发时间：消费者停止消费之后、rebalance 开始之前
+  - 常见操作：清理状态、seek()
+
+- `onPartitionsRevoked(partitions)`
+  - 触发时间：rebalance 之后、消费者开始消费之前
+  - 常见操作：提交 offset；注意要用 commitSync()，确保在 rebalance **开始？**之前提交完成
+
+- `subscribe(topics, listener)` 指定监听器
+
+
+
+```java
+Map<TopicPartition, OffsetAndMetadata> currOffsets = new HashMap();
+
+class HandleRebalance implements ConsumerRebalanceListener {
+  // 消费者停止消费之后、rebalance开始之前
+  public void onPartitionsAssigned(Collection<TopicPartition> partitions) {}
+  
+  //Rebalance Revoked: 重平衡之后，commitSync提交偏移量
+  public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+    consumer.commitSync(currOffsets);
+  }
+}
+
+try {
+  //subscribe 时传入监听器
+  consumer.subscribe(topics, new HandleRebalance());
+  
+  while (true) {
+    // 轮询
+    ConsumerRecords<String, String> records =  consumer.poll(100);
+    for (ConsumerRecord record : records) {
+       process(record); 
+       //记录当前处理过的偏移量
+       currOffsets.put();
+    }
+ 
+    // commitAysnc 使用异步提交规避阻塞
+    commitAysnc(currOffsets, null);
+  }
+} catch (WakeupException e) {
+  // ignore.
+} catch (Exception e) {
+   handle(e); 
+} finally {
+   try {
+     // 最后一次提交使用同步阻塞式提交
+     consumer.commitSync(currOffsets);     
+	 } finally {
+	   consumer.close();
+   }
+}
+
+```
+
+
+
+**重平衡原理**
+
+如何通知消费者进行重平衡？
+
+- **心跳线程**
+- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
+  - `heartbeat.interval.ms`：控制重平衡通知的频率
+
+- **Group Coordinator**
+
+  - 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
+
+
+
+**重平衡过程消费者组状态流转**
+
+- 状态
+
+  - `Empty`：组内没有任何成员，但可能存在已提交的位移
+  - `Dead`：组内没有任何成员，且组的元数据信息已在协调者端移除
+  - `PreparingRebalance`：消费者组准备开启重平衡
+  - `CompletingRebalance`：消费者组所有成员已加入，正在等待分配方案。= AwaitingSync ?
+  - `Stable`：分配完成
+
+- 流转
+
+  - 初始化
+
+    > Empty --> PreparingRebalance --> CompletingRebalance --> Stable
+
+  - 成员加入/退出
+
+    > Stable --> PreparingRebalance
+    >
+    > 所有成员重新申请加入组
+
+  - 所有成员退出
+
+    > Stable --> PreparingRebalance --> Empty
+    >
+    > kafka定期自动删除empty状态的过期位移
+
+
+
+**重平衡流程**
+
+- 场景一：Consumer 端重平衡
+
+  - **JoinGroup 请求**
+
+    1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
+    2. 选出 Leader Consumer
+       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
+       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
+       - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
+       - 最后 Leader Consumer 发送 SyncGroup 请求
+
+    > Q：为什么引入 Leader Consumer？可否协调者来分配？
+    >
+    > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
+
+    
+
+  - **SyncGroup请求**
+
+    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
+    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
+    3. 消费者进入 Stable 状态
+
+
+
+- 场景二：Broker 端重平衡
+
+  - **新成员入组  JoinGroup**
+
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡；
+
+  - **组成员主动离组 close()： LeaveGroup** 
+
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
+
+  - **组成员崩溃离组**
+
+    > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
+    >
+    > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
+
+
 
 
 
@@ -1999,13 +2058,13 @@ Q: 消费者重启后，如何获取 offset？
 
   - 当 Leader A 挂了，zk 感知，Controller watch，并从 ISR 中选出新 Leader B；zk 中有 ISR 信息
 
-  - 新 Leader B产生后，即可接受写入；
+  - 新 Leader B 产生后，即可接受写入；
 
-  - 新 Leader B产生后，其他 Follower C 会 fetch 数据。此时可能会对其他 Follower 中的未提交数据进行截断；
+  - 新 Leader B 产生后，其他 Follower C 会 fetch 数据。此时可能会对其他 Follower 中的未提交数据进行截断；
 
-    > Q：能否Follower C local HWM 之后的数据直接截断？
+    > Q：能否 Follower C local HWM 之后的数据直接截断？
     >
-    > A：如果Follower C fetch data 之前新Leader B 又挂了，Follower C 成为Leader，会有数据丢失！
+    > A：如果 Follower C fetch data 之前新 Leader B 又挂了，Follower C 成为Leader，会有数据丢失！
     >
     > Follower C会询问新Leader 上一个 epoch 的`end offset`，如果大于 local HWM，则无需截断。
 
@@ -2087,8 +2146,6 @@ Q: 消费者重启后，如何获取 offset？
 
 
 
-# | 设计思路
-
 ## || 事务消息
 
 **1. RocketMQ 事务消息**
@@ -2136,33 +2193,121 @@ Q: 消费者重启后，如何获取 offset？
 
 **2. Kafka 事务消息**
 
-作用
+- 作用
 
-- 实现 Exactly Once 机制：**读数据 + 计算 + 保存结果过程中数据“不重不丢”**；
-
-- Topic A --> 流计算 --> Topic B 过程中每个消息都被计算一次；
+  - 实现 Exactly Once 机制：**读数据 + 计算 + 保存结果过程中数据“不重不丢”**；
 
 
+  - Topic A --> 流计算 --> Topic B 过程中每个消息都被计算一次；
 
-实现
 
-为了实现事务，也就是保证一组消息可以原子性生产和消费，Kafka 引入了如下概念；
 
-- 引入了 `事务协调者（Transaction Coordinator）`的概念。
-  - 与消费者的组协调者类似，每个生产者会有对应的事务协调者，赋予 PID 和管理事务的逻辑都由事务协调者来完成。
 
-- 引入了 `事务日志（Transaction Log）` 的内部主题。
-  - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
-- 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
-  
-- 引入了`控制消息（Control Message）` 的概念。
-  - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
+- 实现：
+  为了实现事务，也就是保证一组消息可以**原子性**生产和消费，Kafka 引入了如下概念；
 
-- 引入了 `TransactionalId` 的概念，
-  - TransactionalId 可以让使用者唯一标识一个生产者。一个生产者被设置了相同的 TransactionalId 的话，那么该生产者的不同实例会恢复或回滚之前实例的未完成事务。
+  - 引入了 `事务协调者（Transaction Coordinator）`的概念。
+    - 与消费者的组协调者类似，每个生产者会有对应的事务协调者，赋予 PID 和管理事务的逻辑都由事务协调者来完成。
 
-- 引入了 `生产者epoch` 的概念。
-  - 生产者epoch可以保证对于一个指定的TransactionalId只会有一个合法的生产者实例，从而保证事务性即便出现故障的情况下。
+
+  - 引入了 `事务日志（Transaction Log）` 的内部主题。
+    - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
+
+  - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
+    
+
+  - 引入了`控制消息（Control Message）` 的概念。
+    - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
+
+
+  - 引入了 `TransactionalId` 的概念，
+    - TransactionalId 可以让使用者唯一标识一个生产者。一个生产者被设置了相同的 TransactionalId 的话，那么该生产者的不同实例会恢复或回滚之前实例的未完成事务。
+
+
+  - 引入了 `生产者epoch` 的概念。
+    - 生产者epoch可以保证对于一个指定的TransactionalId只会有一个合法的生产者实例，从而保证事务性即便出现故障的情况下。
+
+
+
+
+
+
+- **事务原理**
+
+  > https://www.confluent.io/blog/transactions-apache-kafka
+
+  - 组件
+
+    - Transaction Coordinator
+    - Transaction Log
+      - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
+      - 其每个分区被一个 Cooridinator 管理；
+      - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
+
+  - 流程
+
+    1. **Producer - Tx Coordinator**
+
+       > 三个场景下，producer 需要跟 Coordinator 交互
+       >
+       > - initTransactions：coordinator 关闭同一 txid 下的其他未完成事务；
+       > - 首次发送数据：分区与 coordinator 注册；
+       > - commitTransaction / abortTransaction：触发两阶段提交
+
+    2. **Tx Coordinator - Tx Log**
+
+       > Coordinator 将事务状态存到内存、写入Log
+
+    3. **Producer - Topic**
+
+       > Producer 正常写入主题
+
+    4. **Tx Coordinator - Topic** 
+
+       > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
+       >
+       > - 阶段一：协调者将内部状态置为 `prepare_commit`，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
+       > - 阶段二：协调者往主题分区写入 `transaction commit markers`
+       >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
+       >   - 写入 marker 后，协调者标记该事务为 `complete`
+
+- **生产者设置事务**
+
+  ```java
+  //txid 要保证进程重启后id不变，可用某个本地文件名
+  //- 反例：UUID
+  prop.put("transactional.id", "<transaction-id>");
+  ...
+  producer.initTransactions();
+  try {
+    producer.beginTransaction();
+    producer.send(record1);
+    producer.send(record2);
+    producer.commitTransaction();
+  } catch (KafkaException e) {
+    producer.abortTransaction();
+  }
+  ```
+
+- **消费者设置 `isolation.level`** 
+
+  ```java
+  prop.put("isolation.level", "read_committed");
+  ...
+  Consumer<String, String> consumer = new KafkaConsumer<>(props)
+  ```
+
+  - **read_uncommitted**：类似无事务消费；
+  - **read_committed**：只读取成功提交了的事务，过滤掉 aborted 消息
+
+
+
+**3. 事务 vs. 幂等**
+
+- Idempotence: 
+  - Exactly-once in **order** semantics **PER** partition
+- Transaction: 
+  - **Atomic** writes across **MULTIPLE** partitions
 
 
 
@@ -2233,6 +2378,10 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
 
 
 
+**Exactly-Once = Idempotence + At Least Once**
+
+
+
 **生产者幂等性** 
 
 > 幂等性保证生产的消息即便重试也不会有重复。
@@ -2254,7 +2403,7 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
 
 区别 RocketMQ 的半消息！
 
-> 事务性保证消息原子性地写入到多个分区，要么全部成功，要么全部失败 
+> 事务性保证消息 **原子性** 地写入到多个分区，要么全部成功，要么全部失败 
 >
 > - 但即便失败，也会写入日志；因为没法回滚
 > - 解决幂等性生产者的限制：不能跨分区、跨会话
@@ -2262,27 +2411,16 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
 
 
 - **配置：**
+  
   - `enable.idempotence = true`
-
+  
   - 同时设置 `transactional.id`
-
+  
     > 如果配置了 transaction.id，则此时 enable.idempotence 会被设置为 true；
     >
     > 在使用相同 TransactionalId 的情况下，老的事务必须完成才能开启新的事务
-
+  
 - 代码中显式地提交事务
-
-  ```java
-  producer.initTransactions();
-  try {
-    producer.beginTransaction();
-    producer.send(record1);
-    producer.send(record2);
-    producer.commitTransaction();
-  } catch (KafkaException e) {
-    producer.abortTransaction();
-  }
-  ```
 
 - consumer改动：设置 `isolation.level` 
 
@@ -2290,44 +2428,6 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
   - **read_committed**：只读取成功提交了的事务，否则消费者会读到提交失败的消息
 
   
-
-- **事务原理**
-
-  > https://www.confluent.io/blog/transactions-apache-kafka
-  - 组件
-
-    - Transaction Coordinator
-    - Transaction Log
-      - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
-      - 其每个分区被一个 Cooridinator 管理；
-      - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
-
-  - 流程
-
-    1. **Producer - Tx Coordinator**
-
-       > 三个场景下，producer 需要跟 Coordinator 交互
-       >
-       > - initTransactions：coordinator 关闭同一 txid 下的其他未完成事务；
-       > - 首次发送数据：分区与 coordinator 注册；
-       > - commitTransaction / abortTransaction：触发两阶段提交
-
-    2. **Tx Coordinator - Tx Log**
-
-       > Coordinator 将事务状态存到内存、写入Log
-
-    3. **Producer - Topic**
-
-       > Producer 正常写入主题
-
-    4. **Tx Coordinator - Topic** 
-
-       > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
-       >
-       > - 阶段一：协调者将内部状态置为 `prepare_commit`，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
-       > - 阶段二：协调者往主题分区写入 `transaction commit markers`
-       >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
-       >   - 写入 marker 后，协调者标记该事务为 `complete`
 
   
 
@@ -2456,9 +2556,9 @@ Q: 什么情况下消息不丢失
 
 **数据丢失的场景**
 
-- acks = 1 时，Leader 宕机、或者Leader 与 ZK 断链。
-- acks = all 时，出现 unclean 选举
-- min.insync.replicas = 1 时，即便acks = all，也会出现 ISR 缩减为 1 (Leader被网络分区)
+- `acks = 1` 时，Leader 宕机、或者Leader 与 ZK 断链。
+- `acks = all` 时，出现 unclean 选举
+- `min.insync.replicas = 1` 时，即便`acks = all`，也会出现 ISR 缩减为 1 (Leader被网络分区)
 - 分区所有副本节点同时宕机：fsync 尚未保存到磁盘。
 
 
@@ -2467,10 +2567,9 @@ Q: 什么情况下消息不丢失
 
 - `acks = all`
 
-  > 要求所有 ISR 副本Broker都要接收到消息，才算已提交
+  > 要求所有 ISR 副本Broker都要接收到消息，才算已提交。——“所有 ISR 副本”！而非“所有副本”！
   >
-  > “所有 ISR 副本”！而非“所有副本”！
-
+  
 - `retries = big_value`
 
   > 自动重试消息
@@ -3709,9 +3808,10 @@ max.message.bytes=10485760
 
 - **min.insync.replica**
 
-  > 含义：表示 `acks=all` 时最少需要多少个 ISR 存在；值越小，性能影响越小，但丢失数据的风险越大
-  >
-  > 注意：可设置 broker or topic level
+  - 含义：表示 `acks=all` 时最少需要多少个 ISR 存在；值越小，性能影响越小，但丢失数据的风险越大
+
+  - 注意：可设置 broker or topic level
+
 
   > 配合acks
   >
@@ -3720,20 +3820,21 @@ max.message.bytes=10485760
 
 - **replica.lag.time.max.ms**
 
-  > 含义：follower的延迟如果超过该值，则被踢出 ISR
+  - 含义：follower的延迟如果超过该值，则被踢出 ISR
 
 - **replication.factor**
 
-  > 含义：副本个数，消息被复制的份数，默认 3
-  >
-  > 值越大，则可用性可靠性越大；同时需要的 Broker 数目也越大
+  - 含义：副本个数，消息被复制的份数，默认 3
+
+  - 值越大，则可用性可靠性越大；同时需要的 Broker 数目也越大
 
 - **unclean.leader.election.enable**
 
-  > 含义：是否允许 OSR replica 被选为 leader，
-  >
+  - 含义：是否允许 OSR replica 被选为 leader，
+
   > - 默认 true：提高可用性，但可能消息丢失、数据不一致；适用于用户行为跟踪
-  > - 设为false：可保证 committed data 不丢失；适用于银行支付信息
+  >- 设为false：可保证 committed data 不丢失；适用于银行支付信息
+
 
 
 
@@ -3965,8 +4066,8 @@ producer = new KafkaProduer<String, String>(p);
   >
   > 注意：
   >
-  > - 配合 auto.commit.interval.ms
-  > - 设为false，可减少重复、丢失
+  > - 配合 `auto.commit.interval.ms`
+  > - 设为 false，可减少重复、丢失
 
 - **partition.assignment.strategy**
 
@@ -4010,32 +4111,23 @@ producer = new KafkaProduer<String, String>(p);
 **手段**
 
 - Producer 端
-
-  > `batch.zise = 100000–200000` 增大批次大小（default = 16384）
-  >
-  > `linger.ms = 10-100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
-  >
-  > `compress.type=lz4/zstd` 压缩，gzip会导致cpu冲高；
-  >
-  > `acks=0/1`, 不要是all（default = 1）；--> 损失 durability
-  >
-  > `retries=0` 
-  >
-  > `buffer.memory`：如果分区很多，则可增大（default = 33554432）；表示为未发送消息分配的内存。
-
+  - `batch.zise = 100000–200000` 增大批次大小（default = 16384）--> 损失 latency
+  - `linger.ms = 10-100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
+  - `compress.type=lz4/zstd` 压缩，gzip会导致cpu冲高；
+  - `acks=0/1`, 不要是all（default = 1）；--> 损失 durability
+  - `retries=0` 
+  - `buffer.memory`：如果分区很多，则可增大（default = 33554432）；表示为未发送消息分配的内存。
+  
 - Broker 端
+  - `num.replica.fetchers` 增大；Follower 副本用多少线程来拉取消息 
 
-  > `num.replica.fetchers` 增大；Follower 副本用多少线程来拉取消息 
-  >
-  > `主题分区数调大`：不同的分区可以并行生产、并行消费。--> 损失latency
+  - `主题分区数调大`：不同的分区可以并行生产、并行消费。--> 损失latency
 
 - Consumer 端
+  - `fetch.min.bytes = 100000`：Broker 积攒了 N 字节数据，就可以返回给 consumer，表示每次fetch数据的大小（default = 1）；--> 损失 latency
+  - `多线程消费`。
+  - `GC调优` 减少GC停顿时间。
 
-  > `fetch.min.bytes = 100000`：Broker 积攒了 N 字节数据，就可以返回给 consumer，表示每次fetch数据的大小（default = 1）；--> 损失 latency
-  >
-  > `多线程消费`。
-  >
-  > `GC调优` 减少GC停顿时间。
 
 
 
@@ -4050,24 +4142,22 @@ producer = new KafkaProduer<String, String>(p);
 **手段**
 
 - Producer端：希望消息尽快发出，不要停留
-
-  > `linger.ms=0` 另外 batch.size 就无需指定了
-  >
-  > `compress.type=none`
-  >
-  > `acks=1`
-
+  - `linger.ms=0` 另外 batch.size 就无需指定了
+  - `compress.type=none`
+  - `acks=1`
+  - 避免数据倾斜，尽量均匀发到各分区；避免个别分区的broker压力过大。—— 尽量不设置 key
+  
 - Broker端
-
-  > `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息（default = 1）
-  >
-  > `主题分区数调小`：broker默认用单线程同步数据，分区越多同步越慢
+  - `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息（default = 1）
+  - `主题分区数调小`：broker默认用单线程同步数据，分区越多同步越慢
 
 - Consumer端
+  - consumer instances = partitions
+  - `fetch.min.bytes=1`：只要Broker有数据就立即返回给 Consumer
+  - `fetch.max.wait.ms`：减小？
+  - commitAsync
+  - 处理时间不要过长：会导致heartbeat发不出，会被认为已宕机，触发 rebalance
 
-  > `fetch.min.bytes=1`：只要Broker有数据就立即返回给 Consumer
-  >
-  > `fetch.max.wait.ms`：增大？
 
 
 
@@ -4075,7 +4165,7 @@ producer = new KafkaProduer<String, String>(p);
 
 **目的**
 
-减少消息丢失的几率。--> **Consistency**
+- 减少消息丢失的几率。--> **Consistency**
 
 
 
@@ -4083,28 +4173,21 @@ producer = new KafkaProduer<String, String>(p);
 
 - Producer 端
 
-  > `replication.factor=3`，多副本
-  >
-  > `acks=all` 生产消息保所到所有 ISR 副本；
-  >
-  > `retries=MAX_INT`
-  >
-  > `delivery.timeout.ms` 增大等待ack回复的超时时间；
-  >
-  > - `enable.idempotence=true` 配置生产者幂等，因为retry会引起消息重复、乱序
-  > - `max.in.flight.requests.per.connection=1` 如果非幂等生产，则调整每次只发送一个请求（default = 5）
+  - `replication.factor=3`，多副本
+  - `acks=all` 生产消息保所到所有 ISR 副本；
+  - `retries=MAX_INT`
+  - `delivery.timeout.ms` 增大等待ack回复的超时时间；
+    - `enable.idempotence=true` 配置生产者幂等，因为retry会引起消息重复、乱序
+    - `max.in.flight.requests.per.connection=1` 如果非幂等生产，则调整每次只发送一个请求（default = 5）
+  
 - Broker 端
 
-  > `replication.factor=3` 主题副本个数
-  >
-  > `min.insync.replicas=2` 主题最小ISR
-  >
-  > `unclean.leader.election.enable=false` OSR 副本不可选为leader；--> tradeoff: 低于 min ISR 时会不可用；
-  >
-  > `打开 rack awareness` 确保同一分区的不同副本分配到不同机架上；
-  >
-  > 
-  >
+  - `replication.factor=3` 主题副本个数
+  - `min.insync.replicas=2` 主题最小ISR
+  - `unclean.leader.election.enable=false` OSR 副本不可选为leader；--> tradeoff: 低于 min ISR 时会不可用；
+  - `打开 rack awareness` 确保同一分区的不同副本分配到不同机架上；
+  - `log.flush.interval.ms` / `log.flush.interval.messages` 如果主题流量很小，还可以调小 flush，更频繁地将 page cache刷盘；
+
   > 内部主题副本
   >
   > - `default.replication.factor=3` 自动创建的topic保证多副本；
@@ -4113,14 +4196,11 @@ producer = new KafkaProduer<String, String>(p);
   >
   > - `transaction.state.log.replication.factor=3` Exactly-Once-Semantics 主题保证多副本；
   >
-  > 如果主题流量很小，还可以调整flush
-  >
-  > - `log.flush.interval.ms` `log.flush.interval.messages` 调小，更频繁地将page cache刷盘；
 - Consumer 端
 
-  > `enable.auto.commit=false`  否则是在 poll() 的时候以一定时间间隔自动提交；
-  >
-  > `isolation.level = read_committed` 对 EOS 事务
+  - `enable.auto.commit=false`  否则是在 poll() 的时候以一定时间间隔自动提交；
+  - `isolation.level = read_committed` 对 EOS 事务
+
 
 
 
@@ -4136,21 +4216,23 @@ producer = new KafkaProduer<String, String>(p);
 
 - Broker
 
-  > `replica 数目不能过大`：副本越多，选主时间越长；
-  >
-  > `min.insync.replicas=1`：减小 min ISR，减少 produce失败这种不可用；
-  >
-  > `unclean.leader.election.enable=true` 让选主更快，而不考虑可能的数据丢失；
-  >
-  > `num.recovery.threads.per.data.dir` 设置为磁盘数，提高 log recovery速度（新broker启动时使用）；
+  - `replica 数目不能过大`：副本越多，选主时间越长；
+  
+  - `min.insync.replicas=1`：减小 min ISR，减少 produce失败这种不可用；
+  
+  - `unclean.leader.election.enable=true` 让选主更快，而不考虑可能的数据丢失；
+  
+  - `num.recovery.threads.per.data.dir` 设置为磁盘数，提高 log recovery速度（新broker启动时使用）；
   
 - Consumer
 
-  > `session.timeout.ms` 调低；加快 consumer fail被发现的时间、尽快触发rebalance. 
-  >
-  > - !!! 同时要注意不能太低，以便处理 soft failures；例如“处理时间过长的情况”，此时可以：
-  > - 增大 `max.poll.interval.ms` 
-  > - 减小 `max.poll.records`
+  - `session.timeout.ms` 调低；加快 consumer fail被发现的时间、尽快触发rebalance. 
+
+    > !!! 同时要注意不能太低，以便处理 soft failures；例如“处理时间过长的情况”，此时可以：
+    >
+    > - 增大 `max.poll.interval.ms` 
+    > - 减小 `max.poll.records`
+
 
 
 
@@ -4321,21 +4403,15 @@ producer = new KafkaProduer<String, String>(p);
   > MBEAN:
   > kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=X
 
-  
-
 - **Failed fetch rate**
 
   > MBEAN:
   > kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestPerSec,topic=XX
 
-
-
 - **Fetch request rate**
 
   > MBEAN:
   > kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestPer,topic=XX
-
-
 
 - **Produce request rate**
 
@@ -4384,7 +4460,7 @@ producer = new KafkaProduer<String, String>(p);
   - request-rate - 每秒发送的请求数目；= N * batch?
 - **大小相关**
   - request-size-avg
-  - batch-size-avg - 据此调整 batch设置
+  - batch-size-avg - 据此调整 batch设置：如果指标小于预期，证明实际没有那么多消息，可以减小 batchSize
   - record-size-avg - `= msg`
   - record-per-request-avg：关联`max.partition.bytes` / `linger.ms`
 
@@ -4439,20 +4515,18 @@ kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKER
 
 
 - **限流**
+  
   - **fetch-throttle-time-avg**
-
+  
   > MBEAN:
   > kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT, attribute fetch-throttle-time-avg
 
-
-
 - **Lag**
+  - **records-lag**
   - **records-lag-max**
     - 只考虑 lag 最大的那个分区
     - consumer 挂了就监控不到 lag 了
-
-  - **records-lag**
-
+  
 - **外部监控：Burrow**
   https://engineering.linkedin.com/apache-kafka/burrow-kafka-consumer-monitoring-reinvented
 
