@@ -117,6 +117,8 @@ One way to think about the relationship between messaging systems, storage syste
 
 ## || Broker
 
+![image-broker-internal](../img/kafka/broker-internals.png)
+
 ### 控制器
 
 **定义**
@@ -239,32 +241,44 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 
 
-**Segment**
+**Log Segment**
 
 - **什么是 Segment**
 
-  - 一个 segment 对应一个数据文件。当达到segment限制时，会关闭当前文件，并创建一个新的。`log.segment.ms | bytes`
+  - 一个 segment 对应一个数据文件。
+
+  - `log.segment.ms | bytes`：当达到segment限制时，会关闭当前文件，并创建一个新的。
 
   - active segment：当前正在写入的 segment，不会被删除；
 
     > 可能导致 `log.retention.ms` 不生效：超出很多后才能被过期
 
-- **文件格式**
+- `xx.log`
 
   - DumpLogSegment 工具：查看segment文件内容
   - 对于压缩过的消息，Broker 不会解压，而是直接存储为 Wrapper Message。
 
-  
 
-**Indexes**
+- `xx.index`：将 offset 映射到 segment 文件 + 文件内的位置
+  - 跳表 
+  - 4 bytes: partition offset
+  - 4 bytes: log file offset ——为什么4 bytes就够了，offset 是Long？存的是相对位置。
 
-- 将 offset 映射到 segment 文件 + 文件内的位置
+- `xx.timeindex`：时间与 segment 文件的映射
+  - 8 bytes: timestamp
+  - 4 bytes: log file offset
 
 
 
-**Compaction**
 
-- 原理
+**Log Cleanup Policy**
+
+> LogCleanerManager，只会作用于 非active segment。
+>
+> 所以即便compact，active segment 中也可能有重复key。—— 调小 segment size，减少系统重启压力。
+
+- **Delete**
+- **Compact**：相同的key只保留一份值，类似 Map。
   - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中待清理的 Segment：
     - 条件1：topic `cleanup.policy = compact`
     - 条件2：TopicPartition 状态为空，即没有其他 CleanerThread 在操作；
@@ -278,6 +292,8 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 ### 请求处理
 
 > https://time.geekbang.org/column/article/110482
+
+
 
 **数据类型请求**
 
@@ -328,6 +344,14 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 - 隔离 控制类请求 vs. 数据类请求
 
 - 两套组件：网络线程池、IO线程池 都有两套
+
+- 一个 acceptor（监听并接收请求），多个 worker
+
+![image-broker-internal-nio](../img/kafka/broker-internals-nio.webp)
+
+- 配置
+  - `num.network.threads`：processor 数量
+  - `num.io.threads`：API Thread 数量（io thread）
 
 
 
@@ -865,6 +889,220 @@ while (true)  {
     - 因为消息消费链路被拉长
     - 可能导致消息重复消费
 
+## || Rebalance
+
+**触发条件**
+
+- **消费者组成员数目变更**
+  - 增加、离开、崩溃
+  - 需要避免不必要的重平衡：被协调者错误地认为消费者已离开
+- **主题数变更**
+  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
+- **分区数变更**
+  - 增加
+
+
+
+**重平衡的问题**
+
+- **Rebalance 过程中，所有 consumer 停止消费**
+  - STW
+  - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
+
+- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
+  - 未考虑局部性原理
+
+- **Rebalance 过程很慢**
+
+
+
+**什么是不必要的重平衡？**
+
+- 被 coordinator “错误地”认为已停止
+
+- 组员减少导致的 rebalance
+
+
+
+**避免不必要的重平衡**
+
+- **避免“未及时发心跳”而导致消费者被踢出**
+
+  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
+
+- **避免“消费时间过长”而导致被踢出**
+
+  - *`max.poll.interval.ms`增大* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
+  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
+
+- **GC调优**
+
+  - Full GC导致长时间停顿，会引发 rebalance
+
+  
+
+**重平衡监听器 ConsumerRebalanceListener**
+
+作用
+
+- 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
+
+- 当被分配到一个新分区时，seek 到指定的 offset处
+
+
+
+接口
+
+- `onPartitionsAssigned(partitions)`
+  - 触发时间：消费者停止消费之后、rebalance 开始之前
+  - 常见操作：清理状态、seek()
+
+- `onPartitionsRevoked(partitions)`
+  - 触发时间：rebalance 之后、消费者开始消费之前
+  - 常见操作：提交 offset；注意要用 commitSync()，确保在 rebalance **开始？**之前提交完成
+
+- `subscribe(topics, listener)` 指定监听器
+
+
+
+```java
+Map<TopicPartition, OffsetAndMetadata> currOffsets = new HashMap();
+
+class HandleRebalance implements ConsumerRebalanceListener {
+  // 消费者停止消费之后、rebalance开始之前
+  public void onPartitionsAssigned(Collection<TopicPartition> partitions) {}
+  
+  //Rebalance Revoked: 重平衡之后，commitSync提交偏移量
+  public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
+    consumer.commitSync(currOffsets);
+  }
+}
+
+try {
+  //subscribe 时传入监听器
+  consumer.subscribe(topics, new HandleRebalance());
+  
+  while (true) {
+    // 轮询
+    ConsumerRecords<String, String> records =  consumer.poll(100);
+    for (ConsumerRecord record : records) {
+       process(record); 
+       //记录当前处理过的偏移量
+       currOffsets.put();
+    }
+ 
+    // commitAysnc 使用异步提交规避阻塞
+    commitAysnc(currOffsets, null);
+  }
+} catch (WakeupException e) {
+  // ignore.
+} catch (Exception e) {
+   handle(e); 
+} finally {
+   try {
+     // 最后一次提交使用同步阻塞式提交
+     consumer.commitSync(currOffsets);     
+	 } finally {
+	   consumer.close();
+   }
+}
+
+```
+
+
+
+**重平衡原理**
+
+如何通知消费者进行重平衡？
+
+- **心跳线程**
+- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
+  - `heartbeat.interval.ms`：控制重平衡通知的频率
+
+- **Group Coordinator**
+
+  - 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
+
+
+
+**重平衡过程消费者组状态流转**
+
+- 状态
+
+  - `Empty`：组内没有任何成员，但可能存在已提交的位移
+  - `Dead`：组内没有任何成员，且组的元数据信息已在协调者端移除
+  - `PreparingRebalance`：消费者组准备开启重平衡
+  - `CompletingRebalance`：消费者组所有成员已加入，正在等待分配方案。= AwaitingSync ?
+  - `Stable`：分配完成
+
+- 流转
+
+  - 初始化
+
+    > Empty --> PreparingRebalance --> CompletingRebalance --> Stable
+
+  - 成员加入/退出
+
+    > Stable --> PreparingRebalance
+    >
+    > 所有成员重新申请加入组
+
+  - 所有成员退出
+
+    > Stable --> PreparingRebalance --> Empty
+    >
+    > kafka定期自动删除empty状态的过期位移
+
+
+
+**重平衡流程**
+
+- 场景一：Consumer 端重平衡
+
+  - **JoinGroup 请求**
+
+    1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
+    2. 选出 Leader Consumer
+       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
+       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
+       - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
+       - 最后 Leader Consumer 发送 SyncGroup 请求
+
+    > Q：为什么引入 Leader Consumer？可否协调者来分配？
+    >
+    > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
+
+    
+
+  - **SyncGroup请求**
+
+    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
+    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
+    3. 消费者进入 Stable 状态
+
+
+
+- 场景二：Broker 端重平衡
+
+  - **新成员入组  JoinGroup**
+
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡；
+
+  - **组成员主动离组 close()： LeaveGroup** 
+
+    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
+
+  - **组成员崩溃离组**
+
+    > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
+    >
+    > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
+
+
+
+
+
 
 
 ## || Zookeeper
@@ -1301,6 +1539,8 @@ https://www.jianshu.com/p/da62e853c1ea
 
     - Follower重启后，先向Leader请求Leader的LEO；会发现缓存中没有 > Leader LEO的Epoch；所以不做日志截断
   - Leader重启后，新的Leader会更新Leader Epoch
+
+
 
 
 
@@ -1774,218 +2014,6 @@ try {
 
 
 
-## || Rebalance
-
-**触发条件**
-
-- **消费者组成员数目变更**
-  - 增加、离开、崩溃
-  - 需要避免不必要的重平衡：被协调者错误地认为消费者已离开
-- **主题数变更**
-  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
-- **分区数变更**
-  - 增加
-
-
-
-**重平衡的问题**
-
-- **Rebalance 过程中，所有 consumer 停止消费**
-  - STW
-  - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
-
-- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
-  - 未考虑局部性原理
-
-- **Rebalance 过程很慢**
-
-
-
-**什么是不必要的重平衡？**
-
-- 被 coordinator “错误地”认为已停止
-
-- 组员减少导致的 rebalance
-
-
-
-**避免不必要的重平衡**
-
-- **避免“未及时发心跳”而导致消费者被踢出**
-
-  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
-  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
-
-- **避免“消费时间过长”而导致被踢出**
-
-  - *`max.poll.interval.ms`增大* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
-  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
-
-- **GC调优**
-
-  - Full GC导致长时间停顿，会引发 rebalance
-
-  
-
-**重平衡监听器 ConsumerRebalanceListener**
-
-作用
-
-- 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
-
-- 当被分配到一个新分区时，seek 到指定的 offset处
-
-
-
-接口
-
-- `onPartitionsAssigned(partitions)`
-  - 触发时间：消费者停止消费之后、rebalance 开始之前
-  - 常见操作：清理状态、seek()
-
-- `onPartitionsRevoked(partitions)`
-  - 触发时间：rebalance 之后、消费者开始消费之前
-  - 常见操作：提交 offset；注意要用 commitSync()，确保在 rebalance **开始？**之前提交完成
-
-- `subscribe(topics, listener)` 指定监听器
-
-
-
-```java
-Map<TopicPartition, OffsetAndMetadata> currOffsets = new HashMap();
-
-class HandleRebalance implements ConsumerRebalanceListener {
-  // 消费者停止消费之后、rebalance开始之前
-  public void onPartitionsAssigned(Collection<TopicPartition> partitions) {}
-  
-  //Rebalance Revoked: 重平衡之后，commitSync提交偏移量
-  public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
-    consumer.commitSync(currOffsets);
-  }
-}
-
-try {
-  //subscribe 时传入监听器
-  consumer.subscribe(topics, new HandleRebalance());
-  
-  while (true) {
-    // 轮询
-    ConsumerRecords<String, String> records =  consumer.poll(100);
-    for (ConsumerRecord record : records) {
-       process(record); 
-       //记录当前处理过的偏移量
-       currOffsets.put();
-    }
- 
-    // commitAysnc 使用异步提交规避阻塞
-    commitAysnc(currOffsets, null);
-  }
-} catch (WakeupException e) {
-  // ignore.
-} catch (Exception e) {
-   handle(e); 
-} finally {
-   try {
-     // 最后一次提交使用同步阻塞式提交
-     consumer.commitSync(currOffsets);     
-	 } finally {
-	   consumer.close();
-   }
-}
-
-```
-
-
-
-**重平衡原理**
-
-如何通知消费者进行重平衡？
-
-- **心跳线程**
-- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
-  - `heartbeat.interval.ms`：控制重平衡通知的频率
-
-- **Group Coordinator**
-
-  - 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
-
-
-
-**重平衡过程消费者组状态流转**
-
-- 状态
-
-  - `Empty`：组内没有任何成员，但可能存在已提交的位移
-  - `Dead`：组内没有任何成员，且组的元数据信息已在协调者端移除
-  - `PreparingRebalance`：消费者组准备开启重平衡
-  - `CompletingRebalance`：消费者组所有成员已加入，正在等待分配方案。= AwaitingSync ?
-  - `Stable`：分配完成
-
-- 流转
-
-  - 初始化
-
-    > Empty --> PreparingRebalance --> CompletingRebalance --> Stable
-
-  - 成员加入/退出
-
-    > Stable --> PreparingRebalance
-    >
-    > 所有成员重新申请加入组
-
-  - 所有成员退出
-
-    > Stable --> PreparingRebalance --> Empty
-    >
-    > kafka定期自动删除empty状态的过期位移
-
-
-
-**重平衡流程**
-
-- 场景一：Consumer 端重平衡
-
-  - **JoinGroup 请求**
-
-    1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
-    2. 选出 Leader Consumer
-       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
-       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
-       - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
-       - 最后 Leader Consumer 发送 SyncGroup 请求
-
-    > Q：为什么引入 Leader Consumer？可否协调者来分配？
-    >
-    > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
-
-    
-
-  - **SyncGroup请求**
-
-    1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
-    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
-    3. 消费者进入 Stable 状态
-
-
-
-- 场景二：Broker 端重平衡
-
-  - **新成员入组  JoinGroup**
-
-    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡；
-
-  - **组成员主动离组 close()： LeaveGroup** 
-
-    > 回复“心跳请求”响应给所有成员，强制开启新一轮重平衡
-
-  - **组成员崩溃离组**
-
-    > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
-    >
-    > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
-
-
-
 
 
 ## || 高性能
@@ -2001,14 +2029,29 @@ try {
 
 - **压缩**
 
-- **顺序读写**
+- **顺序读写** Sequential File IO
 
-- **PageCache**
+- **PageCache**：
+
+  - 写入数据并不马上写入磁盘，而是先写入 Page Cache.
+    ——数据丢失风险？！
+
+  - 消费 tailing 消息直接读取 Page Cache。
+    ——理想情况。
+
+  > 为什么不用 JVM cache，而用 OS Page Cache？
+  >
+  > - 避免 GC
+  > - 服务重启之后仍然可用
+  > - IO scheduler 会合并写入连续的 small writes
 
 - **零拷贝 ZeroCopy**
 
-  - 发生在传输给 Consumer 时
-  - 操作系统 sendfile 函数，JavaNIO: `FileChannel.transferTo()`
+  - 发生在传输给 Consumer 时。操作系统 sendfile 函数，Java NIO: `FileChannel.transferTo()` 
+    ——为什么 Producer 写入时不用？需要在用户态做验证（检查大小、压缩方式）
+    ——如果使用了 SSL 也无法零拷贝，因为要在用户态加密解密。
+  - 避免拷贝到**用户态**，只在**内核态**拷贝。
+    ——因为不涉及用户态的逻辑处理
 
   > AS-IS
   > PageCache --> 内存 --> Socket缓冲区
@@ -2030,6 +2073,18 @@ try {
   > --> 内核缓冲区 
   > --> Socket缓冲区
   > --> 网卡缓冲区
+  >
+  > AS-IS
+  >
+  > ![image-20230110214929479](../img/kafka/zero-copy-0.png)
+  >
+  > TO-BE
+  >
+  > ![image-20230110215026793](../img/kafka/zero-copy-1.png)
+  >
+  > ![image-20230110215116694](../img/kafka/zero-copy-2.png)
+  >
+  > 
 
 
 
@@ -3417,22 +3472,34 @@ try (AdminClient client = AdminClient.create(props)) {
 
 ## || 安全
 
-**认证机制**
+**Authentication 认证机制**
 
-- SSL / TLS：Transport Layer Securit
+- **SSL/TLS**: Transport Layer Securit
 
   > 一般只用来做通信加密；而非认证
 
-- SASL
+- **SASL**: Simple Authentication and Security Layer
+  
   - 用于认证
+  
   - 认证机制
     - GSSAPI：基于 Kerberos 认证
     - PLAIN：简单用户名密码；不能动态增减用户，必须重启Broker
     - SCRAM：PLAIN进阶；认证信息保存在ZK，可动态修改
     - OAUTHBEARER：基于OAuth2
     - Delegation Token
+    
+  - SASL 编码
+    ```java
+    props.put("security.protocol", "SASL_PLAINTEXT");
+    props.put("sasl.mechanism", "TRUST_FABRIC");
+    //Kafka broker 用如下自定义LoginModule&配置来认证
+    props.put("sasl.jaas.config", "io.xx.kafka.security.tf.TFClientLoginModule required;");
+    ```
+    
+    
 
-**授权管理**
+**Authorization 授权管理**
 
 - 权限模型
   - `ACL`：Access Control List
