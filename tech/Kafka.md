@@ -123,7 +123,8 @@ One way to think about the relationship between messaging systems, storage syste
 
 **定义**
 
-- 集群中的某一个Broker会作为控制器。唯一。在zk的帮助下，管理和协调“整个”kafka集群
+- 集群中的某一个Broker会作为控制器。
+- 集群内唯一。在zk的帮助下，管理和协调“整个”kafka集群
 
 **重度依赖 ZK** 
 
@@ -388,7 +389,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 - **Purgatory** 炼狱
 
-  - 作用：用来缓存延时请求。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
+  - 作用：用来**缓存延时请求**。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
 
     > case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
     >
@@ -641,11 +642,13 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 ### 幂等
 
+- 目的：为了实现 Exactly-Once Produce.
+
 - 客户端：发送时引入两个字段
 
   - `seq`：每条消息赋予唯一ID
 
-  - `PID`：唯一的生产者ID
+  - `PID`：唯一的生产者ID。broker 分发 PID（broker 向 zk 申请可分发的 ID，保证各broker 可用的ID不重复）。
 
 - 服务端：服务端收到消息，对比存储的**最后一条ID**，如果一样，则认为是重复消息丢弃
 
@@ -654,7 +657,9 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
   - `enable.idempotence = true`
   - `acks = all`  保证数据一致性，否则seq顺序可能乱
   - `retries > 1` 否则可能丢消息
-  - `max.in.flight.requests.per.connection <= 5` ——为什么是5？
+  - `max.in.flight.requests.per.connection <= 5` 正在发送中的 batch 数目。 
+    ——为什么是5？Broker 对每个 PID 只缓存5个 seq。
+    ——如果设置>5，且最前面的msg ack丢失、producer重发、broker无法判断这条是否重复。
 
 
 
@@ -1294,7 +1299,7 @@ https://www.jianshu.com/p/da62e853c1ea
 
     ​	
 
-## || Replica
+## || 副本
 
 副本作用
 
@@ -1303,7 +1308,7 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-两个角色
+### Leader vs. Follower
 
 - **Leader Replica**
   
@@ -1337,6 +1342,20 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
+
+
+**思想：同步 vs. 异步复制**
+
+- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用 ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
+
+  > 同步复制要求所有能工作的 follower 都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
+  >
+  > 而异步复制方式下，follower 异步的从 leader 复制数据，数据只要被 leader 写入 log 就被认为已经 commit，这种情况下如果 follower 都还没有复制完，落后于 leader 时，突然leader 宕机，则会丢失数据。
+
+- Redis 属于同步复制？
+
+
+
 可优化的点
 
 - 提高伸缩性：让 follower 副本提供读功能？
@@ -1350,25 +1369,26 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-**副本分类**
+### **ISR**
 
 - **AR**: Assigned Replicas - 所有副本集合
 
 - **ISR**: In-Sync Replicas - 只有ISR集合中的副本才可能选为新leader
 
-  > 判断是否 In-Sync：`replica.lag.time.max.ms` (default = 10s)， **是判断落后的时间间隔，而非落后的消息数！**
-  >
-  
+  - **如何判断是否 In-Sync**：`replica.lag.time.max.ms` (default = 10s)
+    ——**是判断落后的时间间隔，而非落后的消息数！**为什么？
+    ——否则如果同时写入大量消息，在一瞬间副本一定跟不上，会被踢出 ISR.
+
+  - **ISR 的作用：**The ISR exists to **balance data safety with latency**. It allows for a majority of replicas to fail and still provide availability while minimizing the impact of dead or slow replicas in terms of latency.
+
+
   > 原理：Kafka在启动的时候会开启两个任务，
   >
   > - 一个任务用来定期地检查是否需要缩减或者扩大 ISR 集合，这个周期是`replica.lag.time.max.ms`的一半，默认 5000ms。当检测到 ISR 集合中有失效副本时，就会收缩 ISR 集合，当检查到有 Follower 的 HighWatermark 追赶上 Leader 时，就会扩充 ISR。
-  >- 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 isrChangeSet 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。然后 Controller 通过 watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
-  > 
-  
-  > **ISR 的作用：**
+  > - 除此之外，当 ISR 集合发生变更的时候还会将变更后的记录缓存到 `isrChangeSet` 中，另外一个任务会周期性地检查这个 Set，如果发现这个 Set 中有 ISR 集合的变更记录，那么它会在 zk 中持久化一个节点。
+  >   然后 Controller watch 感知到 ISR 的变化，并向它所管理的 broker 发送更新元数据的请求。最后删除该路径下已经处理过的节点。
   >
-  > - The ISR exists to **balance data safety with latency**. It allows for a majority of replicas to fail and still provide availability while minimizing the impact of dead or slow replicas in terms of latency.
-  
+
   
 
 - **OSR**: Out-of-Sync Replicas
@@ -1382,24 +1402,12 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-**思想**
-
-- Kafka 复制机制既不是完全的同步复制，也不是单纯的异步复制；这种使用 ISR 的方式则很好的均衡了确保数据不丢失以及吞吐率。
-
-  > 同步复制要求所有能工作的 follower 都复制完，这条消息才会被commit，这种复制方式极大的影响了吞吐率。
-  >
-  > 而异步复制方式下，follower 异步的从 leader 复制数据，数据只要被 leader 写入 log 就被认为已经 commit，这种情况下如果 follower 都还没有复制完，落后于 leader 时，突然leader 宕机，则会丢失数据。
-
-- Redis 属于同步复制？
 
 
-
-
-
-**副本 Lead Election**
+### Leader Election
 
 - **正常领导者选举**
-  - 当 Leader 挂了，zk 感知，Controller watch，并从 ISR 中选出新 Leader
+  - 当 Leader 挂了，zk 感知（broker zk node 被删），Controller watch，并从 ISR 中选出新 Leader
 
   - 其实并不是选出来的，而是 Controller 指定的
 
@@ -1412,26 +1420,25 @@ https://www.jianshu.com/p/da62e853c1ea
 
 
 
-**副本同步概念**
+### Replication
 
-- **LEO**
-  
-- Log End Offset，日志末端位移: 表示副本写入下一条消息的位移值。
+副本同步相关概念：
+
+- **LEO**：Log End Offset，日志末端位移: 表示副本写入下一条消息的位移值。
   
 - **高水位 High Watermark**
   
-- HWM = ISR 集合中最小的 Log End Offset (LEO)
-  
-- 分区的高水位  == Leader 副本的高水位
+  - HWM = ISR 集合中最小的 Log End Offset (LEO)
+  - 分区的高水位  == Leader 副本的高水位
   
 - **HWM 作用**
-  
-  - 定义消息可见性：消费者只能拉取高水位之前的消息
-  
+
+  - 定义消息可见性：消费者只能拉取高水位之前的消息，即 *committed message.*
+
     > 高水位以上的消息属于未提交消息。即：消息写入后，消费者并不能马上消费到！
-  
+
   - 实现异步的副本同步 - [TBD]
-  
+
     https://time.geekbang.org/column/article/112118
 
 
@@ -2446,18 +2453,18 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
 
 **生产者幂等性** 
 
-> 幂等性保证生产的消息即便重试也不会有重复。
+> 幂等性：保证生产的消息即便重试也不会有重复。
 
 - **配置**
   - `enable.idempotence = true`
 
 - **原理**
-  - Broker此时会多保存一些字段，用于判断消息是否重复，自动去重：每条消息会有一个 sequence number，
-  - Kafka 发送时自动去重
+  - Broker此时会多保存一些字段（PID, seq），用于判断消息是否重复，自动去重：每条消息会有一个 sequence number。
+  - Kafka 发送时自动去重。
 
 - **限制**
   - 无法实现跨分区的幂等
-  - 无法实现跨会话的幂等：Producer 重启后会丧失幂等性
+  - 无法实现跨会话的幂等：Producer 重启后会丧失幂等性，因为重启后 PID 会变
 
 
 
@@ -2632,7 +2639,7 @@ Q: 什么情况下消息不丢失
   > 要求所有 ISR 副本Broker都要接收到消息，才算已提交。——“所有 ISR 副本”！而非“所有副本”！
   >
   
-- `retries = big_value`
+- `retries = {big value}`
 
   > 自动重试消息
 
