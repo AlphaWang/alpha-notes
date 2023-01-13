@@ -119,14 +119,14 @@ One way to think about the relationship between messaging systems, storage syste
 
 ![image-broker-internal](../img/kafka/broker-internals.png)
 
-### 控制器
+### Controller
 
 **定义**
 
 - 集群中的某一个Broker会作为控制器。
 - 集群内唯一。在zk的帮助下，管理和协调“整个”kafka集群
 
-**重度依赖 ZK** 
+**原理：重度依赖 ZK** 
 
 - 写入临时节点 `/controller`
 - 选出新 controller后，会分配更高的 “controller epoch”；如果broker收到了来自老epoch的消息，则会忽略。
@@ -170,42 +170,71 @@ One way to think about the relationship between messaging systems, storage syste
 
 - **数据服务**
 
+  - 缓存 ZK 数据
   - 向其他 Broker 提供元数据信息，包括：
-  
     - 主题信息：分区、Leader Replica、ISR
     - Broker信息：运行中、关闭中
-  
-    > Q: 是 zk 数据的缓存？
+    
 
 
 
-**选举 / 故障转移**
+**Controller Failover**
 
-- 抢占！zk `/controller`节点创建
-  - 每个Broker启动后，都尝试创建 /controller 临时节点。
-  - 没抢到的，会Watch这个节点
+- 抢占！zk `/controller` 节点创建
+  - 每个 Broker 启动后，都尝试创建 /controller 临时节点。
+  - 没抢到的，会 Watch 这个节点
 
-- 技巧：当控制器出问题时，可手工删除节点 触发重选举
+- Epoch: Controller 更新后会 增加 epoch，避免老的controller假死后恢复--脑裂。
+
+- 技巧：当 Controller 出问题时，可手工删除节点 触发重选举
 
 
 
-### 协调者 
+### Coordinator 
 
 Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 **作用**
 
-- **为 Consumer group 执行 Rebalance**
+- **消费者组成员管理 & Rebalance**
 
   > 协调者对应一个 Group！
+  >
+  > 消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
+
+  - **1. GroupCoordinatorRequest** 找到 group coordinator
+
+    - 消费者启动时发送，发往任一 broker
+    - broker 等待 Purgatory 后，返回协调者：
+      1. `hash(group.id) % 50` (__commit_offsets 分区数) 
+      2. 据此找到 topic partition.
+      3. 找到 partition leader.
+
+  - **2. JoinGroupRequest** 加入 group
+
+    - Coordinator 负责选出 `consumer group leader` ：第一个请求者
+    - Coordinator 返回 JoinGroupResponse 给 leader：包含各成员的 instanceId
+
+  - **3. Group Leader: 分区分配**
+
+    - 注意是在消费者客户端配置 分区分配策略的！
+    - `PartitionAssignor#assign()`
+
+  - **4. Group Leader: SyncGroupRequest** 同步分区分配信息
+
+    - Coordinator 转发给所有消费者
+
+    
+
+- **消费者心跳处理**
+
+  - Consumer 下线后，协调者通知消费者组重新 Join。
 
 - **位移管理**
 
   > 消费者提交位移时，是向 Coordinator 所在的 Broker 提交
 
-- **组成员管理**
-
-  > 消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
+  
 
 
 
@@ -221,7 +250,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 
 
-### 存储
+### 消息存储
 
 **Partition 分配**
 
@@ -391,12 +420,14 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
   - 作用：用来**缓存延时请求**。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
 
-    > case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
+    > - Case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
     >
-    > Case-2: fetch requests with `min.bytes=1`
+    > - Case-2: consumer fetch requests with `min.bytes=1`
+    >
+    > - Case-3: consumer Join Group Request，等所有consumer接入
 
   - 原理：Hierarchical Timing Wheels
-
+  
     > https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/ 
     >
     > - Timeout timer：
@@ -783,31 +814,6 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-### Group Coordination
-
-Consumer 的几类请求：
-
-- **1. GroupCoordinatorRequest** 找到 group coordinator
-
-  - 消费者启动时发送，发往任一 broker
-  - broker 返回协调者
-
-- **2. JoinGroupRequest** 加入 group
-
-  - Coordinator 负责选出 `consumer group leader` 
-  - Coordinator 返回 JoinGroupResponse 给 leader：包含各成员的 instanceId
-
-- **3. Leader: 分区分配**
-
-  - 注意是在消费者客户端配置 分区分配策略的！
-  - `PartitionAssignor#assign()`
-
-- **4. Leader: SyncGroupRequest** 同步分区分配信息
-
-  - Coordinator 转发给所有消费者
-
-  
-
 
 
 ### Multi-Threading
@@ -1114,7 +1120,23 @@ try {
 
 节点列表
 
-https://www.jianshu.com/p/da62e853c1ea
+>Kafka
+>
+>- `brokers`
+>  - `ids/xx` 对应每个Broker，包括其地址、版本号、启动时间
+>  - `seqid`
+>  -  `topics/x/partitions/0/state` 分区信息，包括分区Leader、 所有 ISR 的 Broker ID
+>- `consumers`
+>  - `consumer-group/ids/{consumer_id}` 消费者信息
+>  - `/consumer/consumer-group/owners/topic-x/p-x` 分区消费关系信息
+>  - `/consumers/consumer-group/offsets/topic-x/p-x` 位移信息
+>- `controller`
+>- `controller_epoch`
+>- `cluster`
+>- `config`
+>- `admin`
+
+
 
 **broker**
 
@@ -1221,7 +1243,7 @@ https://www.jianshu.com/p/da62e853c1ea
 
 **controller**
 
-- TODO
+- 临时节点 `/controller`
 
 **config**
 
@@ -1616,7 +1638,7 @@ kafka-console-consumer.sh
 
     > 第一个 consumer 启动时，自动创建位移主题；
     >
-    > - 分区数50：`offset.topic.num.partitions=50` 
+    > - 分区数 50：`offset.topic.num.partitions=50` 
     > - 副本数 3： `offset.topic.replication.factor=3`
   
 - Tombstone消息
@@ -2262,83 +2284,18 @@ try {
 
 **2. Kafka 事务消息**
 
-- 作用
+> https://www.confluent.io/blog/transactions-apache-kafka
 
-  - 实现 Exactly Once 机制：**读数据 + 计算 + 保存结果过程中数据“不重不丢”**；
+作用
+
+- 实现 Exactly Once 机制：**读数据 + 计算 + 保存结果过程中数据“不重不丢”**；
 
 
   - Topic A --> 流计算 --> Topic B 过程中每个消息都被计算一次；
 
 
 
-
-- 实现：
-  为了实现事务，也就是保证一组消息可以**原子性**生产和消费，Kafka 引入了如下概念；
-
-  - 引入了 `事务协调者（Transaction Coordinator）`的概念。
-    - 与消费者的组协调者类似，每个生产者会有对应的事务协调者，赋予 PID 和管理事务的逻辑都由事务协调者来完成。
-
-
-  - 引入了 `事务日志（Transaction Log）` 的内部主题。
-    - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
-
-  - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
-    
-
-  - 引入了`控制消息（Control Message）` 的概念。
-    - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
-
-
-  - 引入了 `TransactionalId` 的概念，
-    - TransactionalId 可以让使用者唯一标识一个生产者。一个生产者被设置了相同的 TransactionalId 的话，那么该生产者的不同实例会恢复或回滚之前实例的未完成事务。
-
-
-  - 引入了 `生产者epoch` 的概念。
-    - 生产者epoch可以保证对于一个指定的TransactionalId只会有一个合法的生产者实例，从而保证事务性即便出现故障的情况下。
-
-
-
-
-
-
-- **事务原理**
-
-  > https://www.confluent.io/blog/transactions-apache-kafka
-
-  - 组件
-
-    - Transaction Coordinator
-    - Transaction Log
-      - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
-      - 其每个分区被一个 Cooridinator 管理；
-      - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
-
-  - 流程
-
-    1. **Producer - Tx Coordinator**
-
-       > 三个场景下，producer 需要跟 Coordinator 交互
-       >
-       > - initTransactions：coordinator 关闭同一 txid 下的其他未完成事务；
-       > - 首次发送数据：分区与 coordinator 注册；
-       > - commitTransaction / abortTransaction：触发两阶段提交
-
-    2. **Tx Coordinator - Tx Log**
-
-       > Coordinator 将事务状态存到内存、写入Log
-
-    3. **Producer - Topic**
-
-       > Producer 正常写入主题
-
-    4. **Tx Coordinator - Topic** 
-
-       > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
-       >
-       > - 阶段一：协调者将内部状态置为 `prepare_commit`，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
-       > - 阶段二：协调者往主题分区写入 `transaction commit markers`
-       >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
-       >   - 写入 marker 后，协调者标记该事务为 `complete`
+用法
 
 - **生产者设置事务**
 
@@ -2352,6 +2309,7 @@ try {
     producer.beginTransaction();
     producer.send(record1);
     producer.send(record2);
+    producer.sendOffsetsToTransaction(offsets);//如果有offset提交，要用producer完成!
     producer.commitTransaction();
   } catch (KafkaException e) {
     producer.abortTransaction();
@@ -2368,6 +2326,75 @@ try {
 
   - **read_uncommitted**：类似无事务消费；
   - **read_committed**：只读取成功提交了的事务，过滤掉 aborted 消息
+
+
+
+实现：为了实现事务，也就是保证一组消息可以**原子性**生产和消费，Kafka 引入了如下概念；
+
+
+- 引入了 `事务协调者（Transaction Coordinator）`的概念。
+  - 与消费者的组协调者类似，每个生产者会有对应的事务协调者，赋予 PID 和管理事务的逻辑都由事务协调者来完成。
+
+
+  - 引入了 `事务日志（Transaction Log）` 的内部主题。
+    - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
+
+  - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
+    
+  - 引入了`控制消息（Control Message）` 的概念。
+    - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
+
+
+  - 引入了 `TransactionalId` 的概念，
+    - TransactionalId 可以让使用者唯一标识一个生产者。一个生产者被设置了相同的 TransactionalId 的话，那么该生产者的不同实例会恢复或回滚之前实例的未完成事务。
+
+
+  - 引入了 `生产者epoch` 的概念。
+    - 生产者epoch可以保证对于一个指定的TransactionalId只会有一个合法的生产者实例，从而保证事务性即便出现故障的情况下。
+
+
+
+原理
+
+- 组件
+
+  - **Transaction Coordinator**
+  - **Transaction Log**
+    - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
+    - 其每个分区被一个 Cooridinator 管理；
+    - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
+
+- 流程
+
+  1. **Producer - Tx Coordinator**
+
+     > 三个场景下，producer 需要跟 Coordinator 交互
+     >
+     > - initTransactions：coordinator 关闭同一 txid 下的其他未完成事务；
+     > - 首次发送数据：分区与 coordinator 注册；
+     > - commitTransaction / abortTransaction：触发两阶段提交
+
+  2. **Tx Coordinator - Tx Log**
+
+     > Coordinator 将事务状态存到内存、写入Log
+
+  3. **Producer - Topic**
+
+     > Producer 正常写入主题
+
+  4. **Tx Coordinator - Topic** 
+
+     > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
+     >
+     > - 阶段一：协调者将内部状态置为 `PREPARE_COMMIT` ，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
+     > - 阶段二：协调者 call WriteTxnMarkerReqeust--> 分区Leader，往主题分区写入 transaction commit marker `COMMIT(PID)` or `ABORT(PID)`；之后协调者往事务日志写入 Commit/Aboart 消息。
+     >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
+     >   - 写入 marker 后，协调者标记该事务为 `complete`
+
+- Coordinator Failover
+  - Recover from txn log. 
+  - 如果 `PREPARE_COMMIT` / `PREPARE_ABORT`，继续提交或结束。
+  - 如果在 PREPARE 之前，不用管、producer 继续往新 coordinator发请求。
 
 
 
