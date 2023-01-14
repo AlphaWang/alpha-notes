@@ -2,9 +2,9 @@
 
 
 
-# Docker
+# | Docker
 
-## 常用命令
+## || 常用命令
 
 ```sh
 docker build -t TAG .
@@ -77,7 +77,7 @@ CMD ["python", "app.py"]
 
 
 
-## 容器镜像: rootfs
+## || 容器镜像: rootfs
 
 - 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
 - 是容器的静态视图
@@ -87,17 +87,17 @@ CMD ["python", "app.py"]
 
 **Docker镜像的分层**
 
-原理：联合文件系统 UnionFS, Union File System
+原理：联合文件系统 UnionFS (Union File System)
 
-- 只读层：ro + wh
+- **只读层：ro + wh**
   - readonly
   - whiteout 白障
   
-- Init层：ro + wh
+- **Init 层：ro + wh**
   - 位于只读层和读写层之间。专门永利来存放 /etc/hosts, /etc/resolv.conf 等信息。
   - 这些文件本来属于只读的 Ubuntu 镜像的一部分，但是用户往往需要在启动容器时写入一些指定的值比如 hostname，所以就需要在可读写层对它们进行修改。但又不希望提交这些修改。
   
-- 可读写层：rw
+- **可读写层：rw**
   - Read write
   - 用来存放修改 rootfs 后产生的增量：Copy On Write.
   - 如何删除文件：在可读写层创建一个 whiteout文件，把只读层里的文件遮挡起来。
@@ -127,7 +127,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-## 容器运行时
+## || 容器运行时
 
 - 容器运行时：由 Namespace + Cgroups 构成的隔离环境
 - 是容器的动态视图
@@ -148,7 +148,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-### Cgroups
+### Cgroup
 
 - Linux Control Group
 - 作用：**限制**一个进程组能够使用的资源上限，包括 CPU、内存、磁盘、网络带宽等等。
@@ -163,7 +163,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-# K8S 架构
+# | K8S 架构
 
 
 
@@ -174,57 +174,55 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 - **处理大规模集群各种任务之间的关系。！！！**
   - 细粒度：分别做成镜像、运行在一个个专属的容器中，互不干涉，可以被调度在集群内任何一台机器上。
   - Docker compose? --> 方案太过简单
-    - 例如能处理 Java Web + Mysql，但不能处理 Cassandra集群。
+    - 例如能处理 Java Web + Mysql，但不能处理 Cassandra 集群。
   - K8S 的思路：从更宏观角度，以统一的方式来定义任务之间的各种关系
     - 对容器的访问进行分类：
     - **Pod** 里的容器关系紧密：共享 network ns、volume；
-    - **Service** 之间关系隔离：作为 pod的代理入口，维护 pod的ip、port等信息的自动更新
-    - **Secret** 处理授权关系：pod启动时，以volume方式挂载secret里的数据
+    - **Service** 之间关系隔离：作为 pod 的代理入口，维护 pod 的 ip、port 等信息的自动更新
+    - **Secret** 处理授权关系：pod 启动时，以 volume 方式挂载 secret 里的数据
 
 
 
+## || Master 节点
 
-
-## Master 节点
-
-kube-apiserver
+**kube-apiserver**
 
 - 负责 API 服务
 - 处理集群的持久化数据，保存到 etcd
 
 
 
-kube-schedule
+**kube-schedule**
 
 - 负责调度
 
 
 
-kube-controller-manager
+**kube-controller-manager**
 
 - 负责容器编排
 
 
 
-## Node 节点
+## || Node 节点
 
-kubelet
+**kubelet**
 
 - 负责和 `容器运行时` 打交道
 
   - 通过 CRI (Container Runtime Interface) 远程调用接口
-  - 具体的容器运行时，例如Docker，则通过 OCI 规范同底层OS进行交互：把 CRI 请求翻译成对OS的系统调用
+  - 具体的容器运行时，例如Docker，则通过 OCI 规范同底层 OS 进行交互：把 CRI 请求翻译成对 OS 的系统调用
 
   
 
 - 负责 通过 gRPC 和 `Device Plugin` 插件交互
 
   - 管理宿主机物理设备，例如 GPU
-  - 主要用于通过k8s进行机器学习训练、高性能作业支持
+  - 主要用于通过 k8s 进行机器学习训练、高性能作业支持
 
 
 
-## K8S 部署
+## || K8S 部署
 
 **Step 1. 安装 kubeadm、kubelet、kubectl**
 
@@ -259,13 +257,13 @@ kubectl apply -f https://git.io/weave-kube-1.6
 
 
 
-kubeadm init 工作流程
+`kubeadm init` 工作流程
 
-- **Preflight checks** 检查：os版本、cgroups模块是否可用、...
+- **Preflight checks** 检查：os 版本、cgroups 模块是否可用、...
 - 生成 k8s 对外提供服务所需的各种**证书和对应目录**
 - 为其他组件生成访问 kube-apiserver 所需的**配置文件**：`/etc/kubernetes/xxx.conf`
-- 为 master 组件 生成 **pod 配置文件**；
-  - master 组件：kube-apiserver, kube-controller-manager, kube-scheduler
+- 为 master 组件生成 **pod 配置文件**；
+  - master 组件：`kube-apiserver`, `kube-controller-manager`, `kube-scheduler`
   - Static Pod: kubelet 启动时会检查 static pod yaml 文件目录 `/etc/kubernetes/manifests`，然后在这台机器上启动他们。 
 - 为集群生成一个 **bootstrap token**
 - 将 ca.crt 等 master 节点信息，通过 ConfigMap (cluster-info) 的方式保存到 Etcd，供后续部署 Node 节点使用。
@@ -309,7 +307,7 @@ kubectl apply -f https://raw.githubusercontent.com/kubernetes/dashboard/v2.0.0-r
 
 
 
-# Kubectl 命令
+# | Kubectl 命令
 
 yaml 运行
 
@@ -356,58 +354,49 @@ $ kubectl rollout history deployment/xx --revision=2
 # 部署回滚
 $ kubectl rollout undo deployment/xx
 $ kubectl rollout undo deployment/xx --to-revision=2
-
-
 ```
 
 
 
 
 
-# API Object 
+# | API Object 
 
-## yaml 配置
+## || yaml 配置
 
 ```yaml
 apiVersion: apps/v1
-kind: Deployment
+#API 对象的类型
+kind: Deployment 
+#API 对象的标识: name, labels, annotations (内部信息，用户不关心，k8s 组件本身会关注)
 metadata:
   name: nginx-deployment
 spec:
+  # 定义 Label Seclector
   selector:
-    matchLabels:
+    matchLabels: 
       app: nginx
   replicas: 2
+  # 定义 Pod 模板：`spec.template`
   template:
     metadata:
       labels:
         app: nginx
     spec:
-      containers:
+      containers: ##模板：容器镜像
       - name: nginx
         image: nginx:1.7.9
         ports:
         - containerPort: 80
 ```
 
-- kind
-  - API 对象的类型
-- metadata  
-  - API 对象的标识
-  - name
-  - labels
-  - annotations: 内部信息，用户不关心，k8s 组件本身会关注
-- spec
-  - 定义 Pod 模板：`spec.template`
-    - 定义 `spec.template.metadata.lables`
-    - 定义 容器镜像：`spec.template.spec.containers`
-  - 定义 Label Selector: `spec.selector.matchLabels`
 
 
+## || Pod
 
-## Pod
+**定义：**
 
-定义：是k8s里最小的 API 对象，可以等价为一个应用（app，虚拟机），可以包含多个**紧密协作**的容器（container，用户程序）。
+是 k8s 里最小的 API 对象，可以等价为一个应用（`app`，虚拟机），可以包含多个**紧密协作**的容器（`container`，用户程序）。
 
 > **紧密协作**：类似 进程 vs. 进程组
 
@@ -416,15 +405,15 @@ spec:
 
 
 
-**Pod 的作用**
+**作用**
 
-- 便于调度：有亲密关系的容器调度到同一个node
+- 便于调度：有亲密关系的容器调度到同一个 node
 
 - [容器设计模式](https://www.usenix.org/conference/hotcloud16/workshop-program/presentation/burns)：当你想在一个容器里跑多个功能不相关的应用时，应该优先考虑他们是不是更应该被描述成一个 Pod 里的多个容器。
 
   - 例1：War 包 + Tomcat
 
-    > War: 定义为 Init Container，作为 sidecar 辅助容器，负责将war拷贝到指定 volume 目录；
+    > War: 定义为 Init Container，作为 sidecar 辅助容器，负责将 war 拷贝到指定 volume 目录；
     > Tomcat: 将相应 volume 目录挂载到 webapps 目录
 
   - 例2：容器的日志收集
@@ -435,28 +424,28 @@ spec:
 
 
 
-**Pod 的实现原理**
+**实现原理**
 
 - Pod 是一个逻辑概念：k8s 真正处理的还是 namespace, cgroups
 - Pod 里的所有容器，共享同一个 Network Namespace，可以声明共享同一个 Volume：原理是 关联同一个 “Infra 容器”
 
 
 
-**Pod 生命周期**
+**生命周期**
 
-- **Pending**: yaml文件已经提交给k8s，API对象已被创建 并保存在 Etcd 中。
+- **Pending**: yaml 文件已经提交给 k8s，API 对象已被创建 并保存在 Etcd 中。
 - **Running**：调度成功，并跟一个具体节点绑定。
 - **Scceeded**：所有容器运行完毕并退出。常见于运行一次性任务。
-- **Failed**：有容器以非0状态码退出。
+- **Failed**：有容器以非 0 状态码退出。
 - **Unknown**：Pod状态不能被 `kubelet` 汇报给 `kube-apiserver`，可能是主从节点通信问题。
 
 
 
 **Pod Yaml 字段**
 
-Pod Level 
+*Pod Level* 
 
-- `NodeSelector`：用于将 Pod 与 Node 进行绑定。下例表示这个pod 只能运行在有 `disktype: ssd` label 的节点上。
+- `nodeSelector`：用于将 Pod 与 Node 进行绑定。下例表示这个pod 只能运行在有 `disktype: ssd` label 的节点上。
 
   ```yaml
   apiVersion: v1
@@ -469,9 +458,9 @@ Pod Level
 
   
 
-- `NodeName`：表示该Pod 已经经过了调度。用户可设置它来骗过调度器。
+- `nodeName`：表示该Pod 已经经过了调度。用户可设置它来骗过调度器。
 
-- `HostAliases`：定义 Pod 的 /etc/hosts
+- `hostAliases`：定义 Pod 的 /etc/hosts
 
 - `restartPolicy`: 
 
@@ -479,21 +468,23 @@ Pod Level
   - OnFailure：只有在容器异常时才自动重启。
   - Never：适合关注容器退出后的日志、文件，或批处理任务Job
 
-Container Level
+*Container Level*
 
 - `imagePullPolicy`：Always | Never
 
-- `Lifecycle`: postStart, preStop 时触发一系列钩子
+- `lifecycle`: postStart, preStop 时触发一系列钩子
 
-- `readinessProbe`：决定该pod能否通过Service的方式访问到；
+- `readinessProbe`：决定该 pod 能否通过 Service 的方式访问到；
 
   ```yaml
+          #Liveness
           livenessProbe:
             exec:
               command: ["mysqladmin", "ping"]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
+          #Rediness  
           readinessProbe:
             exec:
               # 通过TCP连接的方式进行健康检查
@@ -521,11 +512,11 @@ Container Level
 
 
 
-## Deployment / ReplicaSet
+## || Deployment / ReplicaSet
 
 **定义**：
 
-是一个定义多副本应用的对象，即定义多个副本Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update。
+是一个定义多副本应用的对象，即定义多个副本 Pod；同时负责在 Pod 定义发生变化时对每个副本进行 Rolling Update。
 
 > **控制器模式**：通过一个 API 对象管理另一个 API 对象；例如通过 Deployment 管理 Pod。
 
@@ -555,7 +546,7 @@ Container Level
 
 **原理：**
 
-- 实际上是一个”两层控制器“，依赖 **ReplicaSet** 这个 API对象
+- 实际上是一个”两层控制器“，依赖 **ReplicaSet** 这个 API 对象
 
   - Deployment 控制 ReplicaSet
   - ReplicaSet 控制 Pod
@@ -564,9 +555,9 @@ Container Level
 
   ```sh
   # edit deployment 后会触发滚动更新
-  1. 创建一个新的 ReplicaSet，初始Pod副本数是 0 
-  2. 将新 ReplicaSet Pod副本数增加一个
-  3. 将旧 ReplicaSet Pod副本数减少一个
+  1. 创建一个新的 ReplicaSet，初始 Pod 副本数是 0 
+  2. 将新 ReplicaSet Pod 副本数增加一个
+  3. 将旧 ReplicaSet Pod 副本数减少一个
   ```
 
 
@@ -603,7 +594,7 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 
   
 
-## StatefulSet
+## || StatefulSet
 
 **目的**
 
@@ -619,17 +610,17 @@ $ kubectl rollout resume deployment/xxx #此时才会创建一个ReplicaSet
 
   > 编号：将 Pod 的拓扑状态，按照 Pod "名字 + 编号"的方式固定下来。
 
-  - 在创建Pod的过程中，StatefulSet 给每个Pod的名字进行编号：`StatefulSetName-编号` 。严格按照编号顺序创建。“编号0” 进入Running状态之前，“编号1” 一直处于Pending状态。
-  - 为每个Pod 创建了唯一且不可变的“网络身份” （`StatefulSetName-编号.ServiceName`），保证 Pod 网络标识的稳定性。
-  - 通过 <u>Headless Service</u> 为每个Pod生成带有同样编号的 DNS 记录。
+  - 在创建 Pod 的过程中，StatefulSet 给每个Pod的名字进行编号：`StatefulSetName-编号` 。严格按照编号顺序创建。“编号0” 进入 Running 状态之前，“编号1” 一直处于 Pending 状态。
+  - 为每个 Pod 创建了唯一且不可变的“网络身份” （`StatefulSetName-编号.ServiceName`），保证 Pod 网络标识的稳定性。
+  - 通过 <u>Headless Service</u> 为每个 Pod 生成带有同样编号的 DNS 记录。
 
   
 
 - **存储状态**：例如一个数据库应用的多个存储实例。
 
-  > PVC：重启Pod后会根据特定的名称查到旧Pod遗留下来的同名PVC
+  > PVC：重启 Pod 后会根据特定的名称查到旧 Pod 遗留下来的同名 PVC
 
-  - StatefulSet 为每个Pod分配并创建一个"同样编号"的PVC。
+  - StatefulSet 为每个 Pod 分配并创建一个"同样编号"的 PVC。
   - 即使 Pod 被删除，所对应的 PVC / PV 依然会被保留下来。
 
 
@@ -655,7 +646,7 @@ A: **ControllerRevision**
 
 
 
-**Yaml** ：类似 Deployment，多了 spec.serviceName
+**Yaml**：类似 Deployment，多了 `spec.serviceName`
 
 ```yaml
 # Service
@@ -718,7 +709,7 @@ spec:
 
 
 
-## Service
+## || Service
 
 **作用：**
 
@@ -730,24 +721,21 @@ spec:
 **Yaml**
 
 ```yaml
-# Service.yaml
+# service.yaml
 apiVersion: v1
 kind: Service
 metadata:
   name: hostnames
 spec:
-  selector:
+  #selector 声明这个 Service 只代理携带了 app=hostnames 标签的 Pod
+  selector: 
     app: hostnames
   ports:
   - name: default
     protocol: TCP
-    port: 80
+    port: 80 #这个 Service 的 80 端口，代理的是 Pod 的 9376 端口。
     targetPort: 9376
 ```
-
-> 使用了 selector 字段来声明这个 Service 只代理携带了 app=hostnames 标签的 Pod。
->
-> 并且，这个 Service 的 80 端口，代理的是 Pod 的 9376 端口。
 
 
 
@@ -761,70 +749,65 @@ spec:
 
 - **NodePort**
 
-  - yaml
-
-    ```yaml
-    # NodePort Service
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: my-nginx
-      labels:
-        run: my-nginx
-    spec:
-      type: NodePort  #spec.type
-      ports:
-      - nodePort: 8080 #暴露端口
-        targetPort: 80 #Pod端口
-        protocol: TCP
-        name: http
-      - nodePort: 443
-        protocol: TCP
-        name: https
-      selector:
-        run: my-nginx
-    ```
-
+  ```yaml
+# NodePort Service
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: my-nginx
+    labels:
+      run: my-nginx
+  spec:
+    type: NodePort  #spec.type
+    ports:
+    - nodePort: 8080 #暴露端口
+      targetPort: 80 #Pod端口
+      protocol: TCP
+      name: http
+    - nodePort: 443
+      protocol: TCP
+      name: https
+    selector:
+      run: my-nginx
+  ```
+  
   - 访问方式：`<任何一台宿主机IP>:8080`
 
   - IP 包离开宿主机发往 目的Pod时，会做一次 SNAT 操作。
 
 - **LoadBalancer**
 
-  - yaml
-
-    ```yaml
-    # LoadBalancer Service
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: example-service
-    spec:
-      ports:
-      - port: 8765
-        targetPort: 9376
-      selector:
-        app: example
-      type: LoadBalancer
-    ```
-
-  - 适用于公有云上的 k8s 服务：k8s 在LB Service被创建后，会调用 CloudProvider 在公有云上创建一个负载均衡服务，并把被代理的 Pod IP配置为负载均衡器后端。
-
+  ```yaml
+  # LoadBalancer Service
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: example-service
+  spec:
+    type: LoadBalancer #spec.type
+    ports:
+    - port: 8765
+      targetPort: 9376
+    selector:
+      app: example
+    
+  ```
+  
+  - 适用于公有云上的 k8s 服务：k8s 在 LB Service 被创建后，会调用 CloudProvider 在公有云上创建一个负载均衡服务，并把被代理的 Pod IP 配置为负载均衡器后端。
+  
 - **ExternalName**
 
-  - yaml
-
-    ```yaml
-    # ExternalName Service
-    apiVersion: v1
-    kind: Service
-    metadata:
-      name: my-service
-    spec:
-      type: ExternalName
-      externalName: my.database.example.com
-    ```
-
+  ```yaml
+  # ExternalName Service
+  apiVersion: v1
+  kind: Service
+  metadata:
+    name: my-service
+  spec:
+    type: ExternalName #spec.type
+    externalName: my.database.example.com
+  ```
+  
   - 通过 Service 的 DNS 名字访问它的时候，返回的即是 externalName。
 
 
@@ -871,7 +854,7 @@ A：IPVS 模式的 Service.
 
 
 
-## Ingress
+## || Ingress
 
 https://time.geekbang.org/column/article/69214
 
@@ -885,7 +868,7 @@ https://time.geekbang.org/column/article/69214
 yaml
 
 ```yaml
-# Ingress.yaml
+# ingress.yaml
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
@@ -933,7 +916,7 @@ Example: Nginx Ingress Controller
 
 
 
-## Volume
+## || Volume
 
 ### emptyDir & hostPath
 
@@ -941,12 +924,12 @@ https://kubernetes.io/docs/concepts/storage/volumes/#emptydir
 
 https://www.infoq.cn/article/ah1n57f8tge2wisquj00
 
-emptyDir
+`emptyDir`
 
 - emptyDir 类型的 Volume 在 Pod 分配到 Node 上时被创建，Kubernetes 会在 Node 上自动分配一个目录，因此无需指定宿主机 Node 上对应的目录文件。 
 - 这个目录的初始内容为空，当 Pod 从 Node 上移除时，emptyDir 中的数据会被永久删除。
 
-hostPath
+`hostPath`
 
 - hostPath 类型则是映射 node 文件系统中的文件或者目录到 pod 里。
 - 即便 pod 已经被删除了，volume 卷中的数据还在。
@@ -962,7 +945,7 @@ hostPath
 
 > **持久化 Volume**：宿主机上的目录，具备“持久性”。即：这个目录里面的内容，既不会因为容器的删除而被清理掉，也不会跟当前的宿主机绑定。这样，当容器被重启或者在其他节点上重建出来之后，它仍然能够通过挂载这个 Volume，访问到这些内容。
 >
-> hostPath, emptyDir 则不属于 持久化 Volume。
+> hostPath, emptyDir 则不属于“持久化 Volume”。
 
 
 
@@ -1022,7 +1005,7 @@ spec:
 
 A: PersistentVolumeController，检查条件：
 
-- spec字段要匹配，例如 PV 的 storage 大小要满足 PVC 的要求；
+- spec 字段要匹配，例如 PV 的 storage 大小要满足 PVC 的要求；
 
 - storageClassName 要一致；
 
@@ -1044,7 +1027,7 @@ Volume Controller 维护着多个控制循环，其中有一个循环是 `Persis
 
 
 
-StorageClass相当于 PV 的模板， 定义如下内容：
+StorageClass 相当于 PV 的模板， 定义如下内容：
 
 - PV 的属性，例如存储类型、Volume大小；
 - 需要用到的存储插件，例如Ceph等；
@@ -1061,10 +1044,6 @@ parameters: #属性
 ```
 
 > PVC 里需要引用 storageClassName
-
-
-
-
 
 
 
@@ -1140,7 +1119,9 @@ Projected Volume 是一种特殊的 Volume，它不是为了存放容器里的�
 
 仿佛是被 k8s 投射进容器当中的。
 
-#### Secret
+
+
+### Secret
 
 把 Pod 想要访问的加密数据，存放到 **Etcd** 中。然后就可以通过在 Pod 的容器里**挂载 Volume** 的方式，访问到这些 加密数据了。
 
@@ -1274,11 +1255,9 @@ spec:
 
 
 
-## Batch
+## || Batch
 
 ### Job
-
-yaml
 
 ```yaml
 apiVersion: batch/v1
@@ -1304,8 +1283,8 @@ spec:
 
 控制器：Job Controller
 
-- Job Controller 控制的对象，直接就是Pod；
-- Job Controller 控制循环：Reconcile，根据 running、completed Pod数目 & parallelism、completions 计算出在这个周期里应该创建或删除的Pod数目。
+- Job Controller 控制的对象，直接就是 Pod；
+- Job Controller 控制循环：Reconcile，根据 running、completed Pod 数目 & parallelism、completions 计算出在这个周期里应该创建或删除的Pod数目。
 
 
 
@@ -1327,9 +1306,7 @@ spec:
 
 ### CronJob
 
-是一个Job对象的控制器！
-
-Yaml:
+是一个 Job 对象的控制器！
 
 ```yaml
 
@@ -1364,7 +1341,7 @@ concurrencyPolicy: Job还没执行完，新Job又产生了
 
 
 
-## 工具对象
+## || 工具对象
 
 ### PodPreset
 
@@ -1393,7 +1370,7 @@ spec:
 
 
 
-运用过 PodPreset的Pod会被自动加上一个annotation:
+运用过 PodPreset 的 Pod 会被自动加上一个annotation:
 
 `metadata.annotations: podpreset.admission.kubernetes.io/podpreset-allow-database: "resource version"`
 
@@ -1407,7 +1384,7 @@ spec:
 
 - Daemon Pod 运行在k8s集群里的每个节点上；
 - 每个节点只有一个这样的 Pod 实例；
-- 当新节点加入集群，该Pod就会自动在该新节点创建出来。
+- 当新节点加入集群，该 Pod 就会自动在该新节点创建出来。
 
 
 
@@ -1460,9 +1437,11 @@ yaml：
 
 
 
-# 编排
+# | 编排
 
-## 控制器模型
+
+
+## || 控制器模型
 
 **场景：**
 
@@ -1490,7 +1469,7 @@ for {
 
 
 
-## 声明式API
+## || 声明式API
 
 - kubectl apply: 对原有 API对象的 Patch 操作；	
   - 一次能处理多个写操作，并具备 Merge 能力。
@@ -1498,7 +1477,7 @@ for {
 
 
 
-## Dynamic Admission Control
+## || Dynamic Admission Control
 
 Admission:
 
@@ -1578,7 +1557,7 @@ Dynamic Admission Control (**Initializer**)
 
 
 
-## RBAC
+## || RBAC
 
 基本概念
 
@@ -1635,13 +1614,13 @@ roleRef:  #关联Role
   apiGroup: rbac.authorization.k8s.io
 ```
 
-- subjects.kind
+- `subjects.kind`
 
-  - User
+  - `User`
 
     - 通过外部认证服务来提供，例如Keystone.
 
-  - ServiceAccount
+  - `ServiceAccount`
 
     ```yaml
     # svc-account.yaml
@@ -1652,7 +1631,7 @@ roleRef:  #关联Role
       name: example-sa
     ```
 
-  - Group
+  - `Group`
 
     - SA 对应的 Group：`system:serviceaccount:<Namespace名字>:<ServiceAccount名字>`
 
@@ -1726,9 +1705,9 @@ kubectl get clusterroles
 
 
 
-## 资源管理和调度
+## || 资源管理和调度
 
-### 资源模型 & QoS
+### 资源模型&QoS
 
 ```yaml
 # 容器 yaml 字段
@@ -1752,7 +1731,7 @@ spec.containers[].resources.limits.memory: "128Mi"
 
 不同的 requests + limits 设置会将 pod 划分到不同的 QoS 级别当中。
 
-- **Guaranteed**: Pod内所有容器都设置了 requests 和 limits，并且 requests == limits。
+- **Guaranteed**: Pod 内所有容器都设置了 requests 和 limits，并且 requests == limits。
   - `requests.cpu == limits.cpu` 时相当于 cpuset： 将容器绑定到某个CPU的核上。<u>生产环境的在线应用 Pod 推荐使用！</u>
   - DaemonSet Pod 推荐使用 Guaranteed，因为被回收后会立即重建，回收毫无意义。
 - **Burstable**: Pod内至少一个容器设置了 requests。
@@ -1860,9 +1839,9 @@ imagefs.available<15%
 
 
 
-# 监控
+# | 监控
 
-## Prometheus
+## || Prometheus
 
 运行机制
 
@@ -1886,9 +1865,7 @@ Pull vs. Push
 
 
 
-## Metrics
-
-
+## || Metrics
 
 **数据来源**
 
@@ -1955,7 +1932,7 @@ K8S 核心监控数据 Core Metrics
 
 
 
-## 日志
+## || 日志
 
 三种日志方案：
 
@@ -2080,9 +2057,9 @@ Logrotate
 
 
 
-# 扩展
+# | 扩展
 
-## 自定义
+## || 自定义
 
 ### 自定义 API 对象
 
