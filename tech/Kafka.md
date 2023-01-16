@@ -3405,11 +3405,22 @@ Kafka Retention 为什么不能过长？
 
 **测试**
 
+- 启动
+  ```sh
+  $ bin/zookeeper-server-start.sh config/zookeeper.properties 
+  $ bin/kafka-server-start.sh config/server.properties 
+  
+  $ bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9092 
+  $ bin/kafka-topics.sh --describe --topic quickstart-events --bootstrap-server localhost:9092
+  ```
+
+  
+
 - 发布消息 kafka-console-producer.sh
 
   ```shell
   bin/kafka-console-producer.sh 
-    --broker-list localhost:9092 
+    --bootstrap-server localhost:9092 
     --topic topic-demo
   
   > Hello, Kafka!
