@@ -2,90 +2,45 @@
 
 
 
-# | Docker
+# | 容器
 
-## || 常用命令
+什么是容器
 
-```sh
-docker build -t TAG .
-docker run -v $PWD/data:docker_dir TAG
-
-# Image
-docker image ls // 列出镜像
-docker image ls -a  // 包含中间层镜像
-docker image ls -f dangling=true  // 包含悬虚镜像  -f == --filter
-docker image prune  // 删除悬虚镜像
-docker system df // 列出image, container, volume所占大小
-docker image rm ID // 删除镜像
-docker image rm $(docker image ls -q redis)  // 删除所有redis镜像
-docker system prune -a
-
-# Container
-docker ps
-docker container ls: 查看容器信息
-docker container logs ID: 获取容器输出信息
-docker container stop ID: 终止容器
-docker system prune: 清理容器
-docer exec -it $container /bin/sh: 进入容器
-
-# 排查
-docker events&
-docker logs $instance_id
-
-docker inspect $container
-docker image inspect $image // 查看镜像 rootfs、...
-```
-
-docker exec 的原理
-
-- setns() 系统调用
-- 进程的每种 Linux Namespace 在对应的 `/proc/进程号/ns`下有一个虚拟文件，链接到一个真实的Namespace中
-- 也就是说一个进程可以选择加入到某个进程已有的 Namespace 当中。
+- Container image: a lightweight, stand-alone, executable unit of software. (code+runtime+system tools+conf)
+- Container isolates software from its surroundings. 
 
 
 
-Dockerfile
+容器 vs. 虚拟机
 
-```sh
-# 使用官方提供的Python开发镜像作为基础镜像
-FROM python:2.7-slim
-
-# 将工作目录切换为/app
-WORKDIR /app
-
-# 将当前目录下的所有内容复制到/app下
-ADD . /app
-
-# 使用pip命令安装这个应用所需要的依赖
-RUN pip install --trusted-host pypi.python.org -r requirements.txt
-
-# 允许外界访问容器的80端口
-EXPOSE 80
-
-# 设置环境变量
-ENV NAME World
-
-# 设置容器进程
-# 
-# 等价于 docker run $image python app.py
-# Docker 隐含 ENTRYPOINT: /bin/bash -c
-# 所以等价于 /bin/sh -c "python app.py"
-CMD ["python", "app.py"]
-```
+- VM 包含 guest os，较重，启动慢。隔离性更强
+- Container 则没有虚拟化层，binary 直接运行在 host os 之上，启动快。
 
 
 
 
 
-## || 容器镜像: rootfs
+## || 容器镜像
 
-- 容器镜像：挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
-- 是容器的静态视图
+
+
+定义
+
+- 容器镜像是容器的静态视图，
+  - **unchangeable**
+  - **分层**
+
+- 挂载在容器根目录的文件系统，**rootfs** = /var/lib/docker/aufs/mnt
 - 注意容器镜像仅包含文件，不包含操作系统内核。--> 共享宿主机OS内核！
 
 
 
 **Docker镜像的分层**
+
+优点
+
+- 分布存储
+- 并发、增量 pull 
 
 原理：联合文件系统 UnionFS (Union File System)
 
@@ -129,12 +84,12 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 ## || 容器运行时
 
-- 容器运行时：由 Namespace + Cgroups 构成的隔离环境
+- 容器运行时：由 namespace + cgroups 构成的隔离环境 ——对底层系统资源打标签
 - 是容器的动态视图
 
 
 
-### Namespace
+### namespace
 
 - 作用：**隔离**。例如容器内部 ps，只能看到该容器内的进程
 - PID Namespace: 
@@ -148,7 +103,7 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 
 
-### Cgroup
+### cgroup
 
 - Linux Control Group
 - 作用：**限制**一个进程组能够使用的资源上限，包括 CPU、内存、磁盘、网络带宽等等。
@@ -156,6 +111,85 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
   - 以文件形式组织在 /sys/fs/cgroup
   - 控制组：/sys/fs/cgroup/xx
   - 子目录：cpu, blkio, cpuset, memory
+
+
+
+
+
+
+
+
+
+## || 常用命令
+
+```sh
+docker build -t TAG .
+# -v: with volume
+# -env: with env vars
+docker run -v $PWD/data:docker_dir --env APP=helloworld TAG
+
+# Image
+docker image ls #列出镜像
+docker image ls -a  #包含中间层镜像
+docker image ls -f dangling=true  #包含悬虚镜像  -f == --filter
+docker image prune  #删除悬虚镜像
+docker system df #列出image, container, volume所占大小
+docker image rm ID #删除镜像
+docker image rm $(docker image ls -q redis)  #删除所有redis镜像
+docker system prune -a
+
+# Container
+docker ps
+docker container ls #查看容器信息
+docker container logs ID #获取容器输出信息
+docker container stop ID #终止容器
+docker system prune #清理容器
+docer exec -it $container /bin/sh #进入容器
+
+# 排查
+docker events&
+docker logs $instance_id
+
+docker inspect $container
+docker image inspect $image #查看镜像 rootfs、...
+```
+
+docker exec 的原理
+
+- setns() 系统调用
+- 进程的每种 Linux namespace 在对应的 `/proc/进程号/ns`下有一个虚拟文件，链接到一个真实的 namespace 中
+- 也就是说一个进程可以选择加入到某个进程已有的 namespace 当中。
+
+
+
+Dockerfile
+
+```sh
+# 使用官方提供的Python开发镜像作为基础镜像
+FROM python:2.7-slim
+
+# 将工作目录切换为/app
+WORKDIR /app
+
+# 将当前目录下的所有内容复制到/app下
+ADD . /app
+
+# 使用pip命令安装这个应用所需要的依赖
+RUN pip install --trusted-host pypi.python.org -r requirements.txt
+
+# 允许外界访问容器的80端口
+EXPOSE 80
+
+# 设置环境变量
+ENV NAME World
+
+# 设置容器进程
+# 
+# 等价于 docker run $image python app.py
+# Docker 隐含 ENTRYPOINT: /bin/bash -c
+# 所以等价于 /bin/sh -c "python app.py"
+CMD ["python", "app.py"]
+```
 
 
 
@@ -185,9 +219,13 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
 ## || Master 节点
 
+![image-20230113165513644](../img/k8s/arch-master-node.png)
+
+![image-k8s-master](../img/k8s/arch-master-node2.png)
+
 **kube-apiserver**
 
-- 负责 API 服务
+- 负责 API 服务：与worker交互
 - 处理集群的持久化数据，保存到 etcd
 
 
@@ -219,6 +257,12 @@ ls /var/lib/docker/aufs/mnt/{ID}/{image dir}
 
   - 管理宿主机物理设备，例如 GPU
   - 主要用于通过 k8s 进行机器学习训练、高性能作业支持
+
+
+
+**kubeproxy**
+
+- 
 
 
 
