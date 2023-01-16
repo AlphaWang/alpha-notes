@@ -2704,17 +2704,17 @@ Aka. 序列化
 
 
 
+
+
 ## || Rate Limit
 
- 
 
 
 
-## 发布订阅/
+
+## || 消息队列
 
 
-
-## 消息队列/
 
 
 
@@ -2852,6 +2852,8 @@ Aka. 序列化
 ### 数据存储
 
 > 从db角度，理解如何存储数据、如何找到数据。
+>
+> - DB Internals 作者讲座：https://www.youtube.com/watch?v=e1wbQPbFZdk
 
 
 
@@ -2860,15 +2862,14 @@ Aka. 序列化
 - 要求
   - 适合磁盘操作，即粒度要大：排除 `链表、哈希表、跳表、二叉搜索树、红黑树`
   - 允许并发操作，即粒度要小：排除 `大文件、数组`
-
-- 适合做存储结构：B 树，LSM 树
-
+  - 适合做存储结构：B 树，LSM 树（Log-Structured Merged-Tree）
+  
 - **LSM Tree vs. B Tree**
 
   |      | LSM Tree                                                     | B Tree                                                       |
   | ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | 特点 | 写入更快（异位更新）；更适用于固态硬盘（随机读效率高，减少了寻道时间，减少写入过程的数据擦除操作）。 | 读取更快（就地更新，写入更慢）；更适用于机械硬盘。           |
-  | 更新 | **Out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；需要 compaction。 | **In-place update**：就地更新。                              |
+  | 特点 | **写入更快**（异位更新）；更适用于固态硬盘（随机读效率高，减少了寻道时间，减少写入过程的数据擦除操作）。 | **读取更快**（就地更新，写入更慢）；更适用于机械硬盘。       |
+  | 更新 | **Immutable, out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；，需要 compaction。 | **Mutable, in-place update**：就地更新。                     |
   | 优点 | 写入吞吐更高：顺序写入 + 更少的写放大；<br />文件更小：compaction； | 易于事务隔离；                                               |
   | 缺点 | Compaction 可能影响常规读写、占用磁盘带宽；<br />难以事务隔离、加锁：同一个key可能存在不同的 segment； | 写入吞吐低（至少两次写入，WAL + Page）；<br />存储浪费：页中有空洞； |
 
@@ -2879,6 +2880,9 @@ Aka. 序列化
 - B+ Tree
 
   - 数据只存放在叶子节点
+  - 优点
+    - 索引和数据分开存储，让更多的索引存储在内存中。 
+    - 叶子节点相连，遍历更方便。
 
 - LSM Tree
 
@@ -2897,31 +2901,29 @@ Aka. 序列化
   - 缺点：
     - Key 不能太多，必须能全部放入内存；
     - 范围查询效率低。
-- 问题：如何避免磁盘用尽
-  - 分段存储；
-  - 定期在后台对 frozen segments 进行 Compact + Merge
+- 问题：如何避免磁盘用尽——分段存储
+  - 定期在后台对 frozen segments 进行 compact + merge
   - 每个 segment 有自己的索引
 
 
 
 **SSTable：Sorted String Table**
 
-> 实际应用：LevelDB，RocksDB，Cassandra，ScyllaDB。源自 **LSM-Tree： Log-Structured Merged-Tree**。 
+> 实际应用：LevelDB，RocksDB，Cassandra，ScyllaDB。**源自 LSM-Tree**。 
 > https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
 > https://www.scylladb.com/glossary/sstable
->
 
 - 定义：类似 log segments，但在每个 segment 内按 key 排序；不可变！
 - 优点：
-  - Merge segments 更简单高效。
+  - merge segments 更简单高效。
   - 不必索引所有 key。
-  - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 Segment 不可变！！！
+  - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 segment 不可变！！！
 - 实现：
-  - 写入：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；
-  - 读取：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
+  - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；
+  - **读取**：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
   - 后台 merge + compact 
 - 问题：宕机后 memtable 数据丢失
-  - 解决方案：先写入一个 append-only log，该log只用于崩溃恢复。
+  - 解决方案：先写入一个 append-only log，该 log 只用于崩溃恢复。
 - 问题：查找不存在的 key 很慢
   - 解决方案：布隆过滤器
 
@@ -3017,7 +3019,7 @@ Aka. 序列化
   
   
 
-### 单主节点
+### 单主
 
 > Leader-based replication, active-passive, master-slave
 
@@ -3123,7 +3125,7 @@ Aka. 序列化
 
 
 
-### 多主节点
+### 多主
 
 > multi-leader replication, master-master, active-active
 
@@ -3206,7 +3208,7 @@ Aka. 序列化
 
 
 
-### 无主节点
+### 无主
 
 概念
 
