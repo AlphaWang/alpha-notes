@@ -4,6 +4,20 @@
 
 # | 分布式理论
 
+> https://www.cl.cam.ac.uk/teaching/2122/ConcDisSys/dist-sys-notes.pdf
+
+系统为什么需要分布式？
+
+- better reliability
+- better performance : get data from nearby nodes
+- solve bigger problems: huge data..
+
+缺点
+
+- communication may fail
+- processes may crash.
+- all of this my happen nondeterministically
+
 ## || 定理
 
 ### CAP 定理
@@ -420,11 +434,15 @@
 
 ## || 网络不可靠
 
-- 为什么不可靠：网络拥塞
 
-  - 交换机队列、OS队列
-  - 发送端 TCP 流控/背压
-  - TCP 重试会增加延时
+
+网络为什么不可靠
+
+**原因一：网络拥塞**
+
+> - 交换机队列、OS队列
+> - 发送端 TCP 流控/背压
+> - TCP 重试会增加延时
 
 - 解决：超时重试
 
@@ -437,9 +455,121 @@
 
   
 
+三种网络行为
+
+- **Reliable** Links
+  - 消息只要发送，就能被收到；可能乱序。
+  - = Fair-loss link + **Retry + Dedup**
+- **Fair-loss** Links
+  - 消息可能丢失、重复、乱序。
+  - 如果持续重试，则一定能被收到。
+  - = Arbitrary link + **TLS**
+- **Arbitrary** Links
+  - 消息可能被窃听、修改
+
+
+
+## || 节点不可靠
+
+三种节点行为
+
+- **Crash-stop** (fail-stop)
+  - A node is faulty if it crashes. After crashing, it stops executing forever. 
+    节点一旦宕机，则停止工作
+- **Crash-recovery** (fail-recovery)
+  - 节点宕机后丢失内存状态，但稍后可以重新工作
+- **Byzantine** (fail-arbitrary)
+  - A node is faulty if it deviates from the algorithm.
+  - Faulty nodes may do anything, including crashing or malicious behaviour
+
+
+
+
+
 ## || 时钟不可靠
 
+分布式系统需要衡量时间：
 
+- Scheduler
+- Timeout
+- Failure decetor
+- Retry 
+- Performance measurement, statistics, profiling
+- Log/database: record time
+- 缓存：Data with time-limited validity (cache, cdn, certificate)
+- 跨节点事件顺序：Determining order of events across several nodes. 
+
+
+
+**问题一：时钟不准**
+
+- 计算机使用 `Quartz clock`，会有 drift: ~50ppm (parts per million)
+
+- `Atomic clock` 更精确 --> GPS as time source，计算机定期从精确时间源服务器同步时钟
+
+  > NTP, Network Time Protocol
+  >
+  > - 如何计算出 clock skew: 
+  >   ![image-20230123101839452](../img/distributed/time-ntp-clock-skew.png)
+  > - 如何调整本地 clock
+  >   - 当偏差 < 125ms，**slew** the clock：slightly speed up or slow down by up to 500ppm
+  >   - 当偏差 >=125ms, <1000s，**step** the clock: suddenly reset.
+  >   - 当偏差 >= 1000s，**panic** and do nothing, leave for human operator
+
+  > 因此 `System.currentTimeMillis()` 可能会跳跃；——计算时间差可用 `System.nanoTime()`（monotonic clock，时间值可能表示机器启动时长）
+
+- Leap seconds: 每年6/30, 12/30 可能会增加/减少一秒 --> OS **smear** the leap second
+
+
+
+**问题二：消息乱序**
+
+- 各节点发出消息时，通过绑定本地时间来表示先后顺序，但本地时间可能有 skew，导致顺序错乱。
+- 解决：引入 `happens-before` 指定逻辑上的先后关系。--> **Potential Causality** 
+  - **Physical clock**: count number of *seconds elapsed*.
+    --> may inconsistent with causality. 
+  - **Logical clock**: count number of *events occurred*.
+    --> designed to capture causal dependencies.
+
+
+
+两种逻辑时钟
+
+- **Lamport Clock**
+
+  - 思路：A Lamport timestamp is essentially an integer that counts the number of events that have occurred.
+    As such, it has no direct relationship to physical time.
+    - 每个节点维护一个计数器 `t`，每个本地事件 e 发生后都自增 t = L(e)；
+    - 向网络发送消息时，附带当前 `t` 值；
+    - 接收者如果发现消息中的 t 被自身大，则将自身时钟前拨到 t，然后自增。
+  - 算法
+    - 初始 `t = 0`
+    - 任何事件发生后， `t = t + 1`
+    - 发出消息请求时， `t = t + 1`
+    - 接收到请求 (t', m) 后，`t = max(t, t') + 1`
+  - 推理
+    - If `a → b` then `L(a) < L(b)`,
+    - However, `L(a) < L(b)` does not imply `a → b`,
+    - Possible that `L(a) = L(b) for a != b`
+
+- **Vector Clock**
+
+  > Lamport Clock 的缺点：已知两个事件时间，并不能推断出两个事件是否有因果关系、是否并发。
+  >
+  > 已知 L(a) < L(b)，并不能推断出 a -> b，或者 a || b。
+
+  - 思路：不止存一个整数 `t`，而存一个向量 `T = <t1, t2, ..., tn>`，每个元素对应系统中的一个节点。
+    - t<sub>i</sub> is *the number of events* known to have occurred at node N<sub>i</sub> . 
+    - vector timestamps mirror the transitivity of the happens-before relation.
+  - 算法
+    - 对每个节点 N<sub>i</sub>，初始化 `T = <0, 0, ..., 0>` ——可实现为 Map
+    -  N<sub>i</sub> 发生任何事件后，自增对应元素：`T[i] = T[i] + 1`
+    -  N<sub>i</sub> 发出消息时，先自增对应元素：`T[i] = T[i] + 1`，再将时间向量一并发出 (T, m)
+    - N<sub>i</sub> 收到消息时，先合并向量：`T[j] = max(T[j], T[j']) `，再自增 `T[i] = T[i] + 1`
+  - 推理
+    - If `a → b` then `T(a) < T(b)`, a每个元素都比b小
+    - 给定两个向量，如果a每个元素都比b小，则 a → b (happens-before) ——Lamport clock 则无法解决
+    - 但如果元素有大有小，则无法比较 a 和 b.
 
 
 
@@ -861,8 +991,6 @@ String result = jedis.set(
 
 
 
-
-
 区块链
 
 **算法**
@@ -878,6 +1006,33 @@ String result = jedis.set(
 **3. DPoS: Delegated Proof of Stake**
 
 解决PoS的垄断问题 
+
+
+
+### **拜占庭问题** 
+
+Byzantine generals problem
+
+- 问题：在可能有叛徒的情况下，如何达成一致攻击某城市？
+
+  - 网络不可靠：通讯消息/回复可能丢失；
+  - 可能存在叛徒：
+    Up to `f` generals might be malicious. 
+    The malicious generals may collude.
+  - Honest generals don't know who the malicious ones are.
+  - Nevetheless, honest generals must agree on plan.
+
+- 定理
+
+  - 将军总数必须 `>= 3f + 1`， 才能保证 tolerate `f` malicious generals。即叛徒必须 `< 1/3`
+
+  
+
+![image-20230122111949095](../img/distributed/byzantine.png)
+
+（实例：网上购物各系统互不信任）
+
+![image-20230122112934870](../img/distributed/byzantine-example.png)
 
 
 
@@ -2910,8 +3065,10 @@ Aka. 序列化
 **SSTable：Sorted String Table**
 
 > 实际应用：LevelDB，RocksDB，Cassandra，ScyllaDB。**源自 LSM-Tree**。 
-> https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
-> https://www.scylladb.com/glossary/sstable
+>
+> - https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
+> - https://www.scylladb.com/glossary/sstable
+> - Gaurav Sen: https://www.youtube.com/watch?v=_5vrfuwhvlQ 
 
 - 定义：类似 log segments，但在每个 segment 内按 key 排序；不可变！
 - 优点：
@@ -2919,12 +3076,12 @@ Aka. 序列化
   - 不必索引所有 key。
   - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 segment 不可变！！！
 - 实现：
-  - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；
+  - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；该文件分 chunk，每个chunk内有序（便于二分查找）。
   - **读取**：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
-  - 后台 merge + compact 
+  - **后台**： merge + compact ——减少chunk数目、减少查询复杂度，合并两个有序 chunk 很容易。 
 - 问题：宕机后 memtable 数据丢失
   - 解决方案：先写入一个 append-only log，该 log 只用于崩溃恢复。
-- 问题：查找不存在的 key 很慢
+- 问题：查找不存在的 key 很慢，要查遍所有 chunk
   - 解决方案：布隆过滤器
 
 
