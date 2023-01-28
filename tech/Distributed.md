@@ -18,6 +18,43 @@
 - processes may crash.
 - all of this my happen nondeterministically
 
+
+
+**挑战**
+
+- **通讯异常**
+
+  - 内存访问 10ns，网络访问 0.1-1ms
+
+
+  - 延迟 100 倍
+
+
+- **网络分区**
+
+  - 脑裂
+
+
+  - 出现局部小集群
+
+
+- **三态**
+
+  - 成功
+
+
+  - 失败
+
+
+  - 超时：发送时丢失、响应丢失
+
+
+- **节点故障**
+
+
+
+
+
 ## || 定理
 
 ### CAP 定理
@@ -208,32 +245,6 @@
 - 会话一致性 Session Consistency
 
 - 因果一致性 Causal Consistency
-
-
-
-### 挑战
-
-**通讯异常**
-
-- 内存访问 10ns，网络访问 0.1-1ms
-
-- 延迟 100 倍
-
-**网络分区**
-
-- 脑裂
-
-- 出现局部小集群
-
-**三态**
-
-- 成功
-
-- 失败
-
-- 超时：发送时丢失、响应丢失
-
-**节点故障**
 
 
 
@@ -1238,18 +1249,23 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 ### Multi-Paxos
 
-TODO
+> vs Paxos:
+>
+> - Paxos: single-value consensus
+> - Multi-Paxos: generalisation to total order broadcast
 
 
 
 ### Raft
 
 > - 动画：http://thesecretlivesofdata.com/raft/
->
 > - git：https://raft.github.io/ 
->
-> - https://www.youtube.com/watch?v=YbZ3zDzDnrw
+> - Diego Ongaro: 
+>   https://www.youtube.com/watch?v=YbZ3zDzDnrw
 >   https://ongardie.net/static/raft/userstudy/raft.pdf
+>   https://www.youtube.com/watch?v=vYp4LYbnnW8 TODO
+> - Martin Kleppmann: 
+>   https://www.youtube.com/watch?v=uXEYuDwm7e4
 
 
 
@@ -1262,6 +1278,7 @@ TODO
 **思路**
 
 - 增加**选主**过程，在平等节点中挑选意见领袖：希望既不破坏 Paxos ”众节点平等“的原则，又能在提案节点中实现主次之分、限制每个节点都有不受控的提案权利。
+  —— Use leader to *sequence messages*. 
 
 - 只有”主提案节点“才能提提案，其他节点收到请求都转发给主。
 
@@ -1274,8 +1291,8 @@ TODO
 达成共识等价于解决一下**三个问题**：
 
 - 领导者选举  `Leader Election`
-- 日志复制：如何把数据复制到各个节点上 Log Replication`
-- 安全性：如何保证过程是安全的 `Safety`
+- 日志复制 `Log Replication`：如何把数据复制到各个节点上 
+- 安全性 `Safety`：如何保证过程是安全的 
 
 
 
@@ -1285,34 +1302,44 @@ TODO
   - Leader -- Candidate -- Follower
   - 状态机
     ![image-20220423182344629](../img/distributed/raft-state-machine.png)
-
+    
+    > - start up, or recover from crash --> Follower
+    > - suspect leader failure --> Candidate
+    > - receive votes from quorum --> Leader
+  
 - **任期：Term**
 
-  - Raft 把时间划分为不同 Term，每个 Term 从一次选举开始；每个Term有一个或〇个 Leader。
+  - Raft 把时间划分为不同 Term，每个 Term 从一次选举开始；保证每个Term 有 1 个或 0 个 Leader。
+    ——At most 1 leader per term. 
 
   - 每个节点都持久化”current term“相关的取值。
+
+  - Term 的作用：identify obsolete infomation; detect stale leaders. 
 
     ![image-20220423200954023](../img/distributed/raft-terms.png)
 
 - **两种 RPC 请求**
 
-  - RequestVote：请求投票
+  - `RequestVote`：请求投票
 
-  - AppendEntries：追加条目、保持心跳
+  - `AppendEntries`：追加条目、保持心跳
 
 - **Log Structure**
 
-  - Log = entry list
+  - *Log* = entry list
 
-  - Entry = 
+  - *Log Entry* = 
 
     - `command` 状态机指令
-    - `term id` Leader 任期号，用于检测多个日志副本之间的不一致情况、判定节点状态、判断节点空缺了哪个任期；
-    - `index` 日志索引
+    - `termId` Leader 任期号，用于检测多个日志副本之间的不一致情况、判定节点状态、判断节点空缺了哪个任期；
+    - `index` entry 索引
 
-  - Committed: 被多数节点写入。
+  - *Committed Entry*: 被多数节点写入的 entry。
 
+    - Committed --> present in future leaders' logs. 
+    
     ![image-20220423205618357](../img/distributed/raft-log-structure.png)
+    
 
 
 
@@ -1330,32 +1357,33 @@ TODO
 
 - Raft 有两类超时设置
 
-  - `electionTimeout`：follower 等待变成 candidate的时间，150ms ~ 300ms随机值。
+  - `electionTimeout`：follower 等待变成 candidate的时间，150ms ~ 300ms **随机值**。
   - `heartbeatTimeout`：发送 AppendEntries 消息的时间间隔。
 
 - **Leader Election 流程**
 
-  - **1. 开始投票：**当 electionTimeout 到期后，Follower 变成 candidate、开启新一轮选主 `election term`：增加TermId、转到 Candidate 状态、投票给自己、并行发送 `RequestVote` RPC 请求给所有其他节点。
+  - **1. 开始投票：**当 electionTimeout 到期后，Follower 变成 candidate、开启新一轮选主 `election term`：termId++、转到 Candidate 状态、投票给自己、并行发送 `RequestVote` RPC 请求给所有其他节点。
 
-  - **2. 选出领导者：**如果其他节点在本轮尚未做出投票，则投票给该 candidate、并重置 election timeout。当 candidate 收到多数投票后，则成为 Leader。
-
+  - **2. 选出领导者：**如果其他节点在本轮尚未做出投票，则投票给该 candidate、并重置 election timeout。当 candidate 收到**多数投票**后，则成为 Leader。
+    —— quorum
+  
     > 若出现 **split vote**，例如两个candidate节点均无法获得多数投票，则重试：增加 term id、重新选举。
-
+  
   - **3. 心跳：**Leader 被选出后开始以 heartbeat timeout 时间间隔定期发送 `AppendEntries` 消息给 follower；follower 返回响应。
-
+  
     > 若一个 Follower (在election timeout 内) 未收到 heartbeat，变成 candidate、重新触发选主。
     >
     > 若一个 Leader / Follower 收到的 term id比自己的大，则发现自己的任期号过期，立即回到 Follower 状态。
 
 
-- **扩展：Picking the best leader**
+- **Step2 扩展：Picking the best leader**
 
   - 应该选择尽量包含所有已提交 entry 的 candidate 作为新 Leader。
-    During elections, choose candidate with log most likely to contain all committed entries
+    During elections, choose candidate with log *most likely* to contain all committed entries
 
-    - `RequestVote` 请求中包含当前节点 last entry 的 `index & item`；
+    - `RequestVote` 请求中包含当前节点 last entry 的 `index & termId`；
 
-    - Voting 节点对比该值，如果觉得自己更完整则拒绝该 `RequestVote` 请求：
+    - Voting 节点对比该值，如果觉得自己的 log 更完整，则拒绝该 Candiate 的 `RequestVote` 请求：
 
       ```
       (lastTerm-V > lastTerm-C) || 
@@ -1367,6 +1395,19 @@ TODO
     - Must be stored on a majority of servers.
     - NEW: At least one new entry from leader’s term must also be stored on majority of servers
 
+- **Safety: allow at-most-one winner per term** 
+
+
+  - 每个节点对同一 term 只会投票一次；节点需要将自己的投票结果持久化下来。
+  - 两个不同的 candidate 不可能在同一 term 同时获得多数投票；
+
+- **Liveness: some candidate must eventually win**
+
+
+  - random eletion timeouts [T, 2T]
+  - one server usually times out and wins election before others wake up.
+
+
 
 
 **Raft 子问题二：Log Replication 日志复制**
@@ -1377,16 +1418,18 @@ TODO
 
 - **Log Replication 流程**
 
-  - **1. Leader 写入日志：**Leader 收到客户端请求后，先记入本地 `node log`（未提交，不会即时修改`node value`）；
-
-
-  - **2. AppendEntries：**Leader 通过 heartbeat  `AppendEntries` 请求将修改复制到 Follower 节点 log；
-
-
-  - **3. 提交：**等待多数返回后，Leader 提交日志、并执行对应的状态机指令，写入 `node value`。
-
-
-  - 然后 Leader 通知 Follower 节点该 entry 已提交，集群达成共识。
+  - **1. Leader 写入日志：**Leader 收到客户端请求后，先记入本地 `node log`（未提交，不会即时修改 `node value`）；
+  
+  
+    - **2. AppendEntries：**Leader 通过 heartbeat  `AppendEntries` 请求将修改复制到 Follower 节点 log；
+  
+  
+    - **3. 提交：**等待多数返回后，Leader 提交日志、并执行对应的状态机指令，写入 `node value`、将结果返回给客户端。
+      —— quorum
+  
+  
+    - 然后 Leader 在下一次 `AppendEntries`请求时通知 Follower 节点该 entry 已提交，集群达成共识。
+  
 
 
 - **Log Replication 流程（网络分区时）**
@@ -1398,13 +1441,14 @@ TODO
   - 网络恢复后，LeaderA 发现有更高的 election term、则分区A内节点会回滚 uncommitted entry，并同步新 LeaderB 的日志。
 
 
-- **Raft 一致性检查：**
 
-  - 目的：保证一个 entry 被接受的话，之前的entry也一定已被接受。
+- **AppendEntries 一致性检查：**
+
+  - 目的：保证一个 entry 被接受的话，之前的 entry 也一定已被接受。
 
   - 场景：Follower 崩溃后恢复。保证 follower 能按顺序恢复崩溃后缺失的日志。
 
-  - AppendEntries 请求会带上前一个日志条目的 Term ID + Index，follower 如果不包含该该 preceding entry 则会拒绝该请求。Leader 收到拒绝后，会发送前一个日志条目，逐渐向前定位到 follower 第一个缺失的日志、补齐所有缺失的日志。--> Follower 中额外的日志会被覆盖掉（因为这些日志一定没有被提交，不违反一致性）。
+  - 实现：AppendEntries 请求会带上*前一个日志条目的 term ID + index*，follower 如果不包含该该 preceding entry 则会拒绝该请求。Leader 收到拒绝后，会发送*前一个*日志条目，逐渐向前定位到 follower 第一个缺失的日志、补齐所有缺失的日志。--> Follower 中额外的日志会被覆盖掉（因为这些日志一定没有被提交，不违反一致性）。
 
     > 优化：follower 返回最后一个日志索引？或者往回找的时候 二分查找？
     >
@@ -1421,8 +1465,23 @@ TODO
 
 
 
+属性
+
+- **Safety**: If a leader has decided that a log entry is **committed**, *that entry will be present in the logs of all future leaders*. 
+  --> 一旦 log entry apply 到状态机，则其他状态机不会对相同 log entry apply 不同的值。
+  - Leader 永不覆盖其log中的entry；-- append only
+  - 只有 leader log 中存在的 entry 才能被提交；
+  - Entry 必须在被apply到状态机前提交；
+
+
+
 完善边界条件规则：
 
+- **Commitment 规则**
+  - Leader 决定一个entry 是否 committed，看两个条件：
+    - 该 entry 必须在多数节点上已存储；
+    - At least one new entry from leader's term must also be stored on majority of servers. (?)
+  
 - **Leader 宕机处理：选举限制**
   - **增加限制**：被选出来的 Leader 一定包含了之前各任期的所有 Committed Entries.  
   - **解决问题**：follower 落后 leader 若干日志（但没有遗漏一整个任期），那么下次选举其任期号 + 1、依旧有可能当选 leader、之后无法补齐之前缺失的日志，造成状态机之间的不一致。
@@ -1441,33 +1500,25 @@ TODO
 
 **Repairing Follower Logs 流程**
 
-- 新选出的 Leader 必须把 Follower log 弄成与自己的log一致：
-  - Delete extraneous entries
-  - Fill in missing entries
+- 目的：**新选出的 Leader 必须把 Follower log 弄成与自己的log一致：**
+  - Delete *extraneous* entries
+  - Fill in *missing* entries
 - 实现方式
-  - Leader 为每个 follower 维护一个 `nextIndex` ，初始值 = `leader's last index + 1`；表示 Index of next log entry to send to that follower。
-  - 当 `AppendEntries` Consistency Check 失败，`nextIndex`会被往前推并重试。
+  - Leader 为每个 follower 维护一个 `nextIndex` ，初始值 = `leader's last index + 1`；表示将要发送给该 follower的下一条 entry索引（ Index of next log entry to send to that follower）。
+  - 当 `AppendEntries` Consistency Check 失败（follower 发现改索引上的entry 与 leader 不一致），follower会拒绝；leader 将 `nextIndex` 往前推、并重试。
     ![image-20220423234758149](../img/distributed/raft-repair-follow-log.png)
 
 
 
-属性
-
-- **Safety**: If a leader has decided that a log entry is **committed**, that entry will be present in the logs of all future leaders. 
-  --> 一旦 log entry apply 到状态机，则其他状态机不会对相同 log entry apply 不同的值。
-  - Leader 永不覆盖其log中的entry；-- append only
-  - 只有 leader log 中存在的 entry 才能被提交；
-  - Entry 必须在被apply到状态机前提交；
 
 
-
-**集群成员变更**
+**Configuration Change: 集群成员变更**
 
 - 难点：避免脑裂
-- 解决1：**Joint Consensus 联合一致**
-  - 预备阶段：新增的节点为只读状态，追日志。
-  - 第一阶段：Joint Consensus 联合一致状态。所有 RPC 都需要在新旧两个配置中都达到大多数才算成功。
-  - 第二阶段：切换到新配置。
+- 解决1：**两阶段 - Joint Consensus 联合一致**
+  - 预备阶段：新增的节点为**只读**状态，追日志。
+  - 第一阶段：Joint Consensus **联合一致**状态。所有 RPC 都需要在新旧两个配置中都达到大多数才算成功。
+  - 第二阶段：**切换**到新配置。
 - 解决2：**单节点变更方法**，一次只增减一个节点
   - 缺点：不支持一步完成机器替换
   - 缺点：变更过程必然经历偶数节点状态，如发生网络分区，无法选出Leader
@@ -1490,7 +1541,7 @@ TODO
   > 如何做到？
   >
   > - 全局递增的唯一 事务ID：ZXID；类似 Kafka Leader Epoch
-  > - Leader 为每个Follower 维护一个单独的队列，Proposal 放入队列中 FIFO
+  > - Leader 为每个 Follower 维护一个单独的队列，Proposal 放入队列中 FIFO
 
 - **原子性**：所有事务请求的处理结果在集群中所有机器上的应用情况是一致的。
 
@@ -1514,8 +1565,8 @@ TODO
 
   - 对每个事务分配全局唯一的ZXID
 
-    > zxid低32位：单调递增计数器
-    > zxid高32位：Leader周期的epoch编号
+    > zxid 低32位：单调递增计数器
+    > zxid 高32位：Leader周期的epoch编号
     > 类似 kafka leaderEpoch
 
   - 数据的状态变更以“事务Proposal”的形式广播到所有副本进程
@@ -1540,13 +1591,13 @@ TODO
 
 > 消息广播：
 >
-> - 所有的事务请求都会转发给Leader，Leader会为事务生成对应的Proposal，并为其分配一个全局单调递增的唯一ZXID。
+> - 所有的事务请求都会转发给 Leader，Leader 会为事务生成对应的Proposal，并为其分配一个全局单调递增的唯一ZXID。
 >
-> - 当Leader接受到半数以上的Follower发送的ACK投票，它将发送Commit给所有Follower通知其对事务进行提交，Leader本身也会提交事务，并返回给处理成功给对应的客户端。
+> - 当 Leader 接受到半数以上的 Follower 发送的 ACK 投票，它将发送Commit 给所有 Follower 通知其对事务进行提交，Leader 本身也会提交事务，并返回给处理成功给对应的客户端。
 
 - Leader
 
-  - 将客户端事务请求转换成一个 事务Proposal，并分发给“所有Follower”
+  - 将客户端事务请求转换成一个 事务 Proposal，并分发给“所有Follower”
 
   - 一旦“超过半数Follower”反馈，则Leader向“所有Follower”分发Commit消息
 
@@ -1590,7 +1641,7 @@ TODO
 
   - 解决
 
-    - 选举要保证新选出的Leader拥有最大的ZXID
+    - 选举要保证新选出的 Leader 拥有最大的 ZXID
 
   - 流程 
 
@@ -1601,7 +1652,7 @@ TODO
     >    - PK: ZXID 越大，myid 越大
     >    - Q：每个 LOOKING 节点两两通讯？通讯量岂不很大？
     > 3. 变更投票
-    >    PK后更新自己的投票
+    >    PK 后更新自己的投票
     > 4. 确定 Leader
     >    是否超半数以上 接收到相同的投票信息
     > 5. 改变服务器状态
@@ -1614,7 +1665,7 @@ TODO
   -  作用
 
     - 选举结束，对外提供服务之前，检查是否完成数据同步；
-    - 同步阶段的引入，能有效保证Leader在新的周期中提出Proposal之前，\n所有的进程都已经完成了对之前所有Proposal的提交。
+    - 同步阶段的引入，能有效保证 Leader 在新的周期中提出 Proposal 之前，所有的进程都已经完成了对之前所有Proposal的提交。
 
   - 流程
 
@@ -1634,6 +1685,8 @@ TODO
 
 
 ### Gossip
+
+> 又称为 Epidemic Protocol
 
 **区别：**
 
@@ -1730,21 +1783,21 @@ TODO
 
 - **A 原子性**：要么全部执行成功，要么全部不执行；无需担心“部分失败”
   - 实现：Write-ahead log
-  - 要么转账成功，要么转账失败
+  - 实例：要么转账成功，要么转账失败
 
 - **C 一致性**：事务操作前后，数据的完整性保持一致（invariants）
   - 实现：事务语义
-  - 总钱数不会变
+  - 实例：总钱数不会变
 
 - **I 隔离性**：多个事务并发执行，不会互相干扰
   - 实现：Lock
-  - A转账、B查余额，依赖于隔离级别
+  - 实例：A转账、B查余额，依赖于隔离级别
 
 - **D 持久性**：一旦事务生效，其修改内容就不会丢失
   - 实现：
     - 单机：Write-ahead log，用于故障恢复
     - 分布式：写入多个副本
-  - 一旦事务成功，则其做的更新被永远保存下来
+  - 实例：一旦事务成功，则其做的更新被永远保存下来
 
 
 
@@ -1753,7 +1806,7 @@ TODO
 - **方式一：Commit Logging，提交日志**
   - 流程
     - 修改之前将相关信息（数据位置、改前值、改后值）以日志形式记录到磁盘；
-    - 提交后，即看到 Commit Record后，才会根据日志信息真正进行修改；
+    - 提交后，即看到 Commit Record 后，才会根据日志信息真正进行修改；
     - 修改完成后，在日志中加入 End Record，表示事务已完成持久化。
   - 原理
     - 日志有 Commit Record 时，重启后 Redo、保证持久性；
@@ -1779,8 +1832,8 @@ TODO
 
 |                                                              | NO-STEAL<br />提交事务前，不允许数据提前写入 | STEAL<br />提交事务前，允许数据提前写入    |
 | ------------------------------------------------------------ | -------------------------------------------- | ------------------------------------------ |
-| **NO-FORCE**<br />**提交事务后，不强制数据必须同时完成写入** | 过 redo log 实现                             | 通过 undo log 实现。性能最佳，复杂度也高。 |
-| **FORCE**<br />**提交事务后，强制数据必须同时完成写入**      | 无需日志；实践中少用                         | 通             过 undo log 实现            |
+| **NO-FORCE**<br />**提交事务后，不强制数据必须同时完成写入** | 通过 redo log 实现                           | 通过 undo log 实现。性能最佳，复杂度也高。 |
+| **FORCE**<br />**提交事务后，强制数据必须同时完成写入**      | 无需日志；实践中少用                         | 通过 undo log 实现                         |
 
 
 
@@ -1854,7 +1907,7 @@ TODO
 
 - 隔离级别支持：
 
-  - **Repeatable Read**：读取 Create_Version <= 当前事务ID的记录，且忽略未提交记录- 
+  - **Repeatable Read**：读取 `Create_Version <= 当前事务ID` 的记录，且忽略未提交记录 
 
     > - 事务开始时列出进行中的事务清单，这些事务的任何写入都被忽略；
     > - 已中止事务的任何写入也被忽略；
@@ -1873,7 +1926,7 @@ TODO
   - **两阶段锁定**
     - 写入不仅阻塞其他写入、也会阻塞读；反之亦然。——<u>悲观锁</u>
     - 实现：<u>共享锁、排他锁</u>
-      - 附加“谓词锁”：可对db中尚不存在的记录加锁。
+      - 附加“谓词锁”：可对 db 中尚不存在的记录加锁。
       - 附加“索引范围锁”：是为谓词锁的近似简化版，范围更大，开销更小(?)；将搜索条件附加到索引上
     - 缺点：性能极差：锁有开销、且并发度降低、一个慢事务可能影响后续事务、更容易发生死锁。
     - 案例：MySQL InnoDB，SQL Server
@@ -1884,7 +1937,7 @@ TODO
 
 
 
-### Spring 分布式事务
+### Spring分布式事务
 
 **种类**
 
@@ -1916,6 +1969,7 @@ TODO
   
 
 - **最大努力一次提交**
+  
   - 原理
     - 依次提交事务
     - 可能出错
@@ -1936,8 +1990,7 @@ TODO
     ```
   
     - 适用于其中一个数据源是 MQ，并且事务由读 MQ 消息开始
-    - 利用 MQ 消息的重试机制
-    - 重试时需要考虑重复消息
+    - *利用 MQ 消息的重试机制*，重试时需要考虑重复消息
 
 - **链式事务**
 
@@ -1947,9 +2000,7 @@ TODO
 
     - 多个事务在一个事务管理器里依次提交
 
-    - 可能出错
-
-      第二个提交执行中 如果数据库连接失败，第一个提交无法回滚。
+    - 可能出错：第二个提交执行中 如果数据库连接失败，第一个提交无法回滚。
 
   - 实现：ChainedTransactionManager
 
@@ -1965,7 +2016,7 @@ TODO
         ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
       }
       ```
-
+  
     - JPA + DB
 
       ```java
@@ -1991,25 +2042,19 @@ TODO
         ChainedTransactionManager tm = new ChianedTransactionManager(orderTM, userTM);
       }
       ```
-
+  
       
 
 **选择**
 
 - 强一致性
-  -  JTA
-  - （性能差，只适用于单个服务内）
-
+  -  JTA（性能差，只适用于单个服务内）
 - 弱、最终一致性
-  -  最大努力一次提交、链式事务
-  - （设计相应错误处理机制）
-
+  -  最大努力一次提交、链式事务（设计相应错误处理机制）
 - MQ-DB
   - 最大努力一次提交 + 重试
-
 - DB-DB
   - 链式事务
-
 - 多个数据源
   - 链式事务、或其他事务同步方式
 
@@ -2032,11 +2077,18 @@ TODO
 
 
 
-#### XA 协议
 
-> eXtended Architecture.
+
+#### 2PC
+
+> 两阶段提交
+
+
+
+**XA 协议**
+
+> eXtended Architecture. Java JTA 接口
 >
-> Java JTA 接口
 
 参与者：
 
@@ -2052,30 +2104,31 @@ TODO
 
   - 定义事务边界，访问边界内的资源
 
-  
 
-#### 2PC：两阶段提交
 
 **流程**
 
-***阶段一：投票 Voting: CanCommit/Log***
+***阶段一：投票 Voting***
 
 - **CanCommit** 
   
   - `TM 协调者`：向本地资源管理器发起执行操作的 `CanCommit` 请求；
+  
 - **LOG** 
   
-  - `RM 参与者`：收到请求后，执行事务操作，记录日志（`Undo / Redo log`）但不提交；返回操作结果。
+  - `RM 参与者`：收到请求后，执行事务操作、记录日志（`Undo / Redo log`）、但不提交；返回操作结果。
   
-    > 即在重做日志中记录内容，但不写入 Commit Record。
+    > 即：在重做日志中记录内容，但不写入 Commit Record。
+    
+  - 如果 vote yes，则意味着承诺可以提交该事务，即便是将来也可以提交。
 
 
 
-***阶段二：提交 Commit: DoCommit/DoAbort***
+***阶段二：提交 Commit***
 
 - **DoCommit**
   
-  - `TM 协调者`：收到所有参与者的结果，先在本地持久化事务状态为 Commit；如果全是YES 则发送 `DoCommit` 消息；
+  - `TM 协调者`：收到所有参与者的结果，先在本地持久化事务状态为 Commit；如果全是 YES 则发送 `DoCommit` 消息；
   
   - `RM 参与者`：完成剩余的操作并释放资源，向协调者返回 `HaveCommitted` 消息；
   
@@ -2093,7 +2146,7 @@ TODO
 
   
 
->  疑问：如果 阶段二 DoCommit 执行失败怎么办？
+>  Q：如果 阶段二 DoCommit 执行失败怎么办？
 >
 >  A：通过预留阶段的确认，保证确认阶段不会出错
 
@@ -2108,7 +2161,8 @@ TODO
 **不足**
 
 - **单点问题**
-  - 协调者宕机，则所有参与者会一直等待。
+  - 如果prepare之后、广播决策之前协调者宕机，则所有参与者会一直等待、BLOCKED。
+  - 宕机恢复：协调者将决策持久化到磁盘
 - **性能问题**
   - 整个过程要经历 两次远程服务调用、三次数据持久化（准备阶段 Redo Log、协调者做状态持久化、提交阶段写入Commit Record）。
   - 所有节点都是事务阻塞型的。
@@ -2147,7 +2201,9 @@ TODO
 
 
 
-#### 3PC：三阶段提交
+#### 3PC
+
+> 三阶段提交
 
 **目的**
 
@@ -2236,7 +2292,10 @@ TODO
   TCC
   Saga
   
-  
+
+
+
+
 
 ### 柔性事务
 
@@ -2252,33 +2311,7 @@ TODO
 
 
 
-#### 可靠事件队列
-
-**思路**
-
-- 先将最有可能出错的业务，以本地事务的方式完成；然后采用不断重试的方式（轮询消息表），来促使关联业务全部完成。
-- 没有回滚概念。只许成功，不许失败。
-
-**问题**
-
-- 没有隔离性。例如可能导致超售。
-
-
-
-> **案例：购物转账减库存**
->
-> - 分析最易出错的服务，排序：账号扣款 --> 仓库出库 --> 商家收款；
-> - 在最易出错的账号服务，以本地事务方式完成 *扣款 + 写本地消息表*；
-> - 定时轮询消息表，将 state = processing 的消息发送到关联的库存服务、商家服务；
->   - 如果执行成功，则将消息 state 设为 done；
->   - 如果因为网路原因未能响应，则继续轮询发送：要求幂等；
->   - 如果某个业务无法完成，例如出库失败 库存不足，则仍然是轮询重发消息：不会回滚、只许成功；
->
-> 
-
-
-
-#### TCC 事务
+#### TCC
 
 **流程**
 
@@ -2320,7 +2353,7 @@ TODO
 
 
 
-#### Saga 事务
+#### Saga
 
 思路
 
@@ -2365,7 +2398,7 @@ TODO
 
 
 
-#### 异步 MQ 事务消息
+#### 异步MQ事务消息
 
 概念
 - **半消息**：发到MQ服务端，但标记为暂不投递；直到 MQ 服务端收到二次确认（Commit）
@@ -2376,18 +2409,18 @@ TODO
 
 步骤
 
-- **发送半消息**
+- **1. 发送半消息**
   - 发送方：发送半消息到MQ服务器，同步
   - 这一步需要处理幂等，可能会发送重复半消息
   - 类似 prepare
-- **执行本地事务**
+- **2. 执行本地事务**
   - 发送方：收到MQ服务器返回值后，执行本地事务
 
-- **提交或回滚**
+- **3. 提交或回滚**
   - 发送方：执行成功后，发送commit / rollback 到MQ服务器
   - MQ服务器：投递该消息给订阅方，或删除消息
   - MQ消费端：由 MQ 保证消费成功
-- **回查**
+- **4. 回查**
   - MQ服务器：扫描发现长期处于半消息状态，请求发送发回查事务状态
   - 这对 MQ 服务器要求太高
   - 发送方：检查本地事务状态，再次发送 commit / rollback
@@ -2399,7 +2432,9 @@ TODO
 
 
 
-#### 异步本地消息表 (事务性发件箱)
+#### 异步本地消息表 
+
+> 又称：事务性发件箱
 
 思路
 - 两张表：业务表、消息表 （事务性发件箱）
@@ -2411,22 +2446,22 @@ TODO
 
 步骤
 
-- **执行本地事务**
+- **1. 执行本地事务**
   
   - 业务方：写入业务数据
-- 业务方：写入消息表；而不是直接写入MQ
+  - 业务方：*写入消息表；而不是直接写入MQ* ——区别于“异步MQ事务消息”
   
-- **写入MQ**
-  
+- **2. 写入MQ**
+
   - 业务方：读取消息表，写入MQ
-- MQ： 返回回执
-  
-- **删除本地消息**
-  
+  - MQ： 返回回执
+
+- **3. 删除本地消息**
+
   - 业务方：收到 MQ 回执写入成功，则删除本地消息；
-  
+
     > 或记录状态，而不删除
-  
+
   - 若回执丢失？
     - 重新写入 MQ
     - At Least Once
@@ -2449,19 +2484,44 @@ TODO
 
 
 
+**又称：可靠事件队列？**
+
+**思路**
+
+- 先将最有可能出错的业务，以本地事务的方式完成；然后采用不断重试的方式（轮询消息表），来促使关联业务全部完成。
+- 没有回滚概念。只许成功，不许失败。
+
+**问题**
+
+- 没有隔离性。例如可能导致超售。
 
 
-#### CDC 异步变更数据捕获
 
-> CDC：Change Data Capture
+> **案例：购物转账减库存**
+>
+> - 分析最易出错的服务，排序：账号扣款 --> 仓库出库 --> 商家收款；
+> - 在最易出错的账号服务，以本地事务方式完成 *扣款 + 写本地消息表*；
+> - 定时轮询消息表，将 state = processing 的消息发送到关联的库存服务、商家服务；
+>   - 如果执行成功，则将消息 state 设为 done；
+>   - 如果因为网路原因未能响应，则继续轮询发送：要求幂等；
+>   - 如果某个业务无法完成，例如出库失败 库存不足，则仍然是轮询重发消息：不会回滚、只许成功；
+>
+> 
+
+
+
+
+
+#### CDC
+
+> 异步变更数据捕获。CDC：Change Data Capture
 
 
 
 思路
 
 - 消费事务日志
-- Transacation Log Miner 捕获日志，并写入MQ
-  - At least once
+- Transacation Log Miner 捕获日志，并写入MQ：At least once
 
 
 
@@ -3385,13 +3445,14 @@ Aka. 序列化
 
 - **节点失效后被读取到过期值**
   
-- 客户端读取时，并行发送到多副本，取版本号最大的作为最终值；避免读到过期值。
+  - 客户端读取时，并行发送到多副本，取版本号最大的作为最终值；避免读到过期值。
   
 - **节点失效后如何追赶数据**
   - **Read Repair 读修复**
 
     - 客户端从多个副本并行读取，探测到有过期值后，将新值写回；
-    - 适用于经常被读取的场景；
+    - 适用于*经常被读取*的场景；
+    - 案例：Dynamo
 
   - **Anti-entropy 反熵**
 
@@ -3410,10 +3471,10 @@ Aka. 序列化
 
 - w 和 r 通常取 majority of nodes
   
-  - 保证 w + r > n，同时能容忍一半节点失效
+  - 保证 `w + r > n`，同时能容忍一半节点失效
 - 或可设置 w r 为较小值
-  - 无法保证 w + r > n，但性能高、可用性高
-  - 缺点是可能读到 stale value
+  - 性能高、可用性高
+  - 但无法保证 `w + r > n`缺点是可能读到 stale value
     - 因为 w / r 节点可能不重叠
     - 因为并发写入
     - 因为某些副本写入成功、但总体写入失败，这些记录并未回滚
@@ -3431,14 +3492,14 @@ Aka. 序列化
   - Two operations are both unaware of each other. 
   - 如果有 Happens-before 关系，则不是并发
 - **LWW: Last Write Wins**
-  - 最近写入的覆盖之前写入的。
-  - 以损失持久性为代价：所有写入都返回成功，但DB默默丢弃更老的数据
+  - 最近写入的覆盖之前写入的。——每个客户端写入时附带 Lamport Clock.
+  - 以损失持久性为代价：所有写入都返回成功，但 DB 默默丢弃更老的数据 —— data loss!
   - 适用
     - 缓存，等对持久性要求不高的场景
     - Immutable，写入后即不再修改同一个key的场景
   - 案例：Cassandra
 - **Version Vectors**
-  - 每个副本对每个key 都维护一个版本号。新值写入时，递增版本号，同时保存新值 + 版本号。
+  - 每个副本对每个 key 都维护一个版本号。新值写入时，递增版本号，同时保存新值 + 版本号。
   - 读取时，服务器返回所有当前值，以及版本号。
   - 写入时，请求中必须包含之前读到的版本号、读到的值 + 新值。服务器覆盖比该版本号更低的所有值，但保留更高版本号的所有值。(?)
 
