@@ -3639,7 +3639,7 @@ Aka. 序列化
 
 
 
-**方案演进**
+### **方案演进**
 
 **1. 客户端组件 + 单体数据库**
 
@@ -3663,6 +3663,50 @@ Aka. 序列化
 - https://time.geekbang.org/column/article/271373
 
 ![image-20210512230808552](../img/distributed/db-bizcross.png)
+
+
+
+### Spanner
+
+> Martin Kleppmann: https://www.youtube.com/watch?v=oeycOVX70aE
+
+特点
+
+- 强一致性
+  - **Serializable** transaction isolation
+  - **Linearizable** reads and writes
+- 分布式：Sharding
+
+
+
+技术点
+
+- **Paoxs**: state machine replication within a shard
+- **Two-phase locking**: serializability 
+- **Two-phase commit**: cross-chard atomicity
+
+
+
+Consistent Snapshot
+
+- 目的：ready-only transaction 利用一致性快照，实现无锁操作。 
+
+- 要求：Causal dependency，如果快照中包含effect，那么必然也包含 cause.
+
+- 实现：MVCC
+
+  - 每个事物关联一个时间戳 t，用作版本号；T1 --> T2 需要 t1 < t2
+
+  - *方案一：Physical clock*: 可能与 causality 不一致。
+
+  - *方案二：Lamport clock*: linearizability depends on real-time order, logical clock may not reflect this! ——用户触发两个连续的写读操作，这期间各个副本之间并未之间通讯，无法自增 logical clock 
+
+  - *方案三：TrueTime* - explicit physical clock uncertainty. 
+
+    - 用一个独立的系统来返回 [t<sub>earliest</sub>, t<sub>latest</sub>]，真实的物理时钟必然在改区间内；
+    -  t<sub>latest</sub> - t<sub>earliest</sub> 即 undertainty，事务提交时，必须等待该undertainty时间之后才提交、保证有causality dependency的两个事务的提交时间一定不重合。
+
+    ![image-20230129113104565](../img/distributed/spanner-truetime.png)
 
 
 
