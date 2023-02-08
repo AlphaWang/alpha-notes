@@ -665,7 +665,7 @@ protected final Class<?> defineClass(
 
   > 只要GC，就会被回收？
   >
-  > 额外条件：没有被其他强引用引用
+  > 额外条件：**没有被其他强引用引用**
 
 - 可用来构建一种没有特定约束的关系，例如维护非强制性的映射关系
 
@@ -1620,11 +1620,22 @@ https://www.programmersought.com/article/2886751515/
 
 https://www.jianshu.com/p/1342a879f523
 
-Thread引用 --> Thread --> ThreadLocalMap --> Entry --> value 泄漏
+![image-20230130095348226](../img/java/threadlocal_ref.png)
 
-线程池中的线程生命周期长，导致对应的ThreadLocal生命周期也长；
 
-ThreadLocal 本身是 弱引用，如果没有其他引用则可以被回收；但 value 本身不会回收，只要 线程 仍然存活。
+
+- ThreadLocal 内存
+  - ThreadLocal 本身并不存储值，只是作为一个key。
+  - 虚线表示 WeakRef，如果没有被其他强引用引用，则在GC时会被回收。
+    --> 这样一来 ThreadLocalMap 中就会出现 `key=null`的 Entry、无法访问到对应的 Entry value；
+    --> Thread引用 --> Thread --> ThreadLocalMap --> Entry --> value 永远无法回收；
+  - ThreadLocalMap 有保护机制：set/get/remove 时会通过 `expungeStaleEntry()` 清理 key=null 的 Entry。但并不够
+- 那么将 key 设计为强引用行吗？
+  - ThreadLocalMap 如果持有 ThreadLocal 强引用，必须要手动删除才能被回收。
+  - 因此，ThreadLocal 内存泄漏的根源不是弱引用；而是 ThreadLocalMap 的生命周期跟 Thread 一样长 （？）
+  - 尤其线程池中的线程生命周期长，导致对应的ThreadLocal生命周期也长；
+
+
 
 
 
