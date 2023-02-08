@@ -107,30 +107,34 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
 
 **State backend**
 
-- `EmbeddedRocksDBStateBackend`
-  - 本地磁盘
-  - 慢10倍
-- `HashMapStateBackend`：Jvm heap.
-  - 更快
+- `EmbeddedRocksDBStateBackend`：本地磁盘，慢10倍
+- `HashMapStateBackend`：Jvm heap，更快
 
+配置
 
-
-**状态保存时间**
-
-- [`table.exec.state.ttl`](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/config/#table-exec-state-ttl) defines for how long the state of a key is retained without being updated before it is removed.
+- state backend: `env.setStateBackend()`
+- 状态保存时间：[`table.exec.state.ttl`](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/config/#table-exec-state-ttl) defines for how long the state of a key is retained without being updated before it is removed.
 
 
 
 ### Fault Tolerance
 
-https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
+> - 官网 https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
+>   https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/ops/state/checkpoints/ 
+> - Checkpoint & barrier: https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html 
+> - 状态管理 https://www.infoq.cn/article/VGKZA-S9fMBgABP71Pgh 
+> - Checkpoint 原理 https://www.infoq.cn/article/wkgozmqqexq6xm5ejl1e
 
 **Checkpoint Storage**
 
-Flink 定期获取所有状态的快照，并将这些快照复制到持久化的位置，例如分布式文件系统。
+问题：如果 TM 挂了，其中保存的 State 也丢失了。
+
+解决：Flink 定期获取所有 State 的快照，并将这些快照复制到持久化的位置，例如分布式文件系统。
 
 - FileSystemCheckpointStorage：分布式文件系统
 - JobManagerCheckpointStorage：测试用
+
+> 默认情况 **State** 保存在 TM 内存中，**Checkpoint** 保存在 JM 内存中。
 
 
 
@@ -162,9 +166,50 @@ Flink 定期获取所有状态的快照，并将这些快照复制到持久化�
 原理
 
 - 利用 stream **replay** + **checkpointing**
+
 - 定期生成 Snapshot；恢复时加载最新快照
+
 - 挑战：如何在不暂停的情况下，生成一致性快照？
-  - Asynchronous Barrier Snapshotting (Chandy-Lamport) ——TODO
+  
+  > Asynchronous Barrier Snapshotting (Chandy-Lamport) 
+  > https://arxiv.org/pdf/1506.08603.pdf 
+  
+  - 
+  - 
+
+
+
+**流程：Checkpointing**
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html
+>
+> https://juejin.cn/post/6951628600428724254 
+
+![](../img/flink/checkpoint-flow.svg)
+
+
+
+- **插入屏障**：Job Manager 定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
+  ![](../img/flink/checkpoint_barriers.svg)
+  - 从数据源出来的数据流被 checkpoint barrier 分成了一个一个的段落
+  - The point where the barriers for snapshot *n* are injected (let’s call it *Sn*) is the position in the source stream up to which the snapshot covers the data. For example, in Apache Kafka, this position would be the last record’s offset in the partition. 
+  - This position *Sn* is reported to the *checkpoint coordinator* (Flink’s JobManager).
+- **对齐屏障**：中间算子*等待*所有输入流的 Sn 屏障（align），之后向输出流发送屏障n。
+  ![](../img/flink/checkpoint_aligning.svg)
+  - 对齐会引入 Latency，可配置忽略对齐。缺点是恢复后会重复处理。
+- **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前，将算子的状态进行快照(snaoshot the state)，存储到 state backend (默认是 JM 内存)。  
+  - 默认同步进行状态快照，会停止处理输入数据。
+  - 可配置为异步快照，前提是 further modifications to the operator state do not affect that state object，例如用 copy-on-write. 
+- **完成**：Sink 算子收到所有输入流的 barrier n 之后，向 JM  *checkpoint coordinator* 确认 Sn。所有 sink 都确认后，表示已完成。
+  - Sn 完成后 Job 不再请求Sn之前的数据：Once snapshot n has been completed, the job will never again ask the source for records from before Sn, since at that point these records (and their descendant records) will have passed through the entire data flow topology.
+
+
+
+**流程：Recovery**
+
+- 选择前一次完成的 checkpoint k，然后重新部署整个分布式 dataflow，将随 k 一起保存的状态 分配给各个算子。
+  - Flink 默认只保留最新一个checkpoint，可配置flink-conf.yaml:  `state.checkpoints.num-retained=1`
+- 即 source 开始从 S<sub>k</sub> 处读取消息。
 
 
 
@@ -2364,7 +2409,7 @@ sink = dataStream.addSink(sink);
 
 
 
-## || Develop Source 
+## || Source 
 
 https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/ 
 
@@ -2385,11 +2430,15 @@ https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources
   - SourceReader 请求分片，并处理分片。SourceReader 并行运行在 Task Manager 中。
   
     > 例：使用 **KafkaConsumer** 读取所分配的分片（主题分区），并反序列化记录。
+    >
+    > Kafka source 的源读取器扩展了 `SourceReaderBase`，并使用单线程复用（single thread multiplex）的线程模型，使用一个由分片读取器 （split reader）驱动的 `KafkaConsumer` 来处理多个分片（partition）。消息会在从 Kafka 拉取下来后在分片读取器中立刻被解析。分片的状态 即当前的消息消费进度会在 `KafkaRecordEmitter` 中更新，同时会在数据发送至下游时指定事件时间。
   
 - **SplitEnumerator 分片枚举器**
   - SplitEnumerator 生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
   
     > 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
+    >
+    > Kafka source 的分片枚举器负责检查在当前的 topic / partition 订阅模式下的新分片（partition），并将分片轮流均匀地分配给源读取器（source reader）。 注意 Kafka source 的分片枚举器会将分片主动推送给源读取器，因此它无需处理来自源读取器的分片请求。
   
 - **Source**
   
@@ -2424,7 +2473,7 @@ TaskManager
 
 需求：接收 slack 消息，并自动回复
 
-- Source
+- **Source**
   - Configuration holder
 
 
@@ -2457,7 +2506,7 @@ class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState
 }
 ```
 
-- SplitEnumerator
+- **SplitEnumerator**
   - Split = slack notification
   - 1 `SlackEnumerator` keeps track of notifications. 
   - 每当收到消息时，SlackEnumerator 创建一个新 split，assign split on request to reader. 
@@ -2501,7 +2550,7 @@ class SlackEnumerator implements SplitEnumerator<SlackNotificaiton, EnumeratorSt
 }
 ```
 
-- Source Reader
+- **Source Reader**
   - 推荐继承 `SourceReaderBase`，减少编码量。
   - 1 `SourceReader` per subtask, reads all msgs belonging to split.
   - After reader is done with a notification
@@ -2550,7 +2599,7 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 
 
-## || Develop Sink
+## || Sink
 
 ![image-20221128224546373](../img/flink/flink-sink-arch.png)
 
@@ -2714,7 +2763,6 @@ Q：Connector Fail
 - playground https://github.com/apache/flink-playgrounds  
 - Sample: https://github.com/apache/flink-training
   - https://github.com/ververica/flink-training 
-
 
 
 
