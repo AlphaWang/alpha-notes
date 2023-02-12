@@ -99,20 +99,85 @@
 
 ### Stateful
 
-keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。另外，Operator state 也保存在机器节点本地。
+**分类**
+
+- Raw State
+
+  > 用户自己管理，需要自己序列化，适用于自定义 Operator
+
+- Managed State
+
+  > Flink runtime 管理，推荐使用。
+
+  - **Keyed State**：只能用于 KeyedStream 算子中。
+    keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。
+    - ValueState
+    - MapState
+    - AppendingState
+      - ListState
+      - ReducingState - 加入元素后，直接计算reduce (例如计数)，减少存储量
+      - AggregatingState 
+  - **Operator State**：用于所有算子 
+    每个 operator state 都与一个 operator 实例绑定，例如 source state = offset.
+    - ListState
+    - BroadcastState
+
+
 
 Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对于 `ValueState`，更建议使用 `MapState` 和 `ListState`。
 
 > 因为使用 RocksDBStateBackend 的情况下， `MapState` 和 `ListState` 比 `ValueState` 性能更好。 
 
+
+
+**State 操作代码**
+
+```java
+DataStream<Event> events = env.addSource();
+DataStream<Alert> alerts = events
+  .keyBy(Event::sourceAddress)
+  .flatMap(new StateMachineMapper());
+
+class StateMachineMapper extends RichFlatMapFunction<Event, Alert> {
+  private ValueState<String> curState;
+  
+  public void open(Configuration conf) {
+    //load state: via RuntimeContext
+    curSatate = getRuntimeContext().getState(new ValueStateDescriptor<>("state", String.class));
+  }
+  
+  public void flatMap(Event evt, Collector<Alert> out) {
+    //access state value
+    String state = curState.value(); 
+    if (needAlert) {
+      out.collect(new Alert(evt));
+    } else if (isTerminal) {
+      //clear state value
+      curState.clear(); 
+    } else {
+      //update state value
+      curState.update("newState"); 
+    }
+  }
+}
+```
+
+
+
 **State backend**
 
 - `EmbeddedRocksDBStateBackend`：本地磁盘，慢10倍
-- `HashMapStateBackend`：Jvm heap，更快
+- `HashMapStateBackend`：Jvm heap，更快.
+
+|                     | State                   | Checkpoint             | 场景                                     |
+| ------------------- | ----------------------- | ---------------------- | ---------------------------------------- |
+| MemoryStateBackend  | TM内存，单个state最大5M | JM内存                 | 本地测试，JM 如果挂了就无法恢复          |
+| FsStateBackend      | TM内存                  | 外部文件系统，例如HDFS | 常规状态作业                             |
+| RocksDBStateBackend | TM KV数据库             | 外部文件系统，例如HDFS | 超大状态作业，rocksdb 支持增量checkpoint |
 
 配置
 
-- state backend: `env.setStateBackend()`
+- state backend: `env.setStateBackend(new FsStateBackend(...))`
 - 状态保存时间：[`table.exec.state.ttl`](https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/table/config/#table-exec-state-ttl) defines for how long the state of a key is retained without being updated before it is removed.
 
 
@@ -121,8 +186,15 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
 
 > - 官网 https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/learn-flink/fault_tolerance/ 
 >   https://nightlies.apache.org/flink/flink-docs-release-1.16/docs/ops/state/checkpoints/ 
+>
 > - Checkpoint & barrier: https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html 
+>
+> - Lightweight Asynchronous Snapshots for Distributed Dataflows 
+>
+>   https://arxiv.org/pdf/1506.08603.pdf  
+>
 > - 状态管理 https://www.infoq.cn/article/VGKZA-S9fMBgABP71Pgh 
+>
 > - Checkpoint 原理 https://www.infoq.cn/article/wkgozmqqexq6xm5ejl1e
 
 **Checkpoint Storage**
@@ -145,9 +217,9 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
 - **Checkpoint**
   - Flink 自动生成的 snapshot。可全量可增量。
 - **Externalized Checkpoint**
-  - 可保留生成的 snapshot，以便手工恢复。
+  - checkpoint 完成时在指定的外部持久化存储保存，以便通过指定checkpoint路径手工恢复作业状态。
 - **Savepoint**
-  - 手工触发的 snapshot
+  - 手工触发的全量 snapshot；用于有计划地备份以便作业停止后的恢复，例如作业升级、调整并发
 
 
 
@@ -175,33 +247,61 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
   > https://arxiv.org/pdf/1506.08603.pdf 
   
   - 
-  - 
+
+
+
+checkpoint vs. state
+
+- State 是 checkpoint 所做的持久化备份的数据
 
 
 
 **流程：Checkpointing**
 
-> https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html
+> 官方：https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html
 >
-> https://juejin.cn/post/6951628600428724254 
+> 图示：https://juejin.cn/post/6951628600428724254 
+>
+> 分解图示：https://www.infoq.cn/article/wkgozmqqexq6xm5ejl1e
 
 ![](../img/flink/checkpoint-flow.svg)
 
 
 
-- **插入屏障**：Job Manager 定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
+- **插入屏障**：JM Checkpoint Coordinator定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
   ![](../img/flink/checkpoint_barriers.svg)
+
   - 从数据源出来的数据流被 checkpoint barrier 分成了一个一个的段落
   - The point where the barriers for snapshot *n* are injected (let’s call it *Sn*) is the position in the source stream up to which the snapshot covers the data. For example, in Apache Kafka, this position would be the last record’s offset in the partition. 
   - This position *Sn* is reported to the *checkpoint coordinator* (Flink’s JobManager).
-- **对齐屏障**：中间算子*等待*所有输入流的 Sn 屏障（align），之后向输出流发送屏障n。
+
+- **Source 算子**：Source 收到每条消息，记录当前状态(offset)；当收到 barrier后，将状态记录到持久化存储表 `checkpoint-data: source-1 = offset`
+
+  - 即执行 *状态快照*。
+
+- **中间算子：对齐屏障**：中间算子*等待*所有输入流的 Sn 屏障（align），之后向输出流发送屏障n。并将状态记录到表 `checkpoint-data: operator-1 = state`
   ![](../img/flink/checkpoint_aligning.svg)
+
   - 对齐会引入 Latency，可配置忽略对齐。缺点是恢复后会重复处理。
-- **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前，将算子的状态进行快照(snaoshot the state)，存储到 state backend (默认是 JM 内存)。  
+
+  - 对于单个流，不用对齐
+
+  - 对齐 = Exact-Once, 不对齐 = At-Least-Once. 
+
+    > ——注意指的是计算过程的精确一次，端到端精确一直还需要 source / sink 的支持。
+
+- **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前，将算子的状态进行快照(snaoshot the state)，存储到 state backend。  
+
+  - 完成备份后，会将备份数据的地址 (state handle) 通知给 Checkpoint Coordinator
   - 默认同步进行状态快照，会停止处理输入数据。
   - 可配置为异步快照，前提是 further modifications to the operator state do not affect that state object，例如用 copy-on-write. 
-- **完成**：Sink 算子收到所有输入流的 barrier n 之后，向 JM  *checkpoint coordinator* 确认 Sn。所有 sink 都确认后，表示已完成。
+
+- **Sink 算子**：Sink 收到所有输入流的 barrier n 之后，记录到表 `checkpoint-data: sink-1 = offset`
+
+  - 向 JM  *checkpoint coordinator* 确认 Sn。所有 sink 都确认后，表示已完成。
   - Sn 完成后 Job 不再请求Sn之前的数据：Once snapshot n has been completed, the job will never again ask the source for records from before Sn, since at that point these records (and their descendant records) will have passed through the entire data flow topology.
+
+- **完成：**Checkpoint Coordinator 收集齐所有 task 的 state handle 之后，认为这次 checkpoint 全局完成，向持久化存储再备份一个 `completed checkpoint meta` 文件。
 
 
 
@@ -210,6 +310,8 @@ Flink 提供了为 RocksDB 优化的 `MapState` 和 `ListState` 类型。 相对
 - 选择前一次完成的 checkpoint k，然后重新部署整个分布式 dataflow，将随 k 一起保存的状态 分配给各个算子。
   - Flink 默认只保留最新一个checkpoint，可配置flink-conf.yaml:  `state.checkpoints.num-retained=1`
 - 即 source 开始从 S<sub>k</sub> 处读取消息。
+  - 因为本地的state尚未被snapshot持久化，故障后会丢失；所以需要回滚到上一个checkpoint，重建该state (例如word count)
+  - 必要条件：**Source 要支持数据重新发送！**
 
 
 
@@ -2386,6 +2488,10 @@ sink = dataStream.addSink(sink);
 
 ## || Design
 
+
+
+
+
 **Key Challenges**
 
 - How to **parallelize** your data source/sink?
@@ -2411,55 +2517,125 @@ sink = dataStream.addSink(sink);
 
 ## || Source 
 
-https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/ 
+> Flink doc of DataStream source: https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/ 
+>
+> Develop a Connector: https://cloud.tencent.com/developer/article/1912489 
+>
+> FLIP-27 Source Interface https://cwiki.apache.org/confluence/display/FLINK/FLIP-27%3A+Refactor+Source+Interface
 
-**Data Source 核心组件：**
+****
+
+
+
+**基本流程**![image-20221009113212031](../img/flink/flink-connector-source.png)
+
+![](../img/flink/connector-arch2-1.png)
+
+- SplitEnumerator 将分片分配给 SourceReader；
+- SourceReader 为分片初始化 state、再分配给指定的 `SplitFetcherManager` --> `SplitFetcher` --> `SplitReader` 
+- 数据流程：SplitReader 
+  --> `SplitFetcher.elementQueues` 
+  --> `SourceReaderBase.elementQueues` 
+  --> `RecordsWithSplitIds` 
+  --> `RecordEmitter`
+
+
+
+**核心组件**
 
 - **Split 分片**
-  
+
   - A Split is a portion of data consumed by the source, like a file or a log partition. Splits are the granularity by which the source distributes the work and parallelizes reading data.
-  
-  - 是 source 数据的一部分；Split 是进行任务分配、数据并行读取的基本粒度。
-  
+
+  - 分片是外部系统的一个分区；Split 是进行任务分配、数据并行读取的基本粒度。
+
+  - 分片是需要记录在 checkpoint 中，所以其中应该保存状态信息。——例如当前分区起始位置、当前位点
+
     > 例：Split = Kafka Topic Partition.
-  
+
+- **SplitEnumerator 分片枚举器**
+
+  - 分片枚举器负责**发现分片**和**分配**：生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
+
+    - Split discovery / split life-cycle
+    - Failover / split re-assignment
+
+  - SplitEnumerator 运行在 Job Manager 中。
+
+  - 1 SplitEnumerator per job
+
+    > 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
+    >
+    > Kafka source 的分片枚举器负责检查在当前的 topic / partition 订阅模式下的新分片（partition），并将分片轮流均匀地分配给源读取器（source reader）。注意 Kafka source 的分片枚举器会将分片主动推送给源读取器，因此它无需处理来自源读取器的分片请求。
+
 - **SourceReader 源阅读器**
-  
+
   - The SourceReader requests Splits and processes them, for example by reading the file or log partition represented by the Split. The SourceReaders run in parallel on the Task Managers in the `SourceOperators` and produce the parallel stream of events/records.
-  
-  - SourceReader 请求分片，并处理分片。SourceReader 并行运行在 Task Manager 中。
-  
+
+  - SourceReader 负责**具体分片数据的读取**：请求分片，并处理分片。
+
+  - SourceReader 并行运行在 Task Manager 中。
+
+  - 1 SourceReader per source subtask
+
     > 例：使用 **KafkaConsumer** 读取所分配的分片（主题分区），并反序列化记录。
     >
     > Kafka source 的源读取器扩展了 `SourceReaderBase`，并使用单线程复用（single thread multiplex）的线程模型，使用一个由分片读取器 （split reader）驱动的 `KafkaConsumer` 来处理多个分片（partition）。消息会在从 Kafka 拉取下来后在分片读取器中立刻被解析。分片的状态 即当前的消息消费进度会在 `KafkaRecordEmitter` 中更新，同时会在数据发送至下游时指定事件时间。
-  
-- **SplitEnumerator 分片枚举器**
-  - SplitEnumerator 生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
-  
-    > 例：SplitEnumerator 连接到 broker，列举出已订阅的 Topics 中的所有 Topic Partitions。
-    >
-    > Kafka source 的分片枚举器负责检查在当前的 topic / partition 订阅模式下的新分片（partition），并将分片轮流均匀地分配给源读取器（source reader）。 注意 Kafka source 的分片枚举器会将分片主动推送给源读取器，因此它无需处理来自源读取器的分片请求。
-  
+    
+
 - **Source**
-  
+
   - API 入口，将上述三个组件组合起来。
   - *Configuration Holder*
 
 
 
-![image-20221009113212031](../img/flink/flink-connector-source.png)
+**辅助组件**
 
-JobManager:
+> https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/
 
-- **1 SplitEnumerator** per job
-  - Split discovery / split life-cycle
-  - Failover / split re-assignment
+- **SplitReader**
+  - 为了让同步的poll api适配异步的 SourceReader： `SourceReader` API is fully asynchronous and requires implementations to manually manage reading splits *asynchronously*. However, in practice, most sources perform blocking operations. To make this compatible with the asynchronous Source API, these blocking (synchronous) operations need to happen in *separate threads*, which hand over the data to the asynchronous part of the reader.
+  - SplitReader is the high-level API for simple synchronous reading/polling-based source implementations, like file reading, Kafka, etc.
 
-TaskManager
 
-- **1 SourceReader** per source subtask
-  - Offset management
-  - Reading
+- **SplitFetcherManager**
+  - 负责创建 SplitFetcher 池，每个 SplitFetcher 有一个 SplitReader 用于拉取数据。
+    `SplitFetcherManager` helps create and maintain a pool of `SplitFetcher` each fetching with a `SplitReader`. 
+  - 负责决定如何将 Split assign 给 SplitFetcher
+    It also determines how to assign splits to each split fetcher.
+
+
+
+**线程模型**
+
+- SourceReader 支持三种线程模式：
+
+  - 单分片串行读取、
+
+    > 例如 FileSource 采用了单分片串行读取模式，在一个数据分片读取后，再向 SplitEnumerator 请求新的数据分片。
+
+  - 多分片多路复用、
+
+    > 例如 KafkaSource 采用了多分片多路复用模式，SplitEnumerator 把启动时读取的 partition 列表和定期监测时发现的新的 partition 列表批量分配给 SourceReader。
+    >
+    > SourceReader 使用 KafkaConsumer API 读取所有分配到的 partition 的数据。
+
+  - 多分片多线程
+
+- SingleThreadMultiplexSourceReaderBase/SingleThreadFetcherManager 抽象出的框架支持前两种线程模型
+
+![](../img/flink/connector-source-thread.png)
+
+
+
+**容错设计**
+
+- SplitEnumerator 状态保存了未分配的数据分片。
+- SourceReader 状态保存了分配的数据分片以及分片读取状态（例如 kafka offset，文件 offset）
+- TODO: checkpointing 
+
+
 
 通用模板
 
@@ -2469,15 +2645,20 @@ TaskManager
 
 
 
-**Sample code**
+**样例代码**
 
 需求：接收 slack 消息，并自动回复
 
 - **Source**
-  - Configuration holder
+  - Configuration holder，用于创建 SplitEnumerator、SourceReader、序列化器
 
 
 ```java
+/**
+参数1：Source输出数据类型
+参数2：数据分片类型
+参数3：SplitEnumerator Checkpoint数据类型
+*/
 class SlackSource implements Source<SlackMsg, SlackNotification, EnumeratorState> {
   
   SlackSettings settings; //needs to be serializable
