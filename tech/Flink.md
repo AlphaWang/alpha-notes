@@ -347,7 +347,9 @@ checkpoint vs. state
 
 ![image-20220116233910154](../img/flink/flink-components.png)
 
-![image-20220117115327190](../img/flink/flink-components2.png)
+
+
+![The processes involved in executing a Flink dataflow](../img/flink/arch-components.svg)
 
 
 
@@ -358,17 +360,22 @@ checkpoint vs. state
 三大子组件
 
 - **Dispatcher** 
-  - Rest Interface
-  - Web UI
+  - Rest Interface、Web UI
   - 处理 job 提交，为每个 Job 启动 JobMaster
 - **JobMaster**
   - 每个 Job 对应一个 JobMaster；二者生命周期一致。
-  - 将 job 分配到处理槽、监控 task 执行、协调 checkpointing
+  - **作业生命周期管理**：将 job 分配到处理槽、监控 task 执行；
+    ![image-20230212230608767](../img/flink/job-lifecycle.png)
+  - **任务调度**
+    ![image-20230212231335999](../img/flink/task-scheduling-state.png)
+  - 出错恢复
+  - CheckpointCoordinator：分布式状态快照
 - **Resource Manager**
   - **指派 TaskManager 槽**：当 JM 申请 `TaskManager 处理槽`时，`ResourceManager` 会指示一个拥有空闲处理槽的 TaskManager 将其处理槽提供给 JobManager。
   - **申请创建 TaskManager**：如果当前处理槽无法满足 JM 的请求，则`ResourceManager` 与资源提供者通信，让它们提供额外容器来启动更多 TM 进程。
+  - 其中 SlotManager 维护与 TaskManager 之间的心跳。
 
-
+![image-20220117115327190](../img/flink/flink-components2.png)
 
 流程
 
@@ -407,6 +414,18 @@ checkpoint vs. state
 要点
 
 - Task Execution 
+
+  - 任务在一个独占的线程中执行
+
+  - 流程：Input Gate --> Operator Chain --> Result Partition
+
+- Task slot 共享
+
+  - 同一个共享组 SlotSharingGroup 中的不同类型（JobVertex）的任务，可以在同一个 slot 中运行
+
+  - 降低数据交换开销
+
+  - 负载均衡
 
 - Network Manager 
 
@@ -466,7 +485,10 @@ checkpoint vs. state
 StreamGraph --> JobGraph
 
 - StreamGraph 只描述转换的大概逻辑：Source - Map() - keyby() - Sink
-- JobGraph 根据算子并行度拆解、形成 DAG 
+- JobGraph 根据算子并行度拆解、形成 DAG
+  - JobGraph - 逻辑图
+  - ExecutionGraph - 执行图 
+
 
 
 
@@ -1287,6 +1309,9 @@ void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
 
 **DataStream 转为 Table**
 
+- tableEnv.fromDataStream
+- tableEnv.createTemporaryView
+
 - 每条记录相当于是对 table 的 INSERT，类似 CDC
 
 ```java
@@ -1305,6 +1330,8 @@ tableEnv.createTemporaryView("myTable2", stream, $("myLong"), $("myString"));
 
 
 **Table 转为 DataStream**
+
+- tableEnv.toAppendStream
 
 ```java
 // convert the Table into an append DataStream of Row by specifying the class 
@@ -2515,6 +2542,12 @@ sink = dataStream.addSink(sink);
 
 
 
+**E2E Exactly-Once**
+
+> https://flink.apache.org/features/2018/03/01/end-to-end-exactly-once-apache-flink.html 
+
+
+
 ## || Source 
 
 > Flink doc of DataStream source: https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/ 
@@ -2549,13 +2582,13 @@ sink = dataStream.addSink(sink);
 
   - 分片是外部系统的一个分区；Split 是进行任务分配、数据并行读取的基本粒度。
 
-  - 分片是需要记录在 checkpoint 中，所以其中应该保存状态信息。——例如当前分区起始位置、当前位点
+  - 分片是需要记录在 checkpoint 中，所以其中应该保存状态信息。——例如当前分区起止位置、当前进度
 
     > 例：Split = Kafka Topic Partition.
 
 - **SplitEnumerator 分片枚举器**
 
-  - 分片枚举器负责**发现分片**和**分配**：生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
+  - 分片枚举器负责**发现分片**和**分配分片**：生成分片，维护 pending split backlog、并均衡地分配给 SourceReader。
 
     - Split discovery / split life-cycle
     - Failover / split re-assignment
@@ -2782,6 +2815,8 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 ## || Sink
 
+> FLIP-143: Unified Sink API https://cwiki.apache.org/confluence/display/FLINK/FLIP-143%3A+Unified+Sink+API 
+
 ![image-20221128224546373](../img/flink/flink-sink-arch.png)
 
 - **Streaming**: *Committed on checkpoints*
@@ -2790,6 +2825,18 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
   - On **recovery**, recommit all committables of last checkpoint.
 - **Batch**: Committed after all data has been processed
   - Indefinite retries on committables
+
+
+
+**Sink 模型**：两阶段提交
+
+- **Writer**
+  - 写入、预提交
+  - Committable：临时文件、undo/redo log
+- **Committer**
+  - 提交
+- Global Committer
+  - 可选，并行度为1
 
 
 
