@@ -196,6 +196,10 @@ class StateMachineMapper extends RichFlatMapFunction<Event, Alert> {
 > - 状态管理 https://www.infoq.cn/article/VGKZA-S9fMBgABP71Pgh 
 >
 > - Checkpoint 原理 https://www.infoq.cn/article/wkgozmqqexq6xm5ejl1e
+>
+> - Flink Fault Tolerance Video: https://www.bilibili.com/video/BV1vf4y1x7se?p=5
+
+
 
 **Checkpoint Storage**
 
@@ -235,18 +239,90 @@ class StateMachineMapper extends RichFlatMapFunction<Event, Alert> {
 
 
 
-原理
+**原理：异步全局一致性快照算法**
 
 - 利用 stream **replay** + **checkpointing**
 
 - 定期生成 Snapshot；恢复时加载最新快照
 
-- 挑战：如何在不暂停的情况下，生成一致性快照？
-  
-  > Asynchronous Barrier Snapshotting (Chandy-Lamport) 
-  > https://arxiv.org/pdf/1506.08603.pdf 
-  
-  - 
+- 挑战：
+
+  - 如何确保状态拥有 exactly-once 容错保证？
+
+  - 如何对多个拥有本地状态的算子，产生一个全局一致的快照？
+
+    > 思路一：时钟同步。clock skew 会导致不能保证因果一致性，可能 node-2 上的果保存到快照、但 node-1 上的因却没有。
+    >
+    > 思路二：全局同步。Stop-the-world. 
+
+  - 如何在不中断运算的情况下，生成一致性快照？--> 异步
+
+    > Lightweight Asynchronous Snapshots for Distributed Dataflows (Chandy-Lamport) 
+    > https://arxiv.org/pdf/1506.08603.pdf 
+    > https://www.bilibili.com/video/BV1vf4y1x7se?p=5
+
+- 算法
+
+  - 发起快照
+
+    > 假设有两个进程 P1, P2, P3；Channel C12, C21, ...
+    >
+    > 任意进程都可发起快照。
+    >
+    > - P1 第一步记录自己的本地状态 (A, B)、
+    > - 然后立刻向所有 output channel 发送 marker 消息、
+    > - 之后开始记录所有 input channel 消息：C11, C21, C31 = recording.
+    >
+    > ![image-20230214132150385](../img/flink/chandy-lamport-trigger-1.png)
+
+  - 分布式执行快照
+    > P3 接收到来自 C13 的 marker 后，如果是P3看到的第一个marker消息，则：
+    >
+    > - 记录本地状态
+    > - 标记 C13 = [empty] ——后续所有来自 C13 的消息不再包含进本次快照
+    > - 向所有 output channel 发送 marker 消息
+    > - 开始记录除 C13 之外的 input channel 消息 = recording
+    >
+    > ![image-20230214132433931](../img/flink/chandy-lamport-exe-1.png)
+    >
+    > 如果此前已经收过 marker 消息（例如 P1 接收到 C31发来的marker）
+    >
+    > - 停止记录 C31 的消息，C31 = [empty] ——后续所有来自 C31 的消息不再包含进本次快照
+    > - 同时将此前记录的所有 C31 消息作为 C31 在本次快照中的最终状态。 
+    >
+    > ![image-20230214132700405](../img/flink/chandy-lamport-exe-2.png)
+    >
+    > 
+    >
+    > 之后 P2 接收到 C32，是第一个marker：本地快照、关闭C32=empty、向其他channel发送marker
+    >
+    > ![image-20230214132821714](../img/flink/chandy-lamport-exe-3.png)
+    >
+    > 之后 P2 接收到 C12，不是第一个 marker: 关闭所有 input channel、并记录channel状态
+    >
+    > ![image-20230214133007648](../img/flink/chandy-lamport-exe-4.png)
+    >
+    > 之后 P1 接收到 C21，不是第一个marker：关闭所有 input channel、记录channel状态（C11=C, C21=H->D）
+    >
+    > ![image-20230214133407129](../img/flink/chandy-lamport-exe-5.png)
+    >
+    > 最后 P3 收到 C23，不是第一个marker：关闭所有 input channel、记录 channel 状态（C33=J）
+    >
+    > ![image-20230214133618919](../img/flink/chandy-lamport-exe-6.png)
+
+  - 终止快照
+
+    > 终止快照的两个条件：
+    >
+    > - 所有进程都已经接收到 marker 消息，并记录在本地快照；
+    >
+    > - 所有进程都从他的 n-1 个input channel 收到了marker 消息，并记录了管道状态；
+    >
+    >   
+    >
+    > 此后 快照收集器就开始收集每一个部分的快照形成全局一致性快照。如上例，每一个进程的所有 input channel 都已关闭。
+    >
+    > ![image-20230214133754989](../img/flink/chandy-lamport-close-1.png)
 
 
 
@@ -268,7 +344,7 @@ checkpoint vs. state
 
 
 
-- **插入屏障**：JM Checkpoint Coordinator定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
+- **插入屏障**：JM CheckpointCoordinator定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
   ![](../img/flink/checkpoint_barriers.svg)
 
   - 从数据源出来的数据流被 checkpoint barrier 分成了一个一个的段落
@@ -282,19 +358,21 @@ checkpoint vs. state
 - **中间算子：对齐屏障**：中间算子*等待*所有输入流的 Sn 屏障（align），之后向输出流发送屏障n。并将状态记录到表 `checkpoint-data: operator-1 = state`
   ![](../img/flink/checkpoint_aligning.svg)
 
-  - 对齐会引入 Latency，可配置忽略对齐。缺点是恢复后会重复处理。
+  - 对齐会引入 Latency、反压，可配置忽略对齐。缺点是恢复后会重复处理。
 
   - 对于单个流，不用对齐
 
   - 对齐 = Exact-Once, 不对齐 = At-Least-Once. 
 
-    > ——注意指的是计算过程的精确一次，端到端精确一直还需要 source / sink 的支持。
+    > ——注意指的是计算过程的精确一次，每条event会且只会对 state 产生一次影响；如果不对齐，多处理的event会被回放。
+    >
+    > 端到端精确一直还需要 source / sink 的支持。
 
 - **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前，将算子的状态进行快照(snaoshot the state)，存储到 state backend。  
 
   - 完成备份后，会将备份数据的地址 (state handle) 通知给 Checkpoint Coordinator
   - 默认同步进行状态快照，会停止处理输入数据。
-  - 可配置为异步快照，前提是 further modifications to the operator state do not affect that state object，例如用 copy-on-write. 
+  - 可配置为*异步快照*，前提是 further modifications to the operator state do not affect that state object，例如用 copy-on-write. 
 
 - **Sink 算子**：Sink 收到所有输入流的 barrier n 之后，记录到表 `checkpoint-data: sink-1 = offset`
 
@@ -333,6 +411,11 @@ checkpoint vs. state
 
 
 ## || 集群架构
+
+> - Flink Runtime https://www.infoq.cn/article/RWTM9o0SHHV3Xr8o8giT 
+> - Flink Runtime arch video: https://www.bilibili.com/video/BV1vf4y1x7se?p=4
+>
+> 
 
 组件
 
@@ -1270,10 +1353,10 @@ Q: Join 操作中的watermark 如何更新？对于不同输入流中的 waterma
 
 > https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/process_function/ 
 
-ProcessFunction 可以访问：
+ProcessFunction 是底层 API，可以访问：
 
 - 时间
-- 状态
+- 状态：getRuntimeContext().getState()
 - 定时器
 
 接口
@@ -1290,6 +1373,10 @@ void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
 ```
 
 
+
+示例
+
+![image-20230213235840323](../img/flink/processfunction-example.png)
 
 
 
