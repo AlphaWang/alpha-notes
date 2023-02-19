@@ -347,7 +347,7 @@ checkpoint vs. state
 - **插入屏障**：JM CheckpointCoordinator定期将 checkpoint barrier 插入到数据源从 Source 算子的数据流中
   ![](../img/flink/checkpoint_barriers.svg)
 
-  - 从数据源出来的数据流被 checkpoint barrier 分成了一个一个的段落
+  - 从数据源出来的数据流被 checkpoint barrier 分成了一个一个的段落、Stage
   - The point where the barriers for snapshot *n* are injected (let’s call it *Sn*) is the position in the source stream up to which the snapshot covers the data. For example, in Apache Kafka, this position would be the last record’s offset in the partition. 
   - This position *Sn* is reported to the *checkpoint coordinator* (Flink’s JobManager).
 
@@ -390,6 +390,21 @@ checkpoint vs. state
 - 即 source 开始从 S<sub>k</sub> 处读取消息。
   - 因为本地的state尚未被snapshot持久化，故障后会丢失；所以需要回滚到上一个checkpoint，重建该state (例如word count)
   - 必要条件：**Source 要支持数据重新发送！**
+
+
+
+配置
+
+- **Restart Strategy**: decide whether and when the failed/affected tasks can be restarted
+  - `none, off, disable`: No restart strategy.
+  - `fixeddelay, fixed-delay`: Fixed delay restart strategy. 已固定延迟、重启固定次数，超过则失败
+  - `failurerate, failure-rate`: Failure rate restart strategy. 重启超过失败频率时，则失败
+- **Failover Strategy**: decide which tasks should be restarted to recover the job
+  - 
+
+
+
+
 
 
 
@@ -718,6 +733,58 @@ DataStream 转换操作
 - 拆分单条流：`split`, `keyBy`
 
 ![image-20220116233344476](../img/flink/flink-datastream-operators.png)
+
+## || Stateful
+
+- 为什么流式处理需要 Stateful? 
+  - 所有 DataStream function 都可以是 stateful: filter, map, flatmap, ...
+  - State 的存储：on-heap, off-heap, local-disk-backed storage.
+- 存储的内容：Keyed State
+  - ValueState<T>
+  - ListState<T>
+  - MapState<UK, UV>
+  - ReducingState<T>
+  - AggregatingState<IN, OUT>
+- 何时被 GC
+  - Flink 默认永久保留 state；
+  - 可以在 ProcessFunction 的同时使用 Timer 来清理状态；
+  - 使用 `StateTtlConfig` 来配置清理策略。
+- State Backend
+  - RocksDBStateBackend
+  - FsStateBackend
+  - MemoryStateBackend
+
+
+
+## || Data Type
+
+- 基本类型：String, Long, Integer, Boolean, ... Array
+
+- 组合类型：
+
+  - Row：常用于 Table / SQL API
+
+    ```java
+    Row person = Row.of("Alpha", 30);
+    String name = person.get(0);
+    ```
+
+  - Tuples
+
+    ```java
+    Tuple2<String, Integer> person = new Tuple2<>("Alpha", 30);
+    String name = person.get(0);
+    ```
+
+  - POJOs
+
+- 数据序列化
+
+  - 因为数据会在不同TM之前传输，所以需要序列化、反序列化。
+  - 或自定义序列化器：`env.getConfig().registerTypeWithKyroSerializer(Type.class, Serializer.class)`
+  - 禁止 fallback to kyro，减少消耗: `env.getConfig().disableGenericTypes();`
+
+
 
 
 
@@ -1297,90 +1364,11 @@ Q: Join 操作中的watermark 如何更新？对于不同输入流中的 waterma
 
 
 
-# | Stateful Stream Processing
-
-## || Stateful
-
-- 为什么流式处理需要 Stateful? 
-  - 所有 DataStream function 都可以是 stateful: filter, map, flatmap, ...
-  - State 的存储：on-heap, off-heap, local-disk-backed storage.
-- 存储的内容：Keyed State
-  - ValueState<T>
-  - ListState<T>
-  - MapState<UK, UV>
-  - ReducingState<T>
-  - AggregatingState<IN, OUT>
-- 何时被 GC
-  - Flink 默认永久保留 state；
-  - 可以在 ProcessFunction 的同时使用 Timer 来清理状态；
-  - 使用 `StateTtlConfig` 来配置清理策略。
-- State Backend
-  - RocksDBStateBackend
-  - FsStateBackend
-  - MemoryStateBackend
-
-
-
-## || Data Type
-
-- 基本类型：String, Long, Integer, Boolean, ... Array
-
-- 组合类型：
-
-  - Row：常用于 Table / SQL API
-    ```java
-    Row person = Row.of("Alpha", 30);
-    String name = person.get(0);
-    ```
-
-  - Tuples
-    ```java
-    Tuple2<String, Integer> person = new Tuple2<>("Alpha", 30);
-    String name = person.get(0);
-    ```
-
-  - POJOs
-
-- 数据序列化
-
-  - 因为数据会在不同TM之前传输，所以需要序列化、反序列化。
-  - 或自定义序列化器：`env.getConfig().registerTypeWithKyroSerializer(Type.class, Serializer.class)`
-  - 禁止 fallback to kyro，减少消耗: `env.getConfig().disableGenericTypes();`
-
-
-
-## || ProcessFunction
-
-> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/process_function/ 
-
-ProcessFunction 是底层 API，可以访问：
-
-- 时间
-- 状态：getRuntimeContext().getState()
-- 定时器
-
-接口
-
-- 两个回调均有 Collector，可以 emit results
-- Context 可以访问 TimerService：获知当前的处理时间、Watermark、当前的time window
-
-```java
-//Process one element from the input stream.
-void processElement(I value, Context ctx, Collecot<O> out);
-
-//Called when a timer fires.
-void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
-```
-
-
-
-示例
-
-![image-20230213235840323](../img/flink/processfunction-example.png)
-
 
 
 # | Table API
+
+> SQL end-to-end demo: https://flink.apache.org/2020/07/28/flink-sql-demo-building-e2e-streaming-application.html 
 
 程序结构
 
@@ -2569,6 +2557,43 @@ FROM Orders AS o
 ## || Table Aggregation Function
 
 https://ci.apache.org/projects/flink/flink-docs-release-1.11/dev/table/functions/udfs.html#table-aggregation-functions.
+
+
+
+# |ProcessFunction
+
+> https://nightlies.apache.org/flink/flink-docs-release-1.14/docs/dev/datastream/operators/process_function/ 
+
+![image-20230214153659078](../img/flink/layered-abstraction.png)
+
+
+
+ProcessFunction 是底层 API，可以访问：
+
+- 时间
+- 状态：getRuntimeContext().getState()
+- 定时器
+
+接口
+
+- 两个回调均有 Collector，可以 emit results
+- Context 可以访问 TimerService：获知当前的处理时间、Watermark、当前的time window
+
+```java
+//Process one element from the input stream.
+void processElement(I value, Context ctx, Collecot<O> out);
+
+//Called when a timer fires.
+void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
+```
+
+
+
+示例
+
+![image-20230213235840323](../img/flink/processfunction-example.png)
+
+
 
 
 
