@@ -900,17 +900,22 @@ while (true)  {
     - 因为消息消费链路被拉长
     - 可能导致消息重复消费
 
-## || Rebalance
+
+
+### Rebalance
 
 **触发条件**
 
 - **消费者组成员数目变更**
+  
   - 增加、离开、崩溃
-  - 需要避免不必要的重平衡：被协调者错误地认为消费者已离开
+  
+  > 需要避免不必要的重平衡：被协调者错误地认为消费者已离开，见下文。
+  
 - **主题数变更**
-  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生rebalance
-- **分区数变更**
-  - 增加
+  - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生 rebalance
+  
+- **分区数增加**
 
 
 
@@ -951,6 +956,11 @@ while (true)  {
 
   - Full GC导致长时间停顿，会引发 rebalance
 
+- [KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances) 减少全量重平衡
+
+  - The new `group.instance.id` config be added to the Join/Sync/Heartbeat/OffsetCommit request/responses. 
+  - apply the same assignment based on member identities
+
   
 
 **重平衡监听器 ConsumerRebalanceListener**
@@ -959,18 +969,18 @@ while (true)  {
 
 - 当将要失去分区所有权时，处理未完成的事情（例如提交 offset）
 
-- 当被分配到一个新分区时，seek 到指定的 offset处
+- 当被分配到一个新分区时，seek 到指定的 offset 处
 
 
 
 接口
 
 - `onPartitionsAssigned(partitions)`
-  - 触发时间：消费者停止消费之后、rebalance 开始之前
+  - 触发时机：消费者停止消费之后、rebalance 开始之前
   - 常见操作：清理状态、seek()
 
 - `onPartitionsRevoked(partitions)`
-  - 触发时间：rebalance 之后、消费者开始消费之前
+  - 触发时机：rebalance 之后、消费者开始消费之前
   - 常见操作：提交 offset；注意要用 commitSync()，确保在 rebalance **开始？**之前提交完成
 
 - `subscribe(topics, listener)` 指定监听器
@@ -1089,7 +1099,7 @@ try {
   - **SyncGroup请求**
 
     1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
-    2. 协调者将分配方案放入 SyncGroup 响应中，下发给所有成员；即**通过协调者中转**；
+    2. 协调者将分配方案放入 SyncGroupResponse 中，下发给所有成员；即**通过协调者中转**；
     3. 消费者进入 Stable 状态
 
 
