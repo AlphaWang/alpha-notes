@@ -109,18 +109,23 @@
 
   > Flink runtime 管理，推荐使用。
 
-  - **Keyed State**：只能用于 KeyedStream 算子中。
-    keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。
-    - ValueState
-    - MapState
-    - AppendingState
-      - ListState
-      - ReducingState - 加入元素后，直接计算reduce (例如计数)，减少存储量
-      - AggregatingState 
-  - **Operator State**：用于所有算子 
-    每个 operator state 都与一个 operator 实例绑定，例如 source state = offset.
+  
+
+- **Keyed State**：只能用于 KeyedStream 算子中。
+  keyed state 是一种分片的键/值存储，每个 keyed state 的工作副本都保存在负责该键的 taskmanager 本地中。
+
+  - ValueState
+  - MapState
+  - AppendingState
     - ListState
-    - BroadcastState
+    - ReducingState - 加入元素后，直接计算reduce (例如计数)，减少存储量
+    - AggregatingState 
+
+- **Operator State**：用于所有算子 
+  每个 operator state 都与一个 operator 实例绑定，例如 source state = offset.
+
+  - ListState
+  - BroadcastState
 
 
 
@@ -332,6 +337,16 @@ checkpoint vs. state
 
 
 
+**思路**
+
+- Checkpoint 开始时，JM 往数据流中插入 barrier
+
+- The barrier is passed from operator to operator. For every operator, it triggers the operator’s state backend to take a snapshot of its state. 
+
+  
+
+
+
 **流程：Checkpointing**
 
 > 官方：https://nightlies.apache.org/flink/flink-docs-release-1.10/internals/stream_checkpointing.html
@@ -339,6 +354,8 @@ checkpoint vs. state
 > 图示：https://juejin.cn/post/6951628600428724254 
 >
 > 分解图示：https://www.infoq.cn/article/wkgozmqqexq6xm5ejl1e
+>
+> 源码：https://blog.jrwang.me/2019/flink-source-code-checkpoint/ 
 
 ![](../img/flink/checkpoint-flow.svg)
 
@@ -368,7 +385,7 @@ checkpoint vs. state
     >
     > 端到端精确一直还需要 source / sink 的支持。
 
-- **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前，将算子的状态进行快照(snaoshot the state)，存储到 state backend。  
+- **状态快照**：算子在接收到输入流的所有 barrier 之后、将 barrier 发送给输出流之前(?)，将算子的状态进行快照(snaoshot the state)，存储到 state backend。  
 
   - 完成备份后，会将备份数据的地址 (state handle) 通知给 Checkpoint Coordinator
   - 默认同步进行状态快照，会停止处理输入数据。
@@ -2927,7 +2944,8 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 ## || Sink
 
-> FLIP-143: Unified Sink API https://cwiki.apache.org/confluence/display/FLINK/FLIP-143%3A+Unified+Sink+API 
+> - FLIP-143: Unified Sink API https://cwiki.apache.org/confluence/display/FLINK/FLIP-143%3A+Unified+Sink+API 
+> - Kafka 2PC: https://www.ververica.com/blog/end-to-end-exactly-once-processing-apache-flink-apache-kafka 
 
 ![image-20221128224546373](../img/flink/flink-sink-arch.png)
 
@@ -2942,6 +2960,10 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 **Sink 模型**：两阶段提交
 
+> - Once all of the operators complete their *pre-commit*, they issue a *commit* .
+> - If at least one pre-commit fails, all others are aborted, and we *roll back* to the previous successfully-completed checkpoint.
+> - After a successful pre-commit, the commit *must* be guaranteed to eventually succeed -- both our operators and our external system need to make this guarantee. *If a commit fails (for example, due to an intermittent network issue), the entire Flink application fails*, the application restarts according to the user’s restart strategy, and there is another commit attempt. This process is critical because if the commit does not eventually succeed, data loss occurs.
+
 - **Writer**
   - 写入、预提交
   - Committable：临时文件、undo/redo log
@@ -2949,6 +2971,10 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
   - 提交
 - Global Committer
   - 可选，并行度为1
+
+
+
+
 
 
 
