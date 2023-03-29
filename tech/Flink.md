@@ -2618,13 +2618,21 @@ void onTimer(long timestamp, OnTimerContext ctx, Collector<O> out);
 
 > - develop connector tips: https://www.youtube.com/watch?v=ZkbYO5S4z18 
 > - develop connector example，口音重: https://www.youtube.com/watch?v=LCMfbGv38u8
-> - table api? https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks/ 
+> - Flink Connector Development Tutorial Video: 
+>   https://www.bilibili.com/video/BV1vf4y1x7se/?p=9 
+> - FLIP-27: Flink Source Design https://cwiki.apache.org/confluence/display/FLINK/FLIP-27%3A+Refactor+Source+Interface 
+> - Flink Document of DataStream Sources: https://nightlies.apache.org/flink/flink-docs-master/docs/dev/datastream/sources/  
+> - Table api https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks/ 
 
 
 
-## || Client
 
-用法：
+
+## || Design
+
+
+
+**用法：**
 
 ```java
 source = ...
@@ -2639,12 +2647,6 @@ sink = dataStream.addSink(sink);
 - Kafka Source
   - Flink 自己管理 offset；
   - 提交 offset：一般在 checkpointing 时提交；
-
-
-
-## || Design
-
-
 
 
 
@@ -3050,6 +3052,60 @@ class DraftCommitter implements Committer<Draft> {
   }
 }
 ```
+
+
+
+## || SQL
+
+> https://nightlies.apache.org/flink/flink-docs-master/docs/dev/table/sourcessinks
+
+
+
+概念
+
+- **Dynamic Table**：Flink Table/SQL 核心概念，逻辑概念。实际内容存储在外部系统。
+
+
+
+**架构**
+
+![Translation of table connectors](../img/flink/table_connectors.svg)
+
+
+
+- **Metadata**
+
+  - executing a `CREATE TABLE` statement results in updated metadata in the target catalog. 
+
+  - The metadata for dynamic tables (created via DDL or provided by the catalog) is represented as instances of `CatalogTable`. A table name will be resolved into a `CatalogTable` internally when necessary. 
+
+
+
+- **Planning**
+
+  -  CatalogTable needs to be resolved into 
+
+    - `DynamicTableSource` (for reading in a `SELECT` query) 
+
+    - `DynamicTableSink` (for writing in an `INSERT INTO` statement).
+
+  - Factory: 
+    - SPI: `META-INF/services/org.apache.flink.table.factories.Factory`
+    - 目的：
+      - to validate options (such as 'port' = '5022' ),
+      - configure encoding/decoding formats (if required), 
+      - and create a parameterized instance of the table connector.
+  - Dynamic Table Source
+    - ScanTableSource: changelog；返回类型 RowData，
+    - LookupTableSource: 供查询的表，无需读取整个表。
+    - 
+
+
+
+- **Runtime**
+  - Runtime logic is implemented in Flink’s core connector interfaces such as `InputFormat` or `SourceFunction`. 
+
+
 
 
 
