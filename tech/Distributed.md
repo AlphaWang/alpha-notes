@@ -8,15 +8,15 @@
 
 系统为什么需要分布式？
 
-- better reliability
-- better performance : get data from nearby nodes
-- solve bigger problems: huge data..
+- better **reliability**
+- better **performance** : get data from nearby nodes
+- to solve bigger problems: huge data..
 
 缺点
 
 - communication may fail
 - processes may crash.
-- all of this my happen nondeterministically
+- hard to fault tolerance.
 
 
 
@@ -1024,9 +1024,9 @@ String result = jedis.set(
 
 Byzantine generals problem
 
-- 问题：在可能有叛徒的情况下，如何达成一致攻击某城市？
+- 问题：**在可能有叛徒的情况下**，如何达成一致攻击某城市？
 
-  - 网络不可靠：通讯消息/回复可能丢失；
+  - 2 generals problem：网络不可靠，通讯消息/回复可能丢失；
   - 可能存在叛徒：
     Up to `f` generals might be malicious. 
     The malicious generals may collude.
@@ -1035,7 +1035,7 @@ Byzantine generals problem
 
 - 定理
 
-  - 将军总数必须 `>= 3f + 1`， 才能保证 tolerate `f` malicious generals。即叛徒必须 `< 1/3`
+  - 将军总数必须 `>= 3f + 1`， 才能保证 tolerate `f` malicious generals。**即叛徒必须 `< 1/3`**
 
   
 
