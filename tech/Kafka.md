@@ -2123,7 +2123,14 @@ try {
   >
   > ![image-20230110215116694](../img/kafka/zero-copy-2.png)
   >
-  > 
+  > AS-IS 
+  >
+  > ![image-20230520231759186](../img/kafka/zero-copy-asis.png)
+  >
+  > TO-BE
+  >
+  > ![image-20230520232019259](../img/kafka/zero-copy-tobe.png)
+  > 3.2 DMA = Direct Memory Access
 
 
 

@@ -873,7 +873,6 @@ String result = jedis.set(
 
 
 
-
 **2. Raft 算法**
 
 > 多数派投票选举
@@ -1288,6 +1287,15 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 
 
+简化设计
+
+- 禁止乱序提交
+- 简化角色：Leader, Follower, Candidate 
+- 仅 Leader 单点可写
+- 随机化的选举超时时间
+
+
+
 达成共识等价于解决一下**三个问题**：
 
 - 领导者选举  `Leader Election`
@@ -1310,7 +1318,7 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 - **任期：Term**
 
   - Raft 把时间划分为不同 Term，每个 Term 从一次选举开始；保证每个Term 有 1 个或 0 个 Leader。
-    ——At most 1 leader per term. 
+    —— At most 1 leader per term. 
 
   - 每个节点都持久化”current term“相关的取值。
 
@@ -1318,11 +1326,13 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
     ![image-20220423200954023](../img/distributed/raft-terms.png)
 
-- **两种 RPC 请求**
+- **三种 RPC 请求**
 
-  - `RequestVote`：请求投票
+  - `RequestVote`：由Candidate发出；请求投票
 
-  - `AppendEntries`：追加条目、保持心跳
+  - `AppendEntries`：由Leader发出；追加条目、保持心跳
+
+  - `Install-Snapshot`：由Leader发出；用于传输快照
 
 - **Log Structure**
 
@@ -2917,7 +2927,7 @@ Aka. 序列化
 
 ## || 服务发现
 
-
+> - https://time.geekbang.org/column/article/339395 
 
 
 

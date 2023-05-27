@@ -371,7 +371,7 @@ https://pulsar.apache.org/docs/en/concepts-messaging/
     - Producer 懒加载：只有在用的时候才会真正创建producer实例。
     - Partial RoundRobin：每个 producer 实例可能只 roundrobin 到一部分分区。
 
-  ![image-20220330202155910](/Users/alpha/dev/git/alpha/alpha-notes/img/pulsar/producer-partial-round-robin.png)
+  ![image-20220330202155910](../img/pulsar/producer-partial-round-robin.png)
 
   ```java
   PartitionedProducerImpl<byte[] producer = (PartitionedProducerImpl<byte[]>) pulsarClient.newProducer()
