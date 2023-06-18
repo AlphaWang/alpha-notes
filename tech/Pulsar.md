@@ -1140,7 +1140,7 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 > 不能直接在 zk 上存储 topic - broker 归属关系：否则数据量太大
 
 - ZK 只保存 Bundle 与 Broker 之间的联系。
-- Topic 归属哪个 broker 是通过一致性哈希动态计算出来的。
+- Topic 归属哪个 Bundle 是通过一致性哈希动态计算出来的。
 
 
 
@@ -1173,8 +1173,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
 
 **Bundle Split 算法**
 
-- range_equally_devide：平分 bundle 为相同 hash range 两部分
-- topic_count_equally_divide：平分 bundle 为相同主题数量的两部分
+- `range_equally_devide`：平分 bundle 为相同 hash range 两部分
+- `topic_count_equally_divide`：平分 bundle 为相同主题数量的两部分
+- `specified_positions_devide`：按指定位置拆分 bundle
 
 
 
@@ -1188,7 +1189,9 @@ Dispatcher 负责从 bk 读取数据、返回给消费者。
   - 默认阈值比较难达到，容易导致大部分流量集中在几个 broker；
   - 阈值调整标准难以确定，受其他因素影响较大，特别是这个节点上部署有其他服务的情况下；
   - broker 重启后，长时间没有流量均衡到该 broker 上，因为其他 broker 节点均没有达到 bundle unload 阈值。
-- **ThresholdShedder**：基于均值的负载均衡策略，并支持 CPU、Memory、Direct Memory、BindWith In、BindWith Out 权重配置
+- **ThresholdShedder**：基于均值的负载均衡策略，如果 broker load > avg_per_broker + loadBalancerBrokerThresholdShedderPercentage，则触发shed。
+- **OverloadShedder**：从高负载broker中shed出一个最大的bundle。
+- **UniformLoadShedder**：对比最高负载与最低负载，(max - min) / min > Threashold. 
 
 
 
