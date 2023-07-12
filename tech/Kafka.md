@@ -6,43 +6,27 @@
 
 - **异步处理** Asynchronous Processing
 - 提升总体性能：
-
-
   - 更快返回结果；
-
-
   - 减少等待，各步骤实现并发
-
-
 - **削峰填谷** Peak Shaving 
   - 消息堆积，消费端按自己的能力处理 (buffer the data)
   - 代价
     - 增加调用链，总体时延变长
     - 上下游都要改成异步消息，增加复杂度
-
-
-
-
 - **服务解耦 ** Decoupling
 
 
 
+
 **消息模型**
-
 - 点对点
-
 - 发布订阅
 
 
-
-**Streaming Platform**
-
 **对比**
-
 - vs. 消息系统
-  - 集群，自由伸缩
-  - 数据存储
-  - 流式处理
+  - 消息就是业务消息，在**业务架构**（比如微服务架构）中用来作消息传递，做系统的消息总线，比如用户提交订单的流程。
+  - 流，就是在**大数据架构**中用来做大流量时的数据削峰，比如日志的投递流转。
 
 - vs. hadoop
   - 批处理 --> 流处理
@@ -54,41 +38,28 @@
 **特点**
 
 - 支持多生产者
-
   >  生产者以相同格式 写入主题，消费者即可获得单一流
-
 - 支持多消费者
-
   >  消费者组之间互不影响
-
 - 基于磁盘的数据存储
-
   > Disk-Based Retention，消费者可暂时离线
 
 - 伸缩性
-
 - 高性能
 
-
-
 **使用场景**
-
 - Activity tracking - 用户行为日志
-
 - Messaging - 用户通知：格式化、聚合、Preference
 - Metrics & Logging
 - Commit log
   - Change Log
   - 可设置为log-compacted，为每个key只保留一个变更数据
-
 - Stream processing - 实时 Map Reduce
 
 
 
 **设计对比**
-
 > https://www.confluent.io/blog/okay-store-data-apache-kafka/
-
 One way to think about the relationship between messaging systems, storage systems, and Kafka is the following. 
 
 - **Messaging systems** are all about propagating *future* messages: when you connect to one you are waiting for new messages to arrive. 
@@ -113,8 +84,6 @@ One way to think about the relationship between messaging systems, storage syste
 
 # | 物理组件
 
-
-
 ## || Broker
 
 ![image-broker-internal](../img/kafka/broker-internals.png)
@@ -122,7 +91,6 @@ One way to think about the relationship between messaging systems, storage syste
 ### Controller
 
 **定义**
-
 - 集群中的某一个Broker会作为控制器。
 - 集群内唯一。在zk的帮助下，管理和协调“整个”kafka集群
 
