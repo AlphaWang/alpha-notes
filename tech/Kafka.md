@@ -290,6 +290,8 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 ### 请求处理
 
 > https://time.geekbang.org/column/article/110482
+>
+> https://time.geekbang.org/column/article/670965
 
 
 
@@ -342,11 +344,19 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 - 隔离 控制类请求 vs. 数据类请求
 
 - 两套组件：网络线程池、IO线程池 都有两套
+  - 一个 acceptor（监听并接收请求），多个 worker
+  - `Processor 线程` 和 `Handler 线程` 之间通过 RequestChannel 传递数据，RequestChannel 中包含一个 RequestQueue 队列和多个 ResponseQueues 队列。每个 Processor 线程对应一个 ResponseQueue。
 
-- 一个 acceptor（监听并接收请求），多个 worker
 
 ![image-broker-internal-nio](../img/kafka/broker-internals-nio.webp)
 
+![image-20230716142157635](../img/kafka/broker-internals-nio.png)
+
+- 流程
+  - 一个 `Acceptor` 接收客户端建立连接的请求，创建 Socket 连接并分配给 Processor 处理。
+  - `Processor 线程` 把读取到的请求存入 RequestQueue 中，Handler 线程从 RequestQueue 队列中取出请求进行处理。
+  - Handler 线程处理请求产生的响应，会存放到 Processor 对应的 ResponseQueue 中，Processor 线程从其对应的 ResponseQueue 中取出响应信息，并返回给客户端。
+  
 - 配置
   - `num.network.threads`：processor 数量
   - `num.io.threads`：API Thread 数量（io thread）
