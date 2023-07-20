@@ -3675,10 +3675,6 @@ try (AdminClient client = AdminClient.create(props)) {
 
   > 对外发布的
 
-- **host.name/port**
-
-  > 过期参数
-
 - **borkerlid**
 
   > 默认为0，可以取任意值
@@ -3704,13 +3700,17 @@ try (AdminClient client = AdminClient.create(props)) {
 - `KAFKA_HEAP_OPTS`： 堆大小
 - `KAFKA_JVM_PERFORMANCE_OPTS`：GC参数
 
-> 配置环境变量：
->
-> $> export KAFKA_HEAP_OPTS=--Xms6g  --Xmx6g
->
-> $> export  KAFKA_JVM_PERFORMANCE_OPTS= -server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -Djava.awt.headless=true
->
-> $> bin/kafka-server-start.sh config/server.properties
+配置环境变量：
+
+```sh
+$> export KAFKA_HEAP_OPTS=--Xms6g  --Xmx6g
+
+$> export  KAFKA_JVM_PERFORMANCE_OPTS= -server -XX:+UseG1GC -XX:MaxGCPauseMillis=20 -XX:InitiatingHeapOccupancyPercent=35 -XX:+ExplicitGCInvokesConcurrent -Djava.awt.headless=true
+
+$> bin/kafka-server-start.sh config/server.properties
+```
+
+
 
 
 
@@ -3718,7 +3718,7 @@ try (AdminClient client = AdminClient.create(props)) {
 
 - **log.dirs**
 
-  > 含义：指定 Broker 使用的文件目录列表；
+  > 含义：指定 Broker 使用的文件目录列表，逗号分隔；
   >
   > 1. 建议挂在到不同物理磁盘
   >    - 提升读写性能
@@ -3733,7 +3733,9 @@ try (AdminClient client = AdminClient.create(props)) {
 
 - **log.retention.bytes**
 
-  > 含义：Broker为消息保存的总磁盘大小
+  > 含义：Broker为消息保存的总磁盘大小，值默认是 -1。
+  >
+  > 这个参数真正发挥作用的场景其实是在云上构建多租户的 Kafka 集群：设想你要做一个云上的 Kafka 服务，每个租户只能使用 100GB 的磁盘空间。
 
 - **message.max.bytes**
 
@@ -3776,7 +3778,7 @@ try (AdminClient client = AdminClient.create(props)) {
 
 - **auto.leader.rebalance.enable=false**
 
-  > 含义：是否允许定期进行Leader选举；
+  > 含义：是否允许定期进行切换Leader；
   >
   > 应该设为false
 
