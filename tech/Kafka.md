@@ -670,6 +670,18 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
     ——为什么是5？Broker 对每个 PID 只缓存5个 seq。
     ——如果设置>5，且最前面的msg ack丢失、producer重发、broker无法判断这条是否重复。
 
+### TCP连接管理
+
+- 创建TCP连接
+  - 在**创建 KafkaProducer 实例**时，生产者应用会在后台创建并启动一个名为 Sender 的线程，该 Sender 线程开始运行时首先会创建与 Broker 的连接。 
+    ——连接 bootstrap.servers 参数指定的**所有 Broker**；是否有必要？
+  - 可选：**更新元数据后**，如果发现与某些Broker当前没有连接，就会创建。
+  - 可选：**发送消息时**，发现尚不存在与目标Broker的连接，就会创建。
+- 关闭TCP连接
+  - 用户主动关闭：`producer.close()`，`kill -9`
+  - Kakfa自动关闭：`connections.max.idle.ms` 到期后如果没有任何请求，则Broker关闭该TCP。
+    ——被动关闭的后果就是会产生大量的 CLOSE_WAIT 连接，因此 Producer 端或 Client 端没有机会显式地观测到此连接已被中断。
+
 
 
 ## || 消费者
@@ -2487,44 +2499,54 @@ https://www.splunk.com/en_us/blog/it/exactly-once-is-not-exactly-the-same.html
 - **限制**
   - 无法实现跨分区的幂等
   - 无法实现跨会话的幂等：Producer 重启后会丧失幂等性，因为重启后 PID 会变
+  - Q：如果要实现多分区、多会话上的消息无重复，应该怎么做？——**事务**！
 
 
 
 **生产者事务** 
 
-区别 RocketMQ 的半消息！
-
-> 事务性保证消息 **原子性** 地写入到多个分区，要么全部成功，要么全部失败 
+> 事务性保证消息 **原子性** 地写入到**多个分区**，要么全部成功，要么全部失败 
 >
 > - 但即便失败，也会写入日志；因为没法回滚
-> - 解决幂等性生产者的限制：不能跨分区、跨会话
+> - **解决幂等性生产者的限制：不能跨分区、跨会话**
+
+——区别 RocketMQ 的半消息！
 
 
 
 - **配置：**
   
-  - `enable.idempotence = true`
+  - 开启幂等性生产：`enable.idempotence = true`
   
   - 同时设置 `transactional.id`
   
     > 如果配置了 transaction.id，则此时 enable.idempotence 会被设置为 true；
     >
-    > 在使用相同 TransactionalId 的情况下，老的事务必须完成才能开启新的事务
+    > 在使用相同 TransactionalId 的情况下，老的事务必须完成才能开启新的事务 
   
 - 代码中显式地提交事务
+  ```java
+  producer.initTransactions();
+  try {
+     producer.beginTransaction();
+     producer.send(record1);
+     producer.send(record2);
+     producer.commitTransaction();
+  } catch (KafkaException e) {
+     producer.abortTransaction();
+  }
+  ```
 
-- consumer改动：设置 `isolation.level` 
+  
+
+- consumer配合改动：设置 `isolation.level` 
 
   - **read_uncommitted**：类似无事务consumer；
   - **read_committed**：只读取成功提交了的事务，否则消费者会读到提交失败的消息
 
-  
-
-  
-
 - **限制**
   
-  - 性能更差
+  - 性能比幂等性生产者更差
 
 
 
@@ -4223,7 +4245,8 @@ producer = new KafkaProduer<String, String>(p);
 - Broker端
   - `num.replica.fetchers` 增大；Follower副本用多少线程来拉取消息（default = 1）
   - `主题分区数调小`：broker默认用单线程同步数据，分区越多同步越慢
-
+  - `compression.type=producer`：避免因为与producer压缩算法不一致，导致额外的压缩、丧失零拷贝。
+  
 - Consumer端
   - consumer instances = partitions
   - `fetch.min.bytes=1`：只要Broker有数据就立即返回给 Consumer
