@@ -166,17 +166,19 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 - **消费者组成员管理 & Rebalance**
 
-  > 协调者对应一个 Group！
+  > 协调者对应一个 Group！消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
   >
-  > 消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
 
   - **1. GroupCoordinatorRequest** 找到 group coordinator
 
     - 消费者启动时发送，发往任一 broker
-    - broker 等待 Purgatory 后，返回协调者：
-      1. `hash(group.id) % 50` (__commit_offsets 分区数) 
-      2. 据此找到 topic partition.
-      3. 找到 partition leader.
+    - broker 等待 Purgatory 后，返回协调者。
+      
+      > 算法：
+      >
+      > 1. `hash(group.id) % 50` (__commit_offsets 分区数) 
+      > 2. 据此找到 topic partition.
+      > 3. 找到 partition leader.
 
   - **2. JoinGroupRequest** 加入 group
 
@@ -206,7 +208,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 
 
-**消费者如何找到Coordinator？**--> 分区 Leader 副本所在的 Broker
+**消费者如何找到Coordinator？**--> 位移主题的分区 Leader 副本所在的 Broker
 
 - Step-1: 找到由位移主题的**哪个分区**来保存该 Group 数据
 
@@ -428,11 +430,12 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 - **建立连接**
 
-  - 时机1：创建 Producer 时与 `bootstrap.servers` 建链
+  - 时机1：在**创建 KafkaProducer 实例**时，与 `bootstrap.servers` 建链
 
     > Sender 线程：new KafkaProducer 时会创建“并启动” Sender 线程，该线程在开始运行时会创建与 `bootstrap.servers` 的连接 
+    > ——连接 bootstrap.servers 参数指定的**所有 Broker**；是否有必要？
 
-  - 时机2：更新元数据后，如果发现与某些 Broker 没有连接，则建链。
+  - 时机2：**更新元数据后**，如果发现与某些Broker当前没有连接，就会创建。
 
     > 更新元数据的时机：
     >
@@ -441,7 +444,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
     >
     > 问题：会连接所有 Broker，浪费！
 
-  - 时机3：发送消息时，会连接到目标 Broker；
+  - 时机3：**发送消息时**，发现尚不存在与目标Broker的连接，就会创建。
 
   - 流程
 
@@ -452,7 +455,8 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 - **关闭连接**
 
   - 主动关闭：`producer.close()`
-  - 自动清理：`connections.max.idle.ms` (broker端发起)
+  - 自动清理：`connections.max.idle.ms` 到期后如果没有任何请求，则Broker关闭该TCP。
+    ——被动关闭的后果就是会产生大量的 CLOSE_WAIT 连接，因此 Producer 端或 Client 端没有机会显式地观测到此连接已被中断。
 
 - **更新集群元数据**
 
@@ -465,9 +469,9 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 - **创建连接**
 
-  - 执行 poll() 时建链，`new KafkaConsumer()` 时并不创建连接。三个时机：
+  - **执行 poll() 时建链**，`new KafkaConsumer()` 时并不创建连接。三个时机：
 
-    - 时机1：首次执行poll()，发送 FindCoordinator 请求时
+    - 时机1：首次执行poll()，发送 FindCoordinator 请求查询协调者时
 
       > 目的：询问 Broker 谁是当前消费者的协调者；
       >
@@ -484,13 +488,13 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 - 关闭连接
 
   - 主动关闭： `KafkaConsumer.close()`、`kill`
-  - 自动关闭：`connection.max.idel.ms` 到期，默认9分钟
+  - 自动关闭：`connection.max.idel.ms` 到期，默认9分钟。如果某个 Socket 连接上连续 9 分钟都没有任何请求“过境”的话，那么消费者会强行“杀掉”这个 Socket 连接。
 
 
 
 
 
-## || 生产者
+## || Producer
 
 ### 发送流程
 
@@ -670,25 +674,15 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
     ——为什么是5？Broker 对每个 PID 只缓存5个 seq。
     ——如果设置>5，且最前面的msg ack丢失、producer重发、broker无法判断这条是否重复。
 
-### TCP连接管理
-
-- 创建TCP连接
-  - 在**创建 KafkaProducer 实例**时，生产者应用会在后台创建并启动一个名为 Sender 的线程，该 Sender 线程开始运行时首先会创建与 Broker 的连接。 
-    ——连接 bootstrap.servers 参数指定的**所有 Broker**；是否有必要？
-  - 可选：**更新元数据后**，如果发现与某些Broker当前没有连接，就会创建。
-  - 可选：**发送消息时**，发现尚不存在与目标Broker的连接，就会创建。
-- 关闭TCP连接
-  - 用户主动关闭：`producer.close()`，`kill -9`
-  - Kakfa自动关闭：`connections.max.idle.ms` 到期后如果没有任何请求，则Broker关闭该TCP。
-    ——被动关闭的后果就是会产生大量的 CLOSE_WAIT 连接，因此 Producer 端或 Client 端没有机会显式地观测到此连接已被中断。
 
 
 
-## || 消费者
+
+## || Consumer
 
 **定义**
 
-- 组内所有消费者协调在一起来消费订阅主题的所有分区
+- **消费者组**内所有消费者协调在一起来消费订阅主题的所有分区
 
 - 每个分区只能由组内的一个 Consumer 实例消费
   - 增加组内消费者：scale up
@@ -806,7 +800,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
 
 
-### Multi-Threading
+### 多线程消费
 
 **1. 粗粒度：每个线程启一个 KafkaConsumer**
 
@@ -864,14 +858,16 @@ https://www.cnblogs.com/huxi2b/p/7089854.html
 private final KafkaConsumer<String, String> consumer;
 
 // 线程池定义
+private int workerNum = ...;
 private ExecutorService executors = new ThreadPoolExecutor(workerNum, workerNum, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(1000), new ThreadPoolExecutor.CallerRunsPolicy());
 
 ...
 while (true)  {
+  // 将任务切分成了消息获取和消息处理两个部分
   ConsumerRecords<String, String> records = consumer.poll(Duration.ofSeconds(1));
   
+  // 每个Worker线程处理一个 Record
   for (ConsumerRecord record : records) {
-    // 每个线程处理一个 Record
 	  executors.submit(new Worker(record)); 
   }
 }
@@ -892,13 +888,11 @@ while (true)  {
 
 
 
-### Rebalance
+### 重平衡
 
 **触发条件**
 
-- **消费者组成员数目变更**
-  
-  - 增加、离开、崩溃
+- **消费者组成员数目变更**：增加、离开、崩溃
   
   > 需要避免不必要的重平衡：被协调者错误地认为消费者已离开，见下文。
   
@@ -909,9 +903,16 @@ while (true)  {
 
 
 
+**重平衡排查**
+
+- 如何排查是否重平衡过多？
+- Coordinator 日志：Rejoin group .....
+
+
+
 **重平衡的问题**
 
-- **Rebalance 过程中，所有 consumer 停止消费**
+- **Rebalance 过程中，所有 consumer 停止消费**，等待rebalance完成
   - STW
   - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
 
@@ -924,9 +925,9 @@ while (true)  {
 
 **什么是不必要的重平衡？**
 
-- 被 coordinator “错误地”认为已停止
+- 消费者被 coordinator “错误地”认为已停止
 
-- 组员减少导致的 rebalance
+- 消费者组员减少导致的 rebalance
 
 
 
@@ -934,8 +935,8 @@ while (true)  {
 
 - **避免“未及时发心跳”而导致消费者被踢出**
 
-  - *session.timeout.ms* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
-  - *heartbeat.interval.ms* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
+  - *session.timeout.ms：* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  - *heartbeat.interval.ms：* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
 
 - **避免“消费时间过长”而导致被踢出**
 
@@ -1622,7 +1623,7 @@ kafka-console-consumer.sh
 
   - 消息结构
 
-    > Key: groupId + topic + partition
+    > Key: `groupId + topic + partition`
     >
     > - 分区粒度
     >
@@ -1640,11 +1641,13 @@ kafka-console-consumer.sh
     >
     > - 分区数 50：`offset.topic.num.partitions=50` 
     > - 副本数 3： `offset.topic.replication.factor=3`
-  
+
 - Tombstone消息
 
   - 墓碑消息，delete mark；表示要彻底删除这个group信息
   - 当 consumer group下所有实例都停止，并且位移数据都被删除时，会写入该消息
+
+- Q: 为什么不设计成每个主题一个 __consumer_offsets？
 
 
 
@@ -1658,11 +1661,14 @@ kafka-console-consumer.sh
 
     > Q: how? 单独线程计时？——poll()
 
-  - 开始调用 poll() 时，提交上次 poll 返回的所有消息
+  - 开始调用 poll() 时，提交**上次 poll** 返回的所有消息。
 
+    - ——不会丢失，但可能重复；例如在自动提交之前发生consumer rebalance。
+    
     > Q: 和 `auto.commit.interval.ms`有关系吗？[TBD]
     >
     > 自动提交逻辑是在 poll 方法中，如果间隔大于最小提交间隔，就会运行逻辑进行 offset 提交，如果小于最小间隔，则忽略offset提交逻辑？也就是说上次poll 的数据即便处理结束，没有调用下一次 poll，那么 offset也不会提交？
+    
 
 - 配置
 
@@ -1675,8 +1681,9 @@ kafka-console-consumer.sh
 
 - 缺点
   - **consumer 不关闭 就会一直写入位移消息；导致位移主题越来越大。**
+    - 原因：即便没有新消息可消费，还是会不停写入offset=last-one
     - 需要自动整理消息：Log Cleaner 后台线程
-      - Compact 整理策略
+      - Compaction 整理策略
       - 扫描所有消息，删除过期消息
   - **可能导致重复消费**
     - 在提交之前发生 Rebalance
@@ -1713,7 +1720,7 @@ while (true) {
 
   > 基于回调；
   >
-  > 不会重试，也不要在回调中尝试重试；
+  > 问题：不会重试，也不要在回调中尝试重试；——所以要组合commitSync + commitAsync
   >
   > - 如果重试，则提交的位移值可能早已过期
   > - 除非：设置单调递增的ID，回调中检查ID判断是否可重试
@@ -1733,7 +1740,7 @@ while (true) {
 
 
 
-- **组合 同步 + 非同步**
+- **组合 commitSync + commitAsync**
 
   > - 轮询中：commitAsync()，避免阻塞
   >
@@ -1767,7 +1774,7 @@ try {
 
   > 问题：如果一次 poll 过来5000条消息，默认要全部消费完后一次提交
   >
-  > 优化：每消费xx条数据即提交一次位移，增加提交频率
+  > 优化：每消费100条数据即提交一次位移，增加提交频率；避免大批量的消息重新消费
 
 ```java
 Map<TopicPartition, OffsetAndMetadata> offsets = new HashMap<>();
@@ -2012,14 +2019,20 @@ try {
   - 消费者组开启 rebalance，并将要提交位移的分区分配给了另一个消费者
 
     > 当超过 `max.poll.interval.ms` 配置的时间，Kafka server 认为 consumer 掉线了，于是就执行分区再均衡将这个 consumer踢出消费者组。但是 consumer 又不知道服务端把自己给踢出了，下次在执行 poll() 拉取消息的时候（**在poll()拉取消息之前有个自动提交offset的操作**），就会触发该问题。 
-
-
-  - 深层原因：连续两次调用 poll 的间隔 超过了`max.poll.interval.ms`
-
-    > 因为触发了重平衡？
-
-
-  - 冷门原因：Standalone 消费者的 groupId 与其他消费者组重复
+  
+  
+    - 深层原因：连续两次调用 poll 的间隔 超过了`max.poll.interval.ms`；——因为触发了重平衡？
+      解决办法：
+      
+      - 优化单条消息处理时间；
+      - 增加客户端 max.poll.interval.ms
+      - 减小每次poll消息数 max.poll.records 
+      - 消费者使用多线程加速消费
+      
+  
+  
+    - 冷门原因：Standalone 消费者的 groupId 与其他消费者组重复
+  
 
 
 
