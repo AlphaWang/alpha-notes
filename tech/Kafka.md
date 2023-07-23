@@ -1111,7 +1111,14 @@ try {
     >
     > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
 
+### Lag
 
+- 定义：消费者滞后的消息数。
+- 影响：由于消费者的速度无法匹及生产者的速度，极有可能导致它消费的数据已经不在操作系统的页缓存中了。进而出现马太效应，即那些 Lag 原本就很大的消费者会越来越慢，Lag 也会越来越大。
+- 查看
+  - 命令行工具：`./kafka-consumer-groups.sh --bootstrap-server <xxx> --describe --group <group_id>`
+  - 代码监控：`client.listConsumerGroupOffsets(groupID);`
+  - JMX：`kafka.consumer:type=consumer-fetch-manager-metrics,client-id=“{client-id}”` --> records-lag-max, records-lead-min 
 
 
 
