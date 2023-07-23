@@ -344,10 +344,13 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 **原理 - Reactor 模式**
 
 - 隔离 控制类请求 vs. 数据类请求
+  - 两套组件：网络线程池、IO线程池 都有两套，分别处理控制 & 数据请求。
 
-- 两套组件：网络线程池、IO线程池 都有两套
-  - 一个 acceptor（监听并接收请求），多个 worker
-  - `Processor 线程` 和 `Handler 线程` 之间通过 RequestChannel 传递数据，RequestChannel 中包含一个 RequestQueue 队列和多个 ResponseQueues 队列。每个 Processor 线程对应一个 ResponseQueue。
+- Reactor：
+  - 一个 **acceptor**：只用于请求分发，非常轻量，吞吐量高。
+  - **网络线程池** `num.network.threads`：Acceptor 线程采用轮询的方式将入站请求公平地发到所有网络线程中；但网络线程池并不自己处理请求，而是将请求放入到一个**共享请求队列**中。
+    - `Processor线程 / 网络线程` 和 `Handler线程 / IO线程` 之间通过 RequestChannel 传递数据，RequestChannel 中包含一个 RequestQueue 队列和多个 ResponseQueues 队列。每个 Processor 线程对应一个 ResponseQueue。
+  - **IO 线程池** `num.io.threads`：负责从共享请求队列取出请求，执行真正的处理。
 
 
 ![image-broker-internal-nio](../img/kafka/broker-internals-nio.webp)
@@ -1333,7 +1336,9 @@ try {
 
 副本作用
 
-- **Availability**：数据冗余，提升可用性、容灾能力
+- **可用性**：数据冗余，提升可用性、容灾能力
+- **伸缩性**：能够通过增加机器的方式来提升读性能，进而提高读操作吞吐量。——kafka未能提供，follower不提供读写服务
+- **数据局部性**：允许将数据放入与用户地理位置相近的地方，从而降低系统延时。——kafka未能提供，follower不提供读写服务
 - **备份**：同一分区下所有副本保存“相同的”消息序列
 
 
@@ -1446,7 +1451,7 @@ try {
 
   - 问题
     - 提高可用性的代价：消息丢失！
-    - **CP --> AP**：通过配置参数，实现选择 C vs. A
+    - **CP --> AP**：权衡数据丢失 vs. 可用性。通过配置参数，实现选择 C vs. A
 
 
 
