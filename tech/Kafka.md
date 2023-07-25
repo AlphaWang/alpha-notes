@@ -1032,7 +1032,7 @@ try {
 如何通知消费者进行重平衡？
 
 - **心跳线程**
-- Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
+  - Consumer 定期发送心跳请求到 Broker；Broker 通过心跳线程通知其他消费者进行重平衡；
   - `heartbeat.interval.ms`：控制重平衡通知的频率
 
 - **Group Coordinator**
@@ -1043,7 +1043,7 @@ try {
 
 **重平衡过程消费者组状态流转**
 
-- 状态
+- 状态机
 
   - `Empty`：组内没有任何成员，但可能存在已提交的位移
   - `Dead`：组内没有任何成员，且组的元数据信息已在协调者端移除
@@ -1067,7 +1067,7 @@ try {
 
     > Stable --> PreparingRebalance --> Empty
     >
-    > kafka定期自动删除empty状态的过期位移
+    > kafka会定期自动删除empty状态的过期位移，注意必须是Empty状态才会删
 
 
 
@@ -1079,7 +1079,7 @@ try {
 
     1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
     2. 选出 Leader Consumer
-       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个加入组的消费者？
+       - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个发送JoinGroup的。
        - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
        - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
        - 最后 Leader Consumer 发送 SyncGroup 请求
@@ -1113,6 +1113,8 @@ try {
     > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
     >
     > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
+
+
 
 ### Lag
 
