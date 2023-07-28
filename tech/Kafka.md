@@ -1345,7 +1345,7 @@ try {
 
 
 
-### Leader vs. Follower
+### Leader & Follower
 
 - **Leader Replica**
   
@@ -1461,22 +1461,35 @@ try {
 
 副本同步相关概念：
 
-- **LEO**：Log End Offset，日志末端位移: 表示副本写入下一条消息的位移值。
+- **LEO**：Log End Offset，日志末端位移：表示副本写入下一条消息的位移值。
   
-- **高水位 High Watermark**
+- **HWM 定义**
   
-  - HWM = ISR 集合中最小的 Log End Offset (LEO)
+  - High Watermark == ISR 集合中最小的 Log End Offset (LEO)——注意不是时间戳！
   - 分区的高水位  == Leader 副本的高水位
   
 - **HWM 作用**
 
-  - 定义消息可见性：消费者只能拉取高水位之前的消息，即 *committed message.*
+  - **定义消息可见性**：消费者只能拉取高水位之前的消息，即 *committed message.*
 
-    > 高水位以上的消息属于未提交消息。即：消息写入后，消费者并不能马上消费到！
+    > **高水位以上的消息属于未提交消息。**即：消息写入后，消费者并不能马上消费到！
 
-  - 实现异步的副本同步 - [TBD]
+  - **实现异步的副本同步** - [TBD]
 
     https://time.geekbang.org/column/article/112118
+  
+- **HWM 更新时机** 
+
+  > Follower只保存自己的LEO/HWM；
+  >
+  > Leader会保存自己的、以及所有Follower的LEO/HWM
+
+  - **Leader上的本地副本LEO**：leader接收到消息，写入磁盘后即更新LEO；
+  - **Leader上的远程副本LEO**：follower拉取消息时，会高速leader从哪个位移开始拉取，leader则使用这个位移来更新其远程副本LEO；
+  - **Leader上的本地副本HWM**：触发时机 1）当leader更新LEO后，2）当leader更新远程副本LEO后；计算 `hwm = min(本地LEO, 所有远程副本LEO)` ——or `HW = max{HW, min(所有远程副本LEO)}`?
+  - **Follower 上的LEO**：follower从leader拉取消息，写入本地磁盘后，更新LEO；
+  - **Follower 上的HWM**：follower更新完LEO后，比较LEO与leader副本发来的HWM，计算 `hwm = min(leader HWM, LEO)`
+  
 
 
 
@@ -1520,7 +1533,7 @@ try {
 
        > Leader：`HW = 1`, ` LEO = 1`,`RemoteLEO = 1`
        >
-       > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后更新 HW
+       > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后更新 HW ——至此，leader follower HWM才被更新成1
 
 - **Leader Failover**
 
@@ -1536,7 +1549,7 @@ try {
 
 **Leader Epoch？**
 
-- **HWM 可能出现数据丢失**
+- **单纯依靠 HWM 可能出现数据丢失**
 
   > **场景1：陆续重启**
   >
