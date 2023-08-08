@@ -1937,24 +1937,26 @@ while (true) {
 
 - **seek()**
 
-
-  - **调用时机一：消费者启动时**
-
-    - subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 `consumer.seek(partition, offset)` 
-
-    - 其中offset 自己管理，从存储中读取
-
-  - **调用时机二：onPartitionAssigned()**
-
-    - 对每个新分配的 partition，执行`consumer.seek(partition, offset)`
-
-    - 其中offset 自己管理，从存储中读取
-
-
   ```java
   void seek(TopicPartition partition, long offset);
   void seek(TopicPartition partition, OffsetAndMetadata offsetAndMetadata);
   ```
+
+
+    - **调用时机一：消费者启动时**
+      - subscribe / poll 之后，通过 consumer.assignment() 获取分配到的分区，对每个分区执行 `consumer.seek(partition, offset)` 
+      
+      - 其中offset 自己管理，从存储中读取
+
+
+
+    - **调用时机二：onPartitionAssigned()**
+  - 对每个新分配的 partition，执行`consumer.seek(partition, offset)`
+    
+  - 其中offset 自己管理，从存储中读取
+
+
+
 
 - **seekToBeginning() / seekToEnd()**
 
@@ -3243,8 +3245,12 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 ### MirrorMaker
 
 > https://kafka.apache.org/documentation/#basic_ops_mirror_maker 
+>
+> https://time.geekbang.org/column/article/120991
 
-**概念**
+
+
+**https://eng.uber.com/ureplicator/概念**
 
 - 在不同数据中心之间同步数据
 
@@ -3428,6 +3434,21 @@ Kafka Retention 为什么不能过长？
 
 - 主题分区迁移 kafka-reassign-partitions.sh
 
+  ```shell
+  kafka-reassign-partitions.sh --zookeeper zookeeper_host:port --reassignment-json-file reassign.json --execute
+  ```
+
+  ```json
+  // --reassigment-json-file
+  {"version":1, "partitions":[
+   {"topic":"__consumer_offsets","partition":0,"replicas":[0,1,2]}, 
+    {"topic":"__consumer_offsets","partition":1,"replicas":[0,2,1]},
+    {"topic":"__consumer_offsets","partition":2,"replicas":[1,0,2]}
+  ]}
+  ```
+
+  
+
 - 修改主题级别参数 kafka-configs.sh
 
   ```shell
@@ -3443,6 +3464,7 @@ Kafka Retention 为什么不能过长？
 - 修改主题限速 kafka-configs.sh
 
   ```shell
+  # broker 参数配置
   kafka-configs.sh 
     --zookeeper zookeeper_host:port 
     --alter 
@@ -3450,6 +3472,7 @@ Kafka Retention 为什么不能过长？
     --entity-type brokers 
     --entity-name <broker-id>
   
+  #设置要限速的副本
   kafka-configs.sh 
     --zookeeper zookeeper_host:port 
     --alter 
@@ -3657,7 +3680,7 @@ try (AdminClient client = AdminClient.create(props)) {
   $ bin/kafka-configs.sh 
     --bootstrap-server host:port 
     --entity-type brokers 
-    --entity-default 
+    --entity-default # cluster-wider
     --alter 
     --add-config unclean.leader.election.enable=true
   
@@ -3665,7 +3688,7 @@ try (AdminClient client = AdminClient.create(props)) {
   $ bin/kafka-configs.sh 
     --bootstrap-server host:port 
     --entity-type brokers 
-    --entity-name 1 
+    --entity-name 1 # per-broker
     --alter 
     --add-config unclean.leader.election.enable=false
   ```
@@ -4246,20 +4269,20 @@ producer = new KafkaProduer<String, String>(p);
 **手段**
 
 - Producer 端
-  - `batch.zise = 100000–200000` 增大批次大小（default = 16384）--> 损失 latency
-  - `linger.ms = 10-100` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
+  - `batch.zise` 增大批次大小（default = 16384）--> 损失 latency
+  - `linger.ms` 增大批次缓存时间（the time spent waiting for the batch to fill up with messages，default = 0）--> 损失 latency
   - `compress.type=lz4/zstd` 压缩，gzip会导致cpu冲高；
   - `acks=0/1`, 不要是all（default = 1）；--> 损失 durability
   - `retries=0` 
-  - `buffer.memory`：如果分区很多，则可增大（default = 33554432）；表示为未发送消息分配的内存。
+  - `buffer.memory`：如果多线程共享一个producer实例，则可增大（default = 33554432）；确保缓冲区总是有空间可以申请。
   
 - Broker 端
-  - `num.replica.fetchers` 增大；Follower 副本用多少线程来拉取消息 
+  - `num.replica.fetchers` 增大，(default = 1)；Follower 副本用多少线程来拉取消息 
 
   - `主题分区数调大`：不同的分区可以并行生产、并行消费。--> 损失latency
 
 - Consumer 端
-  - `fetch.min.bytes = 100000`：Broker 积攒了 N 字节数据，就可以返回给 consumer，表示每次fetch数据的大小（default = 1）；--> 损失 latency
+  - `fetch.min.bytes `增大：Broker 积攒了 N 字节数据，就可以返回给 consumer，表示每次fetch数据的大小（default = 1）；--> 损失 latency
   - `多线程消费`。
   - `GC调优` 减少GC停顿时间。
 
@@ -4278,7 +4301,7 @@ producer = new KafkaProduer<String, String>(p);
 
 - Producer端：希望消息尽快发出，不要停留
   - `linger.ms=0` 另外 batch.size 就无需指定了
-  - `compress.type=none`
+  - `compress.type=none` 不启用压缩
   - `acks=1`
   - 避免数据倾斜，尽量均匀发到各分区；避免个别分区的broker压力过大。—— 尽量不设置 key
   
@@ -4371,29 +4394,7 @@ producer = new KafkaProduer<String, String>(p);
 
 
 
-
 ## || 监控
-
-**线程**
-
-- 服务端
-
-  - **Log Compaction 线程**
-
-    > kafka-log-cleaner-thread-*
-
-  - **副本拉取线程**
-
-    > ReplicaFetcherThread*
-
-- 客户端
-  - 生产者消息发送线程
-
-    > kafka-producer-network-thread-*
-
-  - 消费者心跳线程
-
-    > kafka-coordinator-heartbeat-thread-*
 
 
 
@@ -4417,27 +4418,44 @@ producer = new KafkaProduer<String, String>(p);
 
 - JMXTrans + InfluxDB + Grafana
 
+- DIDI Know Streaming
 
 
-**Broker 指标**
 
-- **Under-Replicated 非同步分区数**
+### **线程**
 
-  > MBEAN:
-  > kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions
-  - 概念：作为首领的Broker有多少个分区处于非同步状态；
+- 服务端
 
+  - Log Compaction 线程 `kafka-log-cleaner-thread-*`
+
+  - 副本拉取线程 `ReplicaFetcherThread*`
+
+- 客户端
+  - 生产者消息发送线程 `kafka-producer-network-thread-*`
+
+  - 消费者心跳线程 `kafka-coordinator-heartbeat-thread-*`
+
+
+
+
+### **Broker 指标**
+
+- **UnderReplicatedPartitions 非同步分区数**
+
+  > MBEAN: `kafka.server:type=ReplicaManager,name=UnderReplicatedPartitions`
+  - 概念：作为首领的Broker有多少个分区处于非同步状态，通常表明该分区有可能会出现数据丢失；
+  
   - **原因1：数量稳定时：某个Broker离线**
-
+  
     > 具体现象：
     >
     > - 有问题的Broker不上报metric;
     > - 其他Broker的under-replicated数目 == 有问题的Broker上的分区数目。
     >
     > 排查：此时先执行“preferred replica election” 再排查
-
+  
   - **原因2：数量变动时：性能问题**
-
+  
     > 排查：通过 kafka-topics.sh --describe --under-replicated 列出非同步分区
     >
     > - Cluster 问题
@@ -4455,8 +4473,7 @@ producer = new KafkaProduer<String, String>(p);
 
 - **Offline 分区数**
 
-  > MBEAN:
-  > kafka.controller:type=KafkaController,name=OfflinePartitionsCount
+  > MBEAN: `kafka.controller:type=KafkaController,name=OfflinePartitionsCount`
   - 概念：没有首领的分区个数；只在 Controller上会上报此 metric
   - 原因1：所有相关的 broker 都挂了
   - 原因2：ISR 副本未能成为 leader，因为消息数量不匹配 --> ？
@@ -4465,29 +4482,27 @@ producer = new KafkaProduer<String, String>(p);
 
 - **Active controller 数目**
 
-  > MBEAN:
-  > kafka.controller:type=KafkaController,name=ActiveControllerCount
-
+  > MBEAN: `kafka.controller:type=KafkaController,name=ActiveControllerCount`
+  
   - `= 1`：正常
   - `= 0`：可能zk产生分区
   - `> 1`：一个本该退出的控制器线程被阻塞了；需要重启 brokers
   - ActiveControllerCount：如果多台broker该值为1，则出现脑裂
-
   
-
+  
+  
 - **Request handler 空闲率**
 
-  > MBEAN:
-  > kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent
-
+  > MBEAN: `kafka.server:type=KafkaRequestHandlerPool,name=RequestHandlerAvgIdlePercent`
+  
   - 含义：请求处理器负责处理客户端请求，包括读写磁盘；空闲率不可太低，< 20% 则潜在问题；
-
+  
   - 原因1：集群过小
-
+  
   - 原因2：线程池过小，== cpu核数
-
+  
   - 原因3：线程负责了不该做的事，例如老版本会负责消息解压、验证消息、分配偏移量、重新压缩
-
+  
     > 0.10 的优化：
     >
     > - batch里可以包含相对位移。
@@ -4497,9 +4512,7 @@ producer = new KafkaProduer<String, String>(p);
 
 - **All topics bytes in / out**
 
-  > MBEAN:
-  > kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec
-  > kafka.server:type=BrokerTopicMetrics,name=BytesOutPerSec
+  > MBEAN: `kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec / BytesOutPerSec `
   - 含义：消息流入流出速率
   - bytes in: 据此决定是否该扩展集群
   - bytes out: 也包含 replica的流量
@@ -4508,9 +4521,8 @@ producer = new KafkaProduer<String, String>(p);
 
 - **Partition count**
 
-  > MBEAN:
-  > kafka.server:type=ReplicaManger,name=PartitionCount
-
+  > MBEAN: `kafka.server:type=ReplicaManger,name=PartitionCount`
+  
   - 含义：每个Broker上的分区数目
   - 如果运行自动创建分区，则需关注此指标
 
@@ -4518,9 +4530,8 @@ producer = new KafkaProduer<String, String>(p);
 
 - **Leader count**
 
-  > MBEAN:
-  > kafka.server:type=ReplicaManger,name=LeaderCount
-
+  > MBEAN: `kafka.server:type=ReplicaManger,name=LeaderCount`
+  
   - 含义：每个 Broker 上的 Leader 分区数目
   - 作用：用于判断集群是否不均衡，可执行 preferred replica election 来重平衡
 
@@ -4536,23 +4547,19 @@ producer = new KafkaProduer<String, String>(p);
 
 - **Bytes in/out rate**
 
-  > MBEAN:
-  > kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=X
-
+  > MBEAN: `kafka.server:type=BrokerTopicMetrics,name=BytesInPerSec,topic=X`
+  
 - **Failed fetch rate**
 
-  > MBEAN:
-  > kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestPerSec,topic=XX
-
+  > MBEAN: `kafka.server:type=BrokerTopicMetrics,name=FailedFetchRequestPerSec,topic=XX`
+  
 - **Fetch request rate**
 
-  > MBEAN:
-  > kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestPer,topic=XX
-
+  > MBEAN: `kafka.server:type=BrokerTopicMetrics,name=TotalFetchRequestPer,topic=XX`
+  
 - **Produce request rate**
 
-  > MBEAN:
-  > kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestPerSec,topic=XX
+  > MBEAN: `kafka.server:type=BrokerTopicMetrics,name=TotalProduceRequestPerSec,topic=XX`
 
 
 
@@ -4560,34 +4567,31 @@ producer = new KafkaProduer<String, String>(p);
 
 - Partition Size
 
-  > MBEAN:
-  > kafka.log:type=Log,name=Size,topic=XX,partition=0
-
+  > MBEAN: `kafka.log:type=Log,name=Size,topic=XX,partition=0`
+  
 - Log segment count
 
-  > MBEAN:
-  > kafka.log:type=Log,name=NumLogSegments,topic=XX,partition=0
-
+  > MBEAN: `kafka.log:type=Log,name=NumLogSegments,topic=XX,partition=0`
+  
 - Log start/end offset
 
-  > MBEAN:
-  > kafka.log:type=Log,name=LogStartOff,topic=XX,partition=0
-
+  > MBEAN: `kafka.log:type=Log,name=LogStartOff,topic=XX,partition=0`
+  
 - ISRShrink / ISRExpand
   
   - 副本频繁进出ISR --> 什么原因？
 
 
 
-**Produer 指标**
+### **Produer 指标**
 
-> MBEAN:
-> kafka.producer:type=producer-metrics,client-id=CLIENT
+> MBEAN: `kafka.producer:type=producer-metrics,client-id=CLIENT`
 
 - **错误相关**
   - **record-error-rate**：经过重试仍然失败，表明严重错误
   - **record-retry-rate**
 - **性能相关**
+  
   - request-latency-avg
   - record-queue-time-avg
 - **流量相关**
@@ -4603,35 +4607,31 @@ producer = new KafkaProduer<String, String>(p);
 - **限流**
   - produce-throttle-time-avg
 
-  > MBEAN:
-  > kafka.producer:type=producer-metrics,client-id=CLIENT, attribute produce-throttle-time-avg
+  > MBEAN: `kafka.producer:type=producer-metrics,client-id=CLIENT, attribute produce-throttle-time-avg`
 
 
 
 - **Per-Broker**
 
-> MBEAN:
-kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKERID
+> MBEAN: `kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKERID`
 
 
 
 - **Per-Topic** (适用于 MirrorMaker )
 
-> MBEAN:
-> kafka.producer:type=producer-topic-metrics,topic=TOPICNAME
+> MBEAN: `kafka.producer:type=producer-topic-metrics,topic=TOPICNAME`
 
 
 
-**Consumer 指标**
+### **Consumer 指标**
 
-> MBEAN:
-> kafka.consumer:type=cons-metrics,client-id=CLIENT
+> MBEAN: `kafka.consumer:type=cons-metrics,client-id=CLIENT`
 
 
 
 - **Fetch Manager**
 
-​	> MBEAN: kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT
+  > MBEAN: `kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT`
 
 - **性能**
   - **fetch-latency-avg**
@@ -4654,14 +4654,22 @@ kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKER
   
   - **fetch-throttle-time-avg**
   
-  > MBEAN:
-  > kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT, attribute fetch-throttle-time-avg
-
+  > MBEAN: `kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT, attribute fetch-throttle-time-avg`
+  
 - **Lag**
+  
   - **records-lag**
+  - **Redords-lead**
   - **records-lag-max**
     - 只考虑 lag 最大的那个分区
     - consumer 挂了就监控不到 lag 了
+  
+- Rebalance
+  
+  
+  - Join rate
+  
+  - Sync rate
   
 - **外部监控：Burrow**
   https://engineering.linkedin.com/apache-kafka/burrow-kafka-consumer-monitoring-reinvented
@@ -4670,8 +4678,7 @@ kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKER
 
 - **Per-Topic**
 
-> MBEAN:
-> kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT,topic=XX
+> MBEAN: `kafka.consumer:type=consumer-fetch-manager-metrics,client-id=CLIENT,topic=XX`
 
 如果消费者对应多个主题，则可用
 
@@ -4679,15 +4686,13 @@ kafka.producer:type=producer-node-metrics,client-id=CLIENTID,node-id=node-BROKER
 
 - **Per-Broker**
 
-> MBEAN:
-> kafka.consumer:type=consumer-node-metrics,client-id=CLIENT,node-id=XX
+> MBEAN: `kafka.consumer:type=consumer-node-metrics,client-id=CLIENT,node-id=XX`
 
 
 
 **Coordinator**
 
-> MBEAN:
-kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
+> MBEAN: `kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT`
 
 - **sync-time-avg / sync-rate**
 - **commit-latency-avg**
@@ -5027,6 +5032,7 @@ kafka.consumer:type=consumer-coordina-metrics,client-id=CLIENT
 
 - **精确一次语义**
 
+  > https://time.geekbang.org/column/article/132096
   > Kafka Streams 在底层大量使用 Kafka 事务机制和幂等性 Producer 来实现多分区的原子性写入，又因为它只能读写 Kafka，因此 Kafka Streams 很容易地就实现了端到端的 EOS。
   - Kafka 事务机制
   - 幂等性 Producer

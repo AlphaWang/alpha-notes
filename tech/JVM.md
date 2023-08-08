@@ -2155,9 +2155,10 @@ https://heaphero.io/
   - **-Xlog:safepoint**- Java9
 
 - 查看Ergonomics机制：各分代大小、收集目标
-  - **-XX:+PrintAdaptiveSizePolicy** - 打印 G1 Ergonomics 相关信息
+  - **-XX:+PrintAdaptiveSizePolicy** - 打印 G1 Ergonomics 相关信息，print information about the adaptive size policy decisions made by the G1 (Garbage-First) Garbage Collector.；
+    ——一旦你发现 Broker 进程频繁 Full GC，可以开启 G1 的 -XX:+PrintAdaptiveSizePolicy 开关，让 JVM 告诉你到底是谁引发了 Full GC。
   - **-Xlog:gc+ergo*=trace** - Java9
-
+  
 - 查看收集后剩余对象的年龄分布
   - **-XX:+PrintTenuringDistribution**
   - **-Xlog:gc+age=trace** - Java9
