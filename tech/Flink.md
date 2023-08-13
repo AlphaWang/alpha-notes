@@ -2947,7 +2947,7 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 ## || Sink
 
 > - FLIP-143: Unified Sink API https://cwiki.apache.org/confluence/display/FLINK/FLIP-143%3A+Unified+Sink+API 
-> - Kafka 2PC: https://www.ververica.com/blog/end-to-end-exactly-once-processing-apache-flink-apache-kafka 
+> - Flink End-to-End Exactly-Once https://flink.apache.org/2018/02/28/an-overview-of-end-to-end-exactly-once-processing-in-apache-flink-with-apache-kafka-too/
 
 ![image-20221128224546373](../img/flink/flink-sink-arch.png)
 
@@ -2966,13 +2966,27 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 > - If at least one pre-commit fails, all others are aborted, and we *roll back* to the previous successfully-completed checkpoint.
 > - After a successful pre-commit, the commit *must* be guaranteed to eventually succeed -- both our operators and our external system need to make this guarantee. *If a commit fails (for example, due to an intermittent network issue), the entire Flink application fails*, the application restarts according to the user’s restart strategy, and there is another commit attempt. This process is critical because if the commit does not eventually succeed, data loss occurs.
 
-- **Writer**
-  - 写入、预提交
-  - Committable：临时文件、undo/redo log
-- **Committer**
-  - 提交
-- Global Committer
-  - 可选，并行度为1
+
+
+2PC
+
+- Pre-commit: `snapshot()`
+  - Checkpoint的开始表示两阶段提交协议的"pre-commit"阶段；预提交阶段在Checkpoint成功完成之后结束。
+  - in the pre-commit phase, the data sink must pre-commit its external transaction in addition to writing its state to the state backend.
+- Commit: `notifyCheckpointCompleted()`
+  - 下一步是通知所有operator Checkpoint已经成功，这是两阶段提价协议的提交阶段。JobManager会为应用程序中的每个operator发出Checkpoint完成的**回调通知**。
+  - The data source and window operator have no external state, and so in the commit phase, these operators don’t have to take any action. The data sink does have external state, though, and **commits the transaction** with the external writes.
+
+
+
+端到端精确一致
+
+- 外部系统需要支持事务：to provide exactly-once guarantees, the external system must provide support for transactions that integrates with a two-phase commit protocol. 
+- 
+
+
+
+
 
 
 
@@ -2981,6 +2995,19 @@ class SlackReader implements SourceReader<SlackMsg, SlackNotification> {
 
 
 **Sample Code**
+
+> FLIP-143: 
+>
+> - **Writer**
+>   - 写入、预提交
+>   - Committable：临时文件、undo/redo log
+> - **Committer**
+>   - 提交
+> - Global Committer
+>   - 可选，并行度为1
+>
+
+
 
 - Sink
   - Configuration holder
