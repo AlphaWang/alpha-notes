@@ -3616,9 +3616,9 @@ try (AdminClient client = AdminClient.create(props)) {
 
 - **SASL**: Simple Authentication and Security Layer
   
-  - 用于认证
+  - 用于认证的框架
   
-  - 认证机制
+  - 认证机制：基于SASL实现的认证插件
     - GSSAPI：基于 Kerberos 认证
     - PLAIN：简单用户名密码；不能动态增减用户，必须重启Broker
     - SCRAM：PLAIN进阶；认证信息保存在ZK，可动态修改
