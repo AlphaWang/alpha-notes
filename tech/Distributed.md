@@ -3451,6 +3451,8 @@ Aka. 序列化
 > 从db角度，理解如何存储数据、如何找到数据。
 >
 > - DB Internals 作者讲座：https://www.youtube.com/watch?v=e1wbQPbFZdk
+> - 笔记：https://ddia.qtmuniao.com/
+> - 翻译：http://ddia.vonng.com/#/ch3
 
 
 
@@ -3459,31 +3461,93 @@ Aka. 序列化
 - 要求
   - 适合磁盘操作，即粒度要大：排除 `链表、哈希表、跳表、二叉搜索树、红黑树`
   - 允许并发操作，即粒度要小：排除 `大文件、数组`
-  - 适合做存储结构：B 树，LSM 树（Log-Structured Merged-Tree）
-  
+  - 适合做存储结构：B 树，LSM 树 `Log-Structured Merged-Tree`
+
+
+**存储结构设计演化**
+
+- **Step-1: Bitcask + 哈希索引**
+
+  - `set(k, v)` : 插入文件末尾；——写很快
+  - `get(k)`: 匹配所有key，返回最后一条。——读要全文扫描
+  - 问题1：查询慢
+    - 索引：解决查询慢的问题，在内存构建 hashmap(k = key, v = 条目起始位置)
+    - 全文扫描 --> 一次内存查询 + 一次磁盘seek
+
+  - 问题2：单个文件越来越大。
+    - compact: 达到一定尺寸后，新建一个文件、同时回收key多次写入造成的空间浪费。
+
+  - 局限性
+    - 所有key必须放内存，如果数据集超大则无法支持；
+    - 不支持范围查询。
+    - ——解决：LSM Tree，B+ Tree
+
+- **Step-2: SSTable 支持大数据量 + 范围查询**
+
+  - 思路：让文件按key有序 --> Sorted String Table
+
+  - 优点：无需在内存保存所有索引，仅需记录每个文件的界限。
+
+  - **如何*构建 SSTable文件*？**
+
+    > 乱序数据在外存中整理为有序文件？困难
+
+    - 在内存中维护一个有序结构 MemTable（红黑树、AVL树、跳表）；
+    - 达到一定阈值后全量 dump 到外存。
+
+  - **如何*维护 SSTable 文件*？**
+
+    - 查询步骤：先去 MemTable中查，查不到再去 SSTable 按时间顺序由新到旧逐一查找。
+    - 问题1：SSTable 文件越来越多，查找代价越来越大。
+      - **Compaction**：定期将文件合并、减少文件数量、同时进行 GC
+    - 问题2：如果宕机，内存数据会丢失。
+      - **WAL**，它的唯一目的是在崩溃后恢复内存表
+
+- **Step-3: LSM Tree**
+
+  - 保存一组合理组织、后台合并的 SSTables 
+
+  - 两种 compaction 策略
+
+    - Size-tiered
+
+    - Leveled compaction
+
+      > https://www.scylladb.com/2018/01/31/compaction-series-leveled-compaction/
+      >
+      > https://leveldb-handbook.readthedocs.io/zh/latest/compaction.html
+      >
+      > - Minor compaction: 将内存数据持久化为 level-0 SSTable文件，这一层的多个文件可能包含overlap数据。——如果只有这一层，那读操作必须遍历所有文件才行。
+      >   ![img](../img/distributed/lsm-compaction-1.jpeg)
+      > - Major compaction: 将level-0文件合并成若干个没有数据overlap的 level-1 文件。Level-2中的SSTables用于进一步合并和清理Level-1中的较小SSTables，以减少数据的重叠和提高数据布局的效率。
+      >   ![img](../img/distributed/lsm-compaction-2.jpeg)
+
+
+
 - **LSM Tree vs. B Tree**
 
   |      | LSM Tree                                                     | B Tree                                                       |
   | ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | 特点 | **写入更快**（异位更新）；更适用于固态硬盘（随机读效率高，减少了寻道时间，减少写入过程的数据擦除操作）。 | **读取更快**（就地更新，写入更慢）；更适用于机械硬盘。       |
-  | 更新 | **Immutable, out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；，需要 compaction。 | **Mutable, in-place update**：就地更新。                     |
+  | 特点 | **写入更快**（异位更新），只允许追加，变随机写为顺序写。     | **读取更快**（就地更新，写入更慢                             |
+  | 更新 | **Immutable, out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；需要 compaction。 | **Mutable, in-place update**：就地更新。                     |
   | 优点 | 写入吞吐更高：顺序写入 + 更少的写放大；<br />文件更小：compaction； | 易于事务隔离；                                               |
   | 缺点 | Compaction 可能影响常规读写、占用磁盘带宽；<br />难以事务隔离、加锁：同一个key可能存在不同的 segment； | 写入吞吐低（至少两次写入，WAL + Page）；<br />存储浪费：页中有空洞； |
+  | 代表 | Bitcask、LevelDB、RocksDB、Cassandra、LuceneR                | RDB                                                          |
 
-- B Tree
+- **B Tree**
 
-  - ![image-20220925202908675](../img/distributed/b-tree-arch.png)
+  ![image-20220925202908675](../img/distributed/b-tree-arch.png)
 
-- B+ Tree
+- **B+ Tree**
 
   - 数据只存放在叶子节点
   - 优点
     - 索引和数据分开存储，让更多的索引存储在内存中。 
     - 叶子节点相连，遍历更方便。
 
-- LSM Tree
+- **LSM Tree**
 
-  - ![image-20220925204653992](../img/distributed/lsm-tree-arch.png)
+  ![image-20220925204653992](../img/distributed/lsm-tree-arch.png)
 
 
 
@@ -3512,7 +3576,7 @@ Aka. 序列化
 > - https://www.scylladb.com/glossary/sstable
 > - Gaurav Sen: https://www.youtube.com/watch?v=_5vrfuwhvlQ 
 
-- 定义：类似 log segments，但在每个 segment 内按 key 排序；不可变！
+- 定义：类似 log segments，但在**每个 segment 内按 key 排序**；不可变！
 - 优点：
   - merge segments 更简单高效。
   - 不必索引所有 key。
