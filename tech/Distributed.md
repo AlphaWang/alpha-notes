@@ -3464,10 +3464,34 @@ Aka. 序列化
   - 适合做存储结构：B 树，LSM 树 `Log-Structured Merged-Tree`
 
 
-**存储结构设计演化**
+
+
+
+**1. Log-Structured Storage**
+
+- 特性：Append-only，而不更新已有记录
+
+  - 顺序写，性能好
+  - 易于并发 - 因为单线程写？
+  - 崩溃恢复更简单：
+
+- 索引：哈希索引（key - offset）
+
+  - 否则必须全日志扫描
+  - 缺点：
+    - Key 不能太多，必须能全部放入内存；
+    - 范围查询效率低。
+
+- 问题：如何避免磁盘用尽——分段存储
+
+  - 定期在后台对 frozen segments 进行 compact + merge
+  - 每个 segment 有自己的索引
+
+  
+
+**LSM 存储结构设计演化**
 
 - **Step-1: Bitcask + 哈希索引**
-
   - `set(k, v)` : 插入文件末尾；——写很快
   - `get(k)`: 匹配所有key，返回最后一条。——读要全文扫描
   - 问题1：查询慢
@@ -3482,15 +3506,25 @@ Aka. 序列化
     - 不支持范围查询。
     - ——解决：LSM Tree，B+ Tree
 
+
+
+
 - **Step-2: SSTable 支持大数据量 + 范围查询**
 
-  - 思路：让文件按key有序 --> Sorted String Table
+  > - https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
+  > - https://www.scylladb.com/glossary/sstable
+  > - Gaurav Sen: https://www.youtube.com/watch?v=_5vrfuwhvlQ 
 
-  - 优点：无需在内存保存所有索引，仅需记录每个文件的界限。
+  - 思路：类似第一步的 Log segmets，但每个segment内按key有序 --> Sorted String Table
+
+  - 优点：
+
+    - 无需在内存保存所有索引，仅需记录每个文件的界限。
+    - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 segment 不可变！！！
 
   - **如何*构建 SSTable文件*？**
 
-    > 乱序数据在外存中整理为有序文件？困难
+    > 问题：乱序数据在外存中整理为有序文件？困难
 
     - 在内存中维护一个有序结构 MemTable（红黑树、AVL树、跳表）；
     - 达到一定阈值后全量 dump 到外存。
@@ -3498,14 +3532,29 @@ Aka. 序列化
   - **如何*维护 SSTable 文件*？**
 
     - 查询步骤：先去 MemTable中查，查不到再去 SSTable 按时间顺序由新到旧逐一查找。
-    - 问题1：SSTable 文件越来越多，查找代价越来越大。
-      - **Compaction**：定期将文件合并、减少文件数量、同时进行 GC
-    - 问题2：如果宕机，内存数据会丢失。
+    - <u>问题1：如果宕机，内存数据会丢失。</u>
       - **WAL**，它的唯一目的是在崩溃后恢复内存表
+    - <u>问题2：SSTable 文件越来越多，查找代价越来越大。</u>
+      - **Compaction**：定期将文件合并、减少文件数量、同时进行 GC
+    - <u>问题3：查找不存在的 key 很慢，要查遍所有 chunk</u>
+      - 解决方案：布隆过滤器
+
+  - 实现细节：
+
+    - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；该文件分 chunk，每个chunk内有序（便于二分查找）。
+    - **读取**：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
+    - **后台**： merge + compact ——减少chunk数目、减少查询复杂度，合并两个有序 chunk 很容易。
+
+  - 实际应用：
+
+    - LevelDB，RocksDB，Cassandra，ScyllaDB。**源自 LSM-Tree**。 
+
+
 
 - **Step-3: LSM Tree**
 
   - 保存一组合理组织、后台合并的 SSTables 
+    ![image-20220925204653992](../img/distributed/lsm-tree-arch.png)
 
   - 两种 compaction 策略
 
@@ -3518,81 +3567,15 @@ Aka. 序列化
       > https://leveldb-handbook.readthedocs.io/zh/latest/compaction.html
       >
       > - Minor compaction: 将内存数据持久化为 level-0 SSTable文件，这一层的多个文件可能包含overlap数据。——如果只有这一层，那读操作必须遍历所有文件才行。
-      >   ![img](../img/distributed/lsm-compaction-1.jpeg)
+      >   <img src="../img/distributed/lsm-compaction-1.jpeg" alt="img" style="zoom:20%;" />
       > - Major compaction: 将level-0文件合并成若干个没有数据overlap的 level-1 文件。Level-2中的SSTables用于进一步合并和清理Level-1中的较小SSTables，以减少数据的重叠和提高数据布局的效率。
-      >   ![img](../img/distributed/lsm-compaction-2.jpeg)
+      >   <img src="../img/distributed/lsm-compaction-2.jpeg" alt="img" style="zoom:20%;" />
 
 
 
-- **LSM Tree vs. B Tree**
-
-  |      | LSM Tree                                                     | B Tree                                                       |
-  | ---- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-  | 特点 | **写入更快**（异位更新），只允许追加，变随机写为顺序写。     | **读取更快**（就地更新，写入更慢                             |
-  | 更新 | **Immutable, out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；需要 compaction。 | **Mutable, in-place update**：就地更新。                     |
-  | 优点 | 写入吞吐更高：顺序写入 + 更少的写放大；<br />文件更小：compaction； | 易于事务隔离；                                               |
-  | 缺点 | Compaction 可能影响常规读写、占用磁盘带宽；<br />难以事务隔离、加锁：同一个key可能存在不同的 segment； | 写入吞吐低（至少两次写入，WAL + Page）；<br />存储浪费：页中有空洞； |
-  | 代表 | Bitcask、LevelDB、RocksDB、Cassandra、LuceneR                | RDB                                                          |
-
-- **B Tree**
-
-  ![image-20220925202908675](../img/distributed/b-tree-arch.png)
-
-- **B+ Tree**
-
-  - 数据只存放在叶子节点
-  - 优点
-    - 索引和数据分开存储，让更多的索引存储在内存中。 
-    - 叶子节点相连，遍历更方便。
-
-- **LSM Tree**
-
-  ![image-20220925204653992](../img/distributed/lsm-tree-arch.png)
 
 
-
-**Log-Structured Storage**
-
-- 特性：Append-only，而不更新已有记录
-  - 顺序写，性能好
-  - 易于并发 - 因为单线程写？
-  - 崩溃恢复更简单：
-- 索引：哈希索引（key - offset）
-  - 否则必须全日志扫描
-  - 缺点：
-    - Key 不能太多，必须能全部放入内存；
-    - 范围查询效率低。
-- 问题：如何避免磁盘用尽——分段存储
-  - 定期在后台对 frozen segments 进行 compact + merge
-  - 每个 segment 有自己的索引
-
-
-
-**SSTable：Sorted String Table**
-
-> 实际应用：LevelDB，RocksDB，Cassandra，ScyllaDB。**源自 LSM-Tree**。 
->
-> - https://github.com/scylladb/scylladb/wiki/SSTable-compaction-and-compaction-strategies
-> - https://www.scylladb.com/glossary/sstable
-> - Gaurav Sen: https://www.youtube.com/watch?v=_5vrfuwhvlQ 
-
-- 定义：类似 log segments，但在**每个 segment 内按 key 排序**；不可变！
-- 优点：
-  - merge segments 更简单高效。
-  - 不必索引所有 key。
-  - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 segment 不可变！！！
-- 实现：
-  - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；该文件分 chunk，每个chunk内有序（便于二分查找）。
-  - **读取**：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
-  - **后台**： merge + compact ——减少chunk数目、减少查询复杂度，合并两个有序 chunk 很容易。 
-- 问题：宕机后 memtable 数据丢失
-  - 解决方案：先写入一个 append-only log，该 log 只用于崩溃恢复。
-- 问题：查找不存在的 key 很慢，要查遍所有 chunk
-  - 解决方案：布隆过滤器
-
-
-
-**Page-Oriented Storage**
+**2. Page-Oriented Storage**
 
 - 基于 **B-Tree**：将数据库分解成固定大小的 块或页；页可以互相引用、形成 tree
 
@@ -3611,8 +3594,35 @@ Aka. 序列化
     - WAL 写入很快 O(1)，但读取较慢 O(n) 
     - 优化：在 DB 端增加 **SST** (sorted array chunks，为什么不用一个大的：否则每次刷数据 都要重排所有), --> **compaction** (merge chunks), + bloomfilter (忽略部分大 chunks)
   
-  
-  
+
+- **B Tree**
+
+  ![image-20220925202908675](../img/distributed/b-tree-arch.png)
+
+- **B+ Tree**
+
+  - 数据只存放在叶子节点
+  - 优点
+    - 索引和数据分开存储，让更多的索引存储在内存中。 
+    - 叶子节点相连，遍历更方便。
+
+
+
+**3. LSM Tree vs. B Tree**
+
+|              | LSM Tree                                                     | B Tree                                            |
+| ------------ | ------------------------------------------------------------ | ------------------------------------------------- |
+| **优势**     | **写入更快**（异位更新），只允许追加，变随机写为顺序写。     | **读取更快**（就地更新，写入更慢                  |
+| **更新**     | **Immutable, out-of-place update**：异位更新，将更新的内容存储到新位置，而不是覆盖旧条目；需要 compaction。 | **Mutable, in-place update**：就地更新。          |
+| **写放大**   | 1. 数据和WAL；<br />2. Compaction;                           | 1. 数据和WAL;<br />2. 更改数据时多次覆盖整个Page; |
+| **写吞吐**   | 写吞吐较高：较低的写放大、顺序写入、更为紧凑                 | 写吞吐较低：大量随机写                            |
+| **压缩率**   | 1. 更加紧凑、没有内部碎片；<br />2. 压缩潜力更大，共享前缀   | 碎片较多                                          |
+| **后台流量** | 1. 外存总带宽有限，compaction会影响读写吞吐；<br />2. 数据量越大，compaction的影响越大 | 更稳定                                            |
+| **存储放大** | 同一个key存储多遍                                            | 有些page没有用满                                  |
+| **并发控制** | 同一个key存储多遍、一般使用MVCC进行控制                      | 同一个key只存在一个地方；树结构更容易加范围锁     |
+| **代表**     | Bitcask、LevelDB、RocksDB、Cassandra、LuceneR                | RDB                                               |
+
+
 
 
 
