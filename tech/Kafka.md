@@ -949,7 +949,7 @@ while (true)  {
 
   - Full GC导致长时间停顿，会引发 rebalance
 
-- **[KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances)** 减少全量重平衡，诊断客户端应用 RollingUpdate 场景
+- **[KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances)** 减少全量重平衡，针对客户端应用 RollingUpdate 场景
 
   - The new `group.instance.id` config be added to the Join/Sync/Heartbeat/OffsetCommit request/responses. 
   - apply the same assignment based on member identities
