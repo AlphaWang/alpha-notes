@@ -900,6 +900,7 @@ while (true)  {
   > 需要避免不必要的重平衡：被协调者错误地认为消费者已离开，见下文。
   
 - **主题数变更**
+  
   - 例如订阅模式 `consumer.subsribe(Pattern.compile("t.*c"))`；当创建的新主题满足此模式，则发生 rebalance
   
 - **分区数增加**
@@ -926,15 +927,13 @@ while (true)  {
 
 
 
-**什么是不必要的重平衡？**
-
-- 消费者被 coordinator “错误地”认为已停止
-
-- 消费者组员减少导致的 rebalance
-
-
-
 **避免不必要的重平衡**
+
+> 什么是不必要的重平衡？
+>
+> - 消费者被 coordinator “错误地”认为已停止
+>
+> - 消费者组员减少导致的 rebalance
 
 - **避免“未及时发心跳”而导致消费者被踢出**
 
@@ -950,7 +949,7 @@ while (true)  {
 
   - Full GC导致长时间停顿，会引发 rebalance
 
-- [KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances) 减少全量重平衡
+- **[KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances)** 减少全量重平衡，诊断客户端应用 RollingUpdate 场景
 
   - The new `group.instance.id` config be added to the Join/Sync/Heartbeat/OffsetCommit request/responses. 
   - apply the same assignment based on member identities
@@ -1077,21 +1076,29 @@ try {
 
   - **JoinGroup 请求**
 
-    1. 加入组时，向分组协调者发送 JoinGroup 请求、上报自己订阅的主题
-    2. 选出 Leader Consumer
+    1. 加入组时，先发送FindCoordinator(groupId)请求找到协调者。
+    2. 向分组协调者发送 JoinGroupRequest、上报自己订阅的主题
+    3. 选出 Leader Consumer
        - 协调者收集到全部成员的 JoinGroup 请求后，"选择"一个作为领导者；Q：如何选择？--> == 第一个发送JoinGroup的。
-       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；
-       - **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： PartitionAssignor
-       - 最后 Leader Consumer 发送 SyncGroup 请求
-
+       - 协调者将订阅信息放入 JoinGroup 响应中，发给 Leader Consumer；并分配 memberId发给所有人。
+    4. **Leader Consumer** 负责收集所有成员的订阅信息，据此制定具体的分区消费分配方案： `PartitionAssignor`
+    5. 最后 Leader Consumer 发送 SyncGroup 请求
+  
     > Q：为什么引入 Leader Consumer？可否协调者来分配？
     >
     > A：客户端自己确定分配方案有很多好处。比如可以独立演进和上线，不依赖于服务器端
-
+    >
+    > Q：有哪些常见分配方案？
+    >
+    > A：https://developer.confluent.io/courses/architecture/consumer-group-protocol/ 
+    >
+    > - Range Partition Assignment: 任何主题的 分区0 总是分配给同一个消费者。
+    > - Round Robin Assignment：平均分。
+  
     
-
+  
   - **SyncGroup请求**
-
+  
     1. **Leader Consumer** 将分配方案通过 SyncGroup 请求发给协调者；同时其他消费者也会发送空的 SyncGroup请求；
     2. 协调者将分配方案放入 SyncGroupResponse 中，下发给所有成员；即**通过协调者中转**；
     3. 消费者进入 Stable 状态
