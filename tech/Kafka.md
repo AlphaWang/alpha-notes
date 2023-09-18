@@ -353,6 +353,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
   - **IO 线程池** `num.io.threads`：负责从共享请求队列取出请求，执行真正的处理。
 
 
+
 ![image-broker-internal-nio](../img/kafka/broker-internals-nio.webp)
 
 ![image-20230716142157635](../img/kafka/broker-internals-nio.png)
@@ -370,38 +371,37 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 **请求处理组件**
 
+![response-added-to-socket-send-buffer](../img/kafka/broker-internals-data-flow-produce.png)
+(https://developer.confluent.io/courses/architecture/broker/)
+
 - **SocketServer** - 接收请求
 
 - **Acceptor 线程** - 请求分发
 
   - 轮询，将入站请求公平地分发到所有网络线程
 
-- **Processor Thread 网络线程池**
+- **网络线程池**
 
   - `num.network.threads = 3`
 
-  - 负责与客户端通过网络读写数据
+  - 负责与客户端通过网络读写数据，That network thread will handle that particular client request through the rest of its lifecycle.
 
-    > 网络线程拿到请求后，并不自己处理，而是放入一个共享请求队列（Request Queue）中；
-    >
-    > 最后从 Response Queue 中找到response并返回给客户端
+  - 网络线程拿到请求后，并不自己处理，而是放入一个共享请求队列 Request Queue 中；
+  
+  - 最后从 Response Queue 中找到response并返回给客户端
 
 - **Request Queue 共享请求队列**
 
-  > 所有网络线程共享
+  - 所有网络线程共享
 
 - **IO 线程池**
 
   - `num.io.threads = 8`
-  - 从 Request Queue 共享请求队列中取出请求，进行处理；包括写入磁盘、读取页缓存等
+  - 从 Request Queue 共享请求队列中取出请求，进行处理；包括CRC校验、写入磁盘、写入/读取页缓存等
 
-- **Response Queue** 请求响应队列
+- **Purgatory 炼狱**
 
-  - 每个网络线程专属，不共享；因为没必要共享了！！！
-
-- **Purgatory** 炼狱
-
-  - 作用：用来**缓存延时请求**。当请求不能立刻处理时，就会暂存在 Purgatory 中。等条件满足，IO线程会继续处理该请求，将Response放入对应网络线程的响应队列中
+  - 作用：用来**缓存延时请求**。当请求不能立刻处理时，就会暂存在 Purgatory 中，防止IO线程卡死。等条件满足，IO线程会继续处理该请求，然后将Response放入对应网络线程的响应队列中
 
     > - Case-1: produce requests with `acks=all`. 需要所有ISR副本都接收消息后才能返回。处理该请求的IO线程就必须等待其他Broker的写入结果。
     >
@@ -410,7 +410,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
     > - Case-3: consumer Join Group Request，等所有consumer接入
 
   - 原理：Hierarchical Timing Wheels
-  
+
     > https://www.confluent.io/blog/apache-kafka-purgatory-hierarchical-timing-wheels/ 
     >
     > - Timeout timer：
@@ -419,6 +419,10 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
     >     - Tips: 循环数组取多长为宜？2的N次幂 --> 以便将 `取模运算` 优化为 `位运算` ：a % 2^n == a & (2^n - 1)
     >     - 时间轮 + 最小堆：堆内存储有请求的时间格，避免空转。
     > - Watcher list:  
+
+- **Response Queue 请求响应队列**
+  - 每个网络线程专属，不共享；因为没必要共享了！！！
+  - 网络线程从中获取响应，并发送给 socket send buffer. 
 
 
 
