@@ -371,8 +371,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 **请求处理组件**
 
-![response-added-to-socket-send-buffer](../img/kafka/broker-internals-data-flow-produce.png)
-(https://developer.confluent.io/courses/architecture/broker/)
+![fetch-requests](../img/kafka/broker-internals-data-flow-consume.png)(https://developer.confluent.io/courses/architecture/broker/)
 
 - **SocketServer** - 接收请求
 
@@ -1543,7 +1542,7 @@ try {
        >
        > Follower：`HW = 0`, `LEO = 0`
 
-  - 2. Follower拉 取消息（featchOffset = 0）
+  - 2. Follower拉取消息（featchOffset = 0）
 
        > Follower 本地操作：写入磁盘，更新 LEO，更新 HW = min{Leader HW, 本地LEO}
        >
@@ -1553,19 +1552,28 @@ try {
 
   - 3. Follower 再次拉取消息（featchOffset = 1）
 
-       > Leader：`HW = 1`, ` LEO = 1`,`RemoteLEO = 1`
+       > Leader 更新HWM，让对应消息对消费者可见：`HW = 1`, ` LEO = 1`,`RemoteLEO = 1`
        >
-       > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后更新 HW ——至此，leader follower HWM才被更新成1
+       > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后获知最新的 HWM，并更新到本地 ——至此，leader follower HWM才被更新成1，因此 follower HWM一般会落后于 leader.
 
 - **Leader Failover**
 
-  - Leader fail 之后，ZK 通知控制器、选出新 Leader；新 Leader 会将 HW 作为其当前 LEO。
+  - Leader fail 之后，ZK 通知控制器、选出新 Leader；新 Leader 会将 HWM 作为其当前 LEO。
 
-  - Follower 获知新 Leader后，Truncate Local Log to HW，然后发出 fetch 请求。或请求新 Leader 获知 HW、然后据此 Truncate。 
+  - Follower 获知新 Leader后，**Truncate Local Log** to HW，然后发出 fetch 请求。或请求新 Leader 获知 HW、然后据此 Truncate。 
 
     > 为何要 Truncate log?
     >
-    > 新 Leader 可能并未完全catch up，或者新Leader 上次fsync 更久远，truncate 可以避免出现数据不一致。
+    > 新 Leader 可能并未完全catch up，或者新Leader 上次 fsync 更久远，truncate 可以避免出现数据不一致。
+    
+  - 问题一：因为 follower hwm的滞后性，failover之后新的hwm 可能小于真实 hwm，fetch request 请求的offset可能在新hwm之后；
+    --> 此时新 leader 会返回 `OFFSET_NOT_AVAILABLE` error，让消费者重试、直到hwm被更新。
+  
+  - 问题二：leader 切换后，follower可能比新leader Leo 更大、包含 uncommitted 记录；
+    --> **Replica Reconciliation**: 新 leader 收到 fetch 请求后，发现来自上个 epoch，则告诉follower 这个epoch的最后一个offset、据此进行 **truncate log**
+  
+  - 问题三：leader 切换后，可能导致分布不均，leader可能集中在某些broker上。
+    --> 定期检查，发现不均则将leader迁移到 prefered replicas . 
 
 
 
