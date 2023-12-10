@@ -205,7 +205,7 @@
 
 例题
 
-- **283 - Move zeros to the end**. [1, 2, 0, 3, 0, 8] --> [1, 2, 3, 8, 0, 0]
+- **283 - Move zeros to the end**. `[1, 2, 0, 3, 0, 8]` --> `[1, 2, 3, 8, 0, 0]`
   https://leetcode.com/problems/move-zeroes/ 
 
 - **344 - Reverse String**
