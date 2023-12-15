@@ -2364,6 +2364,8 @@ try {
 **2. Kafka 事务消息**
 
 > https://www.confluent.io/blog/transactions-apache-kafka
+>
+> https://developer.confluent.io/courses/architecture/transactions/
 
 作用
 
@@ -2405,6 +2407,7 @@ try {
 
   - **read_uncommitted**：类似无事务消费；
   - **read_committed**：只读取成功提交了的事务，过滤掉 aborted 消息
+    - 原理：维护 LSO - Last Stable Offset，表示在此之前的数据都committed or aborted. 
 
 
 
@@ -2474,6 +2477,13 @@ try {
   - Recover from txn log. 
   - 如果 `PREPARE_COMMIT` / `PREPARE_ABORT`，继续提交或结束。
   - 如果在 PREPARE 之前，不用管、producer 继续往新 coordinator发请求。
+
+
+
+权衡：Overhead vs. Latency
+
+- 如果一个txn中的消息过少，会导致overhead过重；
+- 如果一个txn中的消息过多，则倒是latency变高，因为这些消息要都提交了才能对消费者可见。
 
 
 
