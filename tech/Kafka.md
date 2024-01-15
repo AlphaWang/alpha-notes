@@ -385,7 +385,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
   - 负责与客户端通过网络读写数据，That network thread will handle that particular client request through the rest of its lifecycle.
 
-  - 网络线程拿到请求后，并不自己处理，而是放入一个共享请求队列 Request Queue 中；
+  - 网络线程拿到请求后，并不自己处理，而是构造请求对象、放入一个共享请求队列 Request Queue 中；
   
   - 最后从 Response Queue 中找到response并返回给客户端
 
@@ -396,7 +396,8 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 - **IO 线程池**
 
   - `num.io.threads = 8`
-  - 从 Request Queue 共享请求队列中取出请求，进行处理；包括CRC校验、写入磁盘、写入/读取页缓存等
+  - 从 Request Queue 共享请求队列中取出请求，进行处理：包括CRC校验、Append commit log （`.log` `.index`文件）、写入/读取页缓存等。
+  - IO线程无需等待 Purgaroty! 
 
 - **Purgatory 炼狱**
 
@@ -421,7 +422,7 @@ Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
 
 - **Response Queue 请求响应队列**
   - 每个网络线程专属，不共享；因为没必要共享了！！！
-  - 网络线程从中获取响应，并发送给 socket send buffer. 
+  - 网络线程从中获取响应，并发送给 socket send buffer；同时网络线程保证了对a single client的消息顺序。
 
 
 
@@ -1137,9 +1138,9 @@ try {
 
 
 
+## || Control Plane
 
-
-## || Zookeeper
+### Zookeeper
 
 节点列表
 
@@ -1287,6 +1288,58 @@ try {
 - 每个broker 都维护了和 zk 数据一样的元数据**缓存**，通过 Watcher 机制更新
 
 
+
+### KRaft
+
+> - Confluent kafka arch: https://developer.confluent.io/courses/architecture/control-plane
+>
+> - Confluent KRaft doc: https://docs.confluent.io/platform/current/kafka-metadata/kraft.html
+>
+> - KIP-500: https://cwiki.apache.org/confluence/display/KAFKA/KIP-500%3A+Replace+ZooKeeper+with+a+Self-Managed+Metadata+Quorum
+
+- 思路：一部分broker作为controller，负责原本由zk提供的共识服务。集群metadata被保存到 kafka topic. 
+
+- 优点
+
+  - 部署和管理更简单。无需维护额外的zk应用。
+  - 可扩展性更好。单机群主题数：zk 万级 --> kraft 百万级
+  - 元数据通知更高效。Log-based, event-driven metadata propagation
+
+- 原理
+
+  - broker作为controller启动时，要指定 `controller.quorum.voters`，便于controller间通讯。每个controller本地都有 in-memory metadata cache，并保持更新，因此任意controller随时都可以成为active controller。
+
+    > Q: 如何保证local cache实时更新？
+    >
+    > A: __cluster_metadata
+
+  - `__cluster_metadata` 主题：单分区，其leader就是 active controller，其他controller作为Follower同步数据，普通broker作为Observer。
+
+    > 与普通主题的区别：
+    >
+    > 1. 没有 ISR，而通过 quorum 来选主、commit。
+    > 2. record在commit之前必须刷盘。
+
+  - 流程
+
+    1. active controller写入主题
+    2. 其他 controllers / brokers 复制该主题
+    3. 并读取 committed log，将数据写入 local  metadata cache. 
+
+    ![image-20240115141521333](../img/kafka/kraft-metadata-topic.png)
+
+  - 问题：broker重启后、或新broker加入时需要遍历这个主题才能获取全量数据。
+
+    - 保存 `checkpoint` 快照文件：定期保存log，在快照之前的log即可安全地truncate，防止log不断增长。
+
+    - 复制时，先从checkpoint同步数据，增量数据再从log同步。
+
+      ![image-20240115141316648](../img/kafka/kraft-snapshot.png)
+
+- Leader Election 
+  - 发现无主后，某个controller会发起 `VoteRequest` (end offset + epoch) 给其他controller，并投票给自己。
+  - `VoteResponse`逻辑：1) 如果有更高的epoch，拒绝；2) 如果已投票给相同epoch的其他controller，拒绝；3) 如果收到的offset >= 自己，则同意。
+  - 收到多数同意，则成为leader；同时发送 `BeginQuorumEpoch`请求通知其他controller。
 
 
 
@@ -1480,6 +1533,8 @@ try {
 
 ### Replication
 
+> https://developer.confluent.io/courses/architecture/data-replication/ 
+
 副本同步相关概念：
 
 - **LEO**：Log End Offset，日志末端位移：表示副本写入下一条消息的位移值。
@@ -1532,7 +1587,7 @@ try {
   - 2. 处理 Follower 副本拉取消息
        -  读取磁盘/页缓存中的消息数据；
        - 更新远程副本LEO值 = 请求中的位移值；
-       - 更新分区高水位置：`HW = max{HW, min(所有远程副本LEO)}`
+       - 更新分区 HWM：`HW = max{HW, min(所有远程副本LEO)}`
   
 - **Follower 副本**：异步拉取
 
@@ -1542,7 +1597,7 @@ try {
        >
        > Follower：`HW = 0`, `LEO = 0`
 
-  - 2. Follower拉取消息（featchOffset = 0）
+  - 2. Follower拉取消息（featchOffset = 0），leader返回 `records + HWM`
 
        > Follower 本地操作：写入磁盘，更新 LEO，更新 HW = min{Leader HW, 本地LEO}
        >
@@ -1556,7 +1611,11 @@ try {
        >
        > Follower：`HW = 1`, `LEO = 1` - Follower收到回复后获知最新的 HWM，并更新到本地 ——至此，leader follower HWM才被更新成1，因此 follower HWM一般会落后于 leader.
 
-- **Leader Failover**
+  
+
+**Leader Failover**
+
+- Failover流程
 
   - Leader fail 之后，ZK 通知控制器、选出新 Leader；新 Leader 会将 HWM 作为其当前 LEO。
 
@@ -1565,15 +1624,19 @@ try {
     > 为何要 Truncate log?
     >
     > 新 Leader 可能并未完全catch up，或者新Leader 上次 fsync 更久远，truncate 可以避免出现数据不一致。
-    
-  - 问题一：因为 follower hwm的滞后性，failover之后新的hwm 可能小于真实 hwm，fetch request 请求的offset可能在新hwm之后；
-    --> 此时新 leader 会返回 `OFFSET_NOT_AVAILABLE` error，让消费者重试、直到hwm被更新。
-  
-  - 问题二：leader 切换后，follower可能比新leader Leo 更大、包含 uncommitted 记录；
-    --> **Replica Reconciliation**: 新 leader 收到 fetch 请求后，发现来自上个 epoch，则告诉follower 这个epoch的最后一个offset、据此进行 **truncate log**
-  
-  - 问题三：leader 切换后，可能导致分布不均，leader可能集中在某些broker上。
-    --> 定期检查，发现不均则将leader迁移到 prefered replicas . 
+
+- 问题一：因为 follower hwm的滞后性，failover之后新的hwm 可能小于真实 hwm，fetch request 请求的offset可能在新hwm之后；
+
+  - 此时新 leader 会返回 `OFFSET_NOT_AVAILABLE` error，让消费者重试、直到hwm被更新。
+
+- 问题二：leader 切换后，follower可能比新leader Leo 更大、包含 uncommitted 记录；
+
+  - **Replica Reconciliation**: 新 leader 收到 fetch 请求后，发现来自上个 epoch，则告诉follower 这个epoch的最后一个offset、据此进行 **truncate log**
+
+- 问题三：leader 切换后，可能导致分布不均，leader可能集中在某些broker上。
+
+  - 定期检查，发现不均则将leader迁移到 `prefered replicas` . 
+
 
 
 
@@ -5219,7 +5282,8 @@ public void subscribe(Collection<String> topics, ConsumerRebalanceListener liste
 
 - doc
   - http://kafka.apache.org/documentation/#design
-
+  - Confluent kafka arch: https://developer.confluent.io/courses/architecture/get-started/ , https://www.youtube.com/watch?v=2pioVWPblXs&list=PLa7VYi0yPIH14oEOfwbcE9_gM5lOZ4ICN&index=2 
+  
 - acks vs. min.insync.replicas
   - https://medium.com/better-programming/kafka-acks-explained-c0515b3b707e
 
