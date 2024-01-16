@@ -158,68 +158,6 @@ One way to think about the relationship between messaging systems, storage syste
 
 
 
-### Coordinator 
-
-Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
-
-**作用**
-
-- **消费者组成员管理 & Rebalance**
-
-  > 协调者对应一个 Group！消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
-  >
-
-  - **1. GroupCoordinatorRequest** 找到 group coordinator
-
-    - 消费者启动时发送，发往任一 broker
-    - broker 等待 Purgatory 后，返回协调者。
-      
-      > 算法：
-      >
-      > 1. `hash(group.id) % 50` (__commit_offsets 分区数) 
-      > 2. 据此找到 topic partition.
-      > 3. 找到 partition leader.
-
-  - **2. JoinGroupRequest** 加入 group
-
-    - Coordinator 负责选出 `consumer group leader` ：第一个请求者
-    - Coordinator 返回 JoinGroupResponse 给 leader：包含各成员的 instanceId
-
-  - **3. Group Leader: 分区分配**
-
-    - 注意是在消费者客户端配置 分区分配策略的！
-    - `PartitionAssignor#assign()`
-
-  - **4. Group Leader: SyncGroupRequest** 同步分区分配信息
-
-    - Coordinator 转发给所有消费者
-
-    
-
-- **消费者心跳处理**
-
-  - Consumer 下线后，协调者通知消费者组重新 Join。
-
-- **位移管理**
-
-  > 消费者提交位移时，是向 Coordinator 所在的 Broker 提交
-
-  
-
-
-
-**消费者如何找到Coordinator？**--> 位移主题的分区 Leader 副本所在的 Broker
-
-- Step-1: 找到由位移主题的**哪个分区**来保存该 Group 数据
-
-  ```java
-  partitionId = Math.abs(groupId.hashCode % offsetsTopicPartitionCount)
-  ```
-
-- Step-2: 找到该**分区的 Leader 副本**所在的 Broker
-
-
-
 ### 消息存储
 
 **Partition 分配**
@@ -895,6 +833,76 @@ while (true)  {
 
 
 
+### 消费者组 & Coordinator 
+
+> https://developer.confluent.io/courses/architecture/consumer-group-protocol/
+
+Leader replica 所在的 Broker 即为协调者（GroupCoordinator）。
+
+**作用**
+
+- **消费者组成员管理 & Rebalance**
+
+  > 协调者对应一个 Group！消费者启动时，向 Coordinator 所在 Broker 发送请求，由 Coordinator 进行消费者组的注册、成员管理
+
+  - **1. GroupCoordinatorRequest** 找到 group coordinator
+
+    - 消费者启动时发送，发往任一 broker
+
+    - broker 等待 Purgatory 后，返回协调者。
+
+      > 算法：
+      >
+      > 1. `hash(group.id) % 50` (__commit_offsets 分区数) 
+      > 2. 据此找到 topic partition.
+      > 3. 找到 partition leader.
+
+    ![group-startup-find-group-coordinator](../img/kafka/consumer-coordinate-1.png)
+
+  - **2. JoinGroupRequest** 加入 group
+
+    - Coordinator 负责选出 `consumer group leader` ：第一个请求者
+    - Coordinator 返回 JoinGroupResponse 给 leader：包含各成员的 instanceId
+
+    ![group-startup-members-join](../img/kafka/consumer-coordinate-2.png)
+
+  - **3. Group Leader: 分区分配**
+
+    - 注意是在消费者客户端配置 分区分配策略的！
+    - `PartitionAssignor#assign()`
+
+  - **4. Group Leader: SyncGroupRequest** 同步分区分配信息
+
+    - Coordinator 转发给所有消费者
+
+    ![group-startup-partitions-assigned](../img/kafka/consumer-coordinate-3.png)
+
+    
+
+- **消费者心跳处理**
+
+  - Consumer 下线后，协调者通知消费者组重新 Join。
+
+- **位移管理**
+
+  > 消费者提交位移时，是向 Coordinator 所在的 Broker 提交
+
+  
+
+
+
+**消费者如何找到Coordinator？**--> 位移主题的分区 Leader 副本所在的 Broker
+
+- Step-1: 找到由位移主题的**哪个分区**来保存该 Group 数据
+
+  ```java
+  partitionId = Math.abs(groupId.hashCode % offsetsTopicPartitionCount)
+  ```
+
+- Step-2: 找到该**分区的 Leader 副本**所在的 Broker
+
+
+
 ### 重平衡
 
 **触发条件**
@@ -910,55 +918,6 @@ while (true)  {
 - **分区数增加**
 
 
-
-**重平衡排查**
-
-- 如何排查是否重平衡过多？
-- Coordinator 日志：Rejoin group .....
-
-
-
-**重平衡的问题**
-
-- **Rebalance 过程中，所有 consumer 停止消费**，等待rebalance完成
-  - STW
-  - Q：消费者部署过程中如何处理？--> 发布系统：只有在 switch 的时候才启动消费者？
-
-- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
-  - 未考虑局部性原理
-
-- **Rebalance 过程很慢**
-
-
-
-**避免不必要的重平衡**
-
-> 什么是不必要的重平衡？
->
-> - 消费者被 coordinator “错误地”认为已停止
->
-> - 消费者组员减少导致的 rebalance
-
-- **避免“未及时发心跳”而导致消费者被踢出**
-
-  - *session.timeout.ms：* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
-  - *heartbeat.interval.ms：* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
-
-- **避免“消费时间过长”而导致被踢出**
-
-  - *`max.poll.interval.ms`增大* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
-  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
-
-- **GC调优**
-
-  - Full GC导致长时间停顿，会引发 rebalance
-
-- **[KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances)** 减少全量重平衡，针对客户端应用 RollingUpdate 场景
-
-  - The new `group.instance.id` config be added to the Join/Sync/Heartbeat/OffsetCommit request/responses. 
-  - apply the same assignment based on member identities
-
-  
 
 **重平衡监听器 ConsumerRebalanceListener**
 
@@ -1041,6 +1000,10 @@ try {
 - **Group Coordinator**
 
   - 当分组协调者决定开启新一轮重平衡，则在“心跳响应”中加入 `REBALANCE_IN_PROGRESS`
+- Consumer
+  - 首先revoke之前的分区分配；再重新发送 JoiGroupRequest
+    ![stop-the-world-rebalance](../img/kafka/rebalance-1.png)
+
 
 
 
@@ -1076,7 +1039,7 @@ try {
 
 **重平衡流程**
 
-- 场景一：Consumer 端重平衡
+- **场景一：Consumer 端重平衡**
 
   - **JoinGroup 请求**
 
@@ -1109,7 +1072,7 @@ try {
 
 
 
-- 场景二：Broker 端重平衡
+- **场景二：Broker 端重平衡**
 
   - **新成员入组  JoinGroup**
 
@@ -1124,6 +1087,65 @@ try {
     > session.timeout.ms 后，Broker感知有成员超时；（在此期间，老组员对应的分区消息不会被消费）
     >
     > 回复“心跳请求”响应给所有成员时，强制开启新一轮重平衡
+
+
+
+
+
+**重平衡排查**
+
+- 如何排查是否重平衡过多？
+- Coordinator 日志：Rejoin group .....
+
+
+
+**重平衡的问题**
+
+- **Paused Processing**
+  - STW：Rebalance 过程中，所有 consumer 停止消费，等待rebalance完成
+  - Q：消费者部署过程中如何处理？
+    --> 发布系统：只有在 switch 的时候才启动消费者？
+    --> CooperativeStickyAssignor，**Static Group Membership**
+
+- **Rebalance 是所有消费者实例共同参与，全部重新分配；而不是最小变动**
+  - 未考虑局部性原理。实际上重新分配后有些consumer还是分配原来的分区，但也不得不 rebuild the state. 
+- **Rebalance 过程很慢**
+
+
+
+**避免不必要的重平衡**
+
+> 什么是不必要的重平衡？
+>
+> - 消费者被 coordinator “错误地”认为已停止
+>
+> - 消费者组员减少导致的 rebalance
+
+- **避免“未及时发心跳”而导致消费者被踢出**
+
+  - *session.timeout.ms：* 存活性时间，间隔越小则越容易触发重平衡 `session.timeout.ms = 6s`
+  - *heartbeat.interval.ms：* 心跳间隔，用于控制重平衡通知的频率；保证在 timeout 判定前，至少发送 3 轮心跳 `heartbeat.interval.ms = 2s`
+
+- **避免“消费时间过长”而导致被踢出**
+
+  - *`max.poll.interval.ms`增大* 两次poll() 的最大间隔，如果超过，则consumer会发起“离开组”请求；--> 如果消费比较耗时，应该设大，否则会被Coordinator剔除出组
+  - (?) Worker Thread Pool 异步并行处理： 注意不能阻塞poll，否则心跳无法上报。异步处理开始后，pause() 使得继续 poll 但不返回新数据；等异步处理结束，再 resume() 
+
+- **GC调优**
+
+  - Full GC导致长时间停顿，会引发 rebalance
+
+- **[KIP-345 Static Membership](https://cwiki.apache.org/confluence/display/KAFKA/KIP-345%3A+Introduce+static+membership+protocol+to+reduce+consumer+rebalances)** 减少全量重平衡，针对客户端应用 RollingUpdate 场景
+
+  - The new `group.instance.id` config be added to the Join/Sync/Heartbeat/OffsetCommit request/responses. 
+
+  - apply the same assignment based on member identities.
+
+  - 消费者重启不会触发 LeaveGroup 请求。
+
+    ![avoid-rebalance-with-static-group-membership](../img/kafka/rebalance-static-membership.png)
+
+  
 
 
 
