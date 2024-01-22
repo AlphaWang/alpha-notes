@@ -211,19 +211,42 @@ One way to think about the relationship between messaging systems, storage syste
 
 **Log Cleanup Policy**
 
+> https://developer.confluent.io/courses/architecture/compaction/ 
+>
 > LogCleanerManager，只会作用于 非active segment。所以即便compact，active segment 中也可能有重复key。—— 调小 segment size，减少系统重启压力。
 >
 > `cleanup.policy`
 
-- **Delete**
+- **Delete**: 按时间删除。
+
 - **Compact**：相同的key只保留一份值，类似 Map。
-  - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中待清理的 Segment：
+  - CleanerThread 循环执行日志清理，首先寻找待清理的 TopicPartition、遍历其中*待清理的 Segment*：排除最老的一段 previous cleaned segments、以及最新的 active segment。
     - 条件1：topic `cleanup.policy = compact`
     - 条件2：TopicPartition 状态为空，即没有其他 CleanerThread 在操作；
     - 条件3：达到 `max.compaction.lag.ms`
-  - 构造 OffsetMap 记录每个 key 最新的 offset 以及对应的消息时间；
-  - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息、存入新 Segment；
-  - 对于已经完成 Compaction 流程的log进行删除，删除LogStartOffset 之前的所有 Segment
+  - 构造 OffsetMap，记录每个 key 的最新 offset 以及对应的消息时间；
+  - 将待清理 Segment 进行分组，每一组会聚合成一个新的Segment：创建新 Segment、根据 OffsetMap 选择需要保留的消息（从头遍历，并与OffsetMap进行比对，如果map中存在更大的offset，则表示可丢弃）、存入新 Segment；
+  - 对于已经完成 Compaction 流程的log进行删除，删除 LogStartOffset 之前的所有 Segment；
+
+- 问题：如何清理 tombstone marker？
+
+  - 如果与原始消息一起清理，会有副作用：一个应用读到了原始消息、然后暂停，此时tombstone被删除，然后应用恢复读取；这种情况下应用永远无法得知该记录已被删除。
+  - 解决：两阶段删除，1）第一阶段只删原始消息，2）延迟删除tombstone marker `first-clean-time + delete.retention.ms`
+
+- 何时触发cleanup：两个条件满足其一：
+
+  - 未清理数据达到限值时，同时可控制min.lag防止频繁清理。
+    `dirty / total > min.cleanable.dirty.ratio` && 
+    `msgTs < currentTs - min.compaction.lag.ms`
+
+  - 
+    长时间未清理时。
+    `msgTs > currentTs - max.compaction.lag.ms`
+
+    
+
+    ![when-compaction-is-triggered](../img/kafka/kafka-compaction-log.png)
+
 
 
 
