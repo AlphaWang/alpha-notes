@@ -211,9 +211,9 @@ One way to think about the relationship between messaging systems, storage syste
 
 **Log Cleanup Policy**
 
-> LogCleanerManager，只会作用于 非active segment。
+> LogCleanerManager，只会作用于 非active segment。所以即便compact，active segment 中也可能有重复key。—— 调小 segment size，减少系统重启压力。
 >
-> 所以即便compact，active segment 中也可能有重复key。—— 调小 segment size，减少系统重启压力。
+> `cleanup.policy`
 
 - **Delete**
 - **Compact**：相同的key只保留一份值，类似 Map。
@@ -608,7 +608,7 @@ props.put(ProducerConfig.INTERCEPTOR_CLASSES_CONFIG, interceptors);
 
   - `PID`：唯一的生产者ID。broker 分发 PID（broker 向 zk 申请可分发的 ID，保证各broker 可用的ID不重复）。
 
-- 服务端：服务端收到消息，对比存储的**最后一条ID**，如果一样，则认为是重复消息丢弃
+- 服务端：服务端收到消息，对比存储的**最后一条ID**，如果一样，则认为是重复消息丢弃、返回 `DUP` 给客户端。
 
 - 配置
 
@@ -2452,7 +2452,7 @@ try {
 >
 > https://developer.confluent.io/courses/architecture/transactions/
 
-作用
+**作用**
 
 - 实现 Exactly Once 机制：**读数据 + 计算 + 保存结果过程中数据“不重不丢”**；
 
@@ -2461,7 +2461,7 @@ try {
 
 
 
-用法
+**用法**
 
 - **生产者设置事务**
 
@@ -2492,36 +2492,35 @@ try {
 
   - **read_uncommitted**：类似无事务消费；
   - **read_committed**：只读取成功提交了的事务，过滤掉 aborted 消息
-    - 原理：维护 LSO - Last Stable Offset，表示在此之前的数据都committed or aborted. 
+    - 原理：Leader 维护 `LSO - Last Stable Offset`，表示在此之前的数据都committed or aborted. 
 
 
 
-实现：为了实现事务，也就是保证一组消息可以**原子性**生产和消费，Kafka 引入了如下概念；
+**实现**：为了实现事务，也就是保证一组消息可以**原子性**生产和消费，Kafka 引入了如下概念；
 
 
-- 引入了 `事务协调者（Transaction Coordinator）`的概念。
+-  `事务协调者（Transaction Coordinator）`
   - 与消费者的组协调者类似，每个生产者会有对应的事务协调者，赋予 PID 和管理事务的逻辑都由事务协调者来完成。
 
 
-  - 引入了 `事务日志（Transaction Log）` 的内部主题。
+  -  `事务日志（Transaction Log）` 
     - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
-
-  - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
+    - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
     
-  - 引入了`控制消息（Control Message）` 的概念。
+  - `控制消息（Control Message）` 
     - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
 
 
-  - 引入了 `TransactionalId` 的概念，
+  -  `TransactionalId` 
     - TransactionalId 可以让使用者唯一标识一个生产者。一个生产者被设置了相同的 TransactionalId 的话，那么该生产者的不同实例会恢复或回滚之前实例的未完成事务。
 
 
-  - 引入了 `生产者epoch` 的概念。
+  -  `生产者epoch` 
     - 生产者epoch可以保证对于一个指定的TransactionalId只会有一个合法的生产者实例，从而保证事务性即便出现故障的情况下。
 
 
 
-原理
+**原理**
 
 - 组件
 
@@ -2558,7 +2557,21 @@ try {
      >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
      >   - 写入 marker 后，协调者标记该事务为 `complete`
 
+  例子：
+
+  - 成功commit：- 注意step8 写入commit marker到事务日志、以及相关主题.
+    ![systems-with-successful-committed-transaction](../img/kafka/kafka-txn-flow.png)
+
+  - Abort: - 例如客户端重启后，重新请求txn id；coordinator 发现原本有进行中的事务，会增加txn epoch，并取消原事务，写入abort marker。
+
+    > 即便原客户端假死后重连，也不能继续事务了，因为epoch已增加。
+    >
+    > 原客户端如果继续produce后续事件，会收到 ProducerFencedException, try to use an old epoch with the transactionalId
+
+    ![system-failure-with-transactions](../img/kafka/kafka-txn-abort.png)
+
 - Coordinator Failover
+
   - Recover from txn log. 
   - 如果 `PREPARE_COMMIT` / `PREPARE_ABORT`，继续提交或结束。
   - 如果在 PREPARE 之前，不用管、producer 继续往新 coordinator发请求。
@@ -2567,7 +2580,7 @@ try {
 
 权衡：Overhead vs. Latency
 
-- 如果一个txn中的消息过少，会导致overhead过重；
+- 如果一个txn中的消息过少，会导致overhead过重；——因为要和coordinator交互。
 - 如果一个txn中的消息过多，则倒是latency变高，因为这些消息要都提交了才能对消费者可见。
 
 
@@ -2575,7 +2588,7 @@ try {
 **3. 事务 vs. 幂等**
 
 - Idempotence: 
-  - Exactly-once in **order** semantics **PER** partition
+  - Exactly-once in **order** semantics **PER** partition，即便produce重试也不会消息重复。
 - Transaction: 
   - **Atomic** writes across **MULTIPLE** partitions
 
@@ -4458,7 +4471,7 @@ producer = new KafkaProduer<String, String>(p);
 - Producer 端
 
   - `replication.factor=3`，多副本
-  - `acks=all` 生产消息保所到所有 ISR 副本；
+  - **`acks=all (-1)`** 生产消息保所到所有 ISR 副本；
   - `retries=MAX_INT`
   - `delivery.timeout.ms` 增大等待ack回复的超时时间；
     - `enable.idempotence=true` 配置生产者幂等，因为retry会引起消息重复、乱序
@@ -4467,7 +4480,7 @@ producer = new KafkaProduer<String, String>(p);
 - Broker 端
 
   - `replication.factor=3` 主题副本个数
-  - `min.insync.replicas=2` 主题最小ISR
+  - **`min.insync.replicas=2`** 主题最小ISR
   - `unclean.leader.election.enable=false` OSR 副本不可选为leader；--> tradeoff: 低于 min ISR 时会不可用；
   - `打开 rack awareness` 确保同一分区的不同副本分配到不同机架上；
   - `log.flush.interval.ms` / `log.flush.interval.messages` 如果主题流量很小，还可以调小 flush，更频繁地将 page cache刷盘；
