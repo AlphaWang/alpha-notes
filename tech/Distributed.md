@@ -2983,7 +2983,7 @@ Aka. 序列化
 
 ## || 消息队列
 
-### 设计要点
+### 总体设计
 
 **1. 通信协议**
 
@@ -3061,7 +3061,7 @@ Aka. 序列化
 
 
 
-- 存储性能
+- **存储性能**
 
   - 写入性能：
 
@@ -3203,7 +3203,7 @@ Aka. 序列化
 
 ### 消息功能
 
-**1. 基本功能**
+**1. 消费配置和进度**
 
 - 配置：可基于zk，两种思路：
 
@@ -3446,11 +3446,13 @@ Aka. 序列化
 
 
 
-### 数据存储
+### 数据存储 - LSM
+
+**Log-Structured Merged-Tree**
 
 > 从db角度，理解如何存储数据、如何找到数据。
 >
-> - DB Internals 作者讲座：https://www.youtube.com/watch?v=e1wbQPbFZdk
+> - DB Internals 作者讲座，Alex Petrov，What Every Programmer has to know about Database Storage：https://www.youtube.com/watch?v=e1wbQPbFZdk
 > - 笔记：https://ddia.qtmuniao.com/
 > - 翻译：http://ddia.vonng.com/#/ch3
 
@@ -3465,19 +3467,17 @@ Aka. 序列化
 
 
 
-
-
-**1. Log-Structured Storage**
+**#1. Log-Structured Storage**
 
 - 特性：Append-only，而不更新已有记录
 
   - 顺序写，性能好
-  - 易于并发 - 因为单线程写？
+  - 易于并发 - 大部分文件是不可变
   - 崩溃恢复更简单：
 
 - 索引：哈希索引（key - offset）
 
-  - 否则必须全日志扫描
+  - 要加索引，否则必须全日志扫描
   - 缺点：
     - Key 不能太多，必须能全部放入内存；
     - 范围查询效率低。
@@ -3492,15 +3492,16 @@ Aka. 序列化
 **LSM 存储结构设计演化**
 
 - **Step-1: Bitcask + 哈希索引**
-  - `set(k, v)` : 插入文件末尾；——写很快
-  - `get(k)`: 匹配所有key，返回最后一条。——读要全文扫描
+  - 思路
+    - `set(k, v)` : 插入文件末尾；——写很快
+    - `get(k)`: 匹配所有key，返回最后一条。——读要全文扫描
   - 问题1：查询慢
     - 索引：解决查询慢的问题，在内存构建 hashmap(k = key, v = 条目起始位置)
     - 全文扫描 --> 一次内存查询 + 一次磁盘seek
-
+  
   - 问题2：单个文件越来越大。
     - compact: 达到一定尺寸后，新建一个文件、同时回收key多次写入造成的空间浪费。
-
+  
   - 局限性
     - 所有key必须放内存，如果数据集超大则无法支持；
     - 不支持范围查询。
@@ -3515,22 +3516,24 @@ Aka. 序列化
   > - https://www.scylladb.com/glossary/sstable
   > - Gaurav Sen: https://www.youtube.com/watch?v=_5vrfuwhvlQ 
 
-  - 思路：类似第一步的 Log segmets，但每个segment内按key有序 --> Sorted String Table
+  - 思路：
+
+    - 类似第一步的 Log segmets，但每个segment内按key有序 --> **Sorted String Table**
 
   - 优点：
-
-    - 无需在内存保存所有索引，仅需记录每个文件的界限。
+  
+    - 无需在内存保存所有索引，仅需记录每个文件的界限，再二分查找。
     - 进而可以将记录组合成块，并对块压缩；merge & compact --> 因为每个 segment 不可变！！！
 
   - **如何*构建 SSTable文件*？**
 
     > 问题：乱序数据在外存中整理为有序文件？困难
-
-    - 在内存中维护一个有序结构 MemTable（红黑树、AVL树、跳表）；
+  
+    - 在内存中维护一个有序结构 MemTable，可以是红黑树、AVL树、跳表；
     - 达到一定阈值后全量 dump 到外存。
 
   - **如何*维护 SSTable 文件*？**
-
+  
     - 查询步骤：先去 MemTable中查，查不到再去 SSTable 按时间顺序由新到旧逐一查找。
     - <u>问题1：如果宕机，内存数据会丢失。</u>
       - **WAL**，它的唯一目的是在崩溃后恢复内存表
@@ -3540,13 +3543,16 @@ Aka. 序列化
       - 解决方案：布隆过滤器
 
   - 实现细节：
-
+  
     - **写入**：先写入 `memtable`，即内存平衡树；当 `memtable` 足够大时，写入 SSTable 文件；该文件分 chunk，每个chunk内有序（便于二分查找）。
+
+      > Q: 写入文件时，如何保证跟已有的文件有序？
+      > L0 只有一个SSTable文件？
     - **读取**：先在 `memtable` 中查找、再查找最新的 segment、再查次新；
     - **后台**： merge + compact ——减少chunk数目、减少查询复杂度，合并两个有序 chunk 很容易。
-
+  
   - 实际应用：
-
+  
     - LevelDB，RocksDB，Cassandra，ScyllaDB。**源自 LSM-Tree**。 
 
 
@@ -3573,7 +3579,7 @@ Aka. 序列化
 
 
 
-
+### 数据存储 - BTree
 
 **2. Page-Oriented Storage**
 
@@ -3587,13 +3593,13 @@ Aka. 序列化
 - 问题
   - **可靠性问题**：例如页分裂、并更新父页对两个子页的引用，如果此时发生崩溃，则可能出现孤儿页；
   - **频繁 IO 问题**：如果每次修改都直接更新 B-Tree，IO 太频繁
-  - 解决：**WAL**，必须先写入 WAL（redo log）、Condense 后再修改页
-  
-    > https://www.youtube.com/watch?v=_5vrfuwhvlQ&list=PLMCXHnjXnTnvo6alSjVkgxV-VH6EPyvoX&index=21
-  
-    - WAL 写入很快 O(1)，但读取较慢 O(n) 
-    - 优化：在 DB 端增加 **SST** (sorted array chunks，为什么不用一个大的：否则每次刷数据 都要重排所有), --> **compaction** (merge chunks), + bloomfilter (忽略部分大 chunks)
-  
+
+- 解决：**WAL**，必须先写入 WAL（redo log）、Condense 后再修改页
+
+  > https://www.youtube.com/watch?v=_5vrfuwhvlQ&list=PLMCXHnjXnTnvo6alSjVkgxV-VH6EPyvoX&index=21
+
+  - WAL 写入很快 O(1)，但读取较慢 O(n) 
+  - 优化：在 DB 端增加 **SST** (sorted array chunks，为什么不用一个大的：否则每次刷数据 都要重排所有), --> **compaction** (merge chunks), + bloomfilter (忽略部分大 chunks)
 
 - **B Tree**
 
