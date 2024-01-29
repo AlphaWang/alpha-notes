@@ -239,8 +239,7 @@ One way to think about the relationship between messaging systems, storage syste
     `dirty / total > min.cleanable.dirty.ratio` && 
     `msgTs < currentTs - min.compaction.lag.ms`
 
-  - 
-    长时间未清理时。
+  - 长时间未清理时。
     `msgTs > currentTs - max.compaction.lag.ms`
 
     
@@ -2422,6 +2421,13 @@ try {
 - **acks = all**
   - 无数据丢失
 
+## || Scalability
+
+- Kafka-reassign-partitions.sh
+  - 基于JSON配置文件重新分配分区 replicas。用于在Broker间重新分配数据。
+- Confluent支持auto data balancer
+  - 自动生成 redistribution plan. 
+
 
 
 ## || 事务消息
@@ -3224,7 +3230,7 @@ Q: 什么情况下消息不丢失
 
 
 
-5. Local Aggregation
+5. **Local Aggregation**
 
 https://eng.uber.com/kafka/ 
 
@@ -3251,7 +3257,24 @@ https://eng.uber.com/kafka/
 
 - Offset mapping 算法：找到每个DC topic对应的target agg offset，取最小值。
 
-  
+
+
+
+> 更多架构：https://developer.confluent.io/courses/architecture/geo-replication/ 
+
+6. **Multi-Region Cluster**
+
+- Broker部署在多个DC，并指定`broker.rack`；同时保证主题分区分步在不同的DC。
+- Locality 保证：consumer 也可指定 `client.rack`
+
+
+
+7. **Async Replication with Observers**
+
+- 解决Multi-Region跨DC ISR同步耗时问题。ISR不会包含 Observer。
+- 缺点：failover后observer可能没有最新的数据。 
+
+
 
 
 
@@ -3374,7 +3397,7 @@ Q: `offsetsForTimes` API 原理是什么，是查询这个主题吗？
 
 - 主题元数据同步：分区数、
 
-- Offset Translation
+- **Offset Translation**：对比纯 MirrorMaker的升级！！
 
 - Prevent cyclic message repetition
 
@@ -3482,7 +3505,7 @@ https://www.confluent.io/product/confluent-platform/global-resilience/
 
 ## || Tiered Storage
 
-> https://cwiki.apache.org/confluence/display/KAFKA/KIP-405%3A+Kafka+Tiered+Storage KIP
+> https://cwiki.apache.org/confluence/display/KAFKA/KIP-405%3A+Kafka+Tiered+Storage KIP-405
 >
 > https://kreuzwerker.de/en/post/apache-kafka-tiered-storage-and-why-you-should-care 
 >
@@ -3494,11 +3517,12 @@ https://www.confluent.io/product/confluent-platform/global-resilience/
 
 Kafka Retention 为什么不能过长？
 
-- 每个 Broker 数据如果过多，会导致 recovery & rebalancing 耗时。
+- Elasticity：每个 Broker 数据如果过多，会导致 recovery & rebalancing 耗时。
 
-- 如果提高 Broker 个数，又会导致不必要的 空闲CPU/内存 资源；也会带来部署复杂性、运维成本。
+- Cost：如果提高 Broker 个数，又会导致不必要的 空闲CPU/内存 资源；也会带来部署复杂性、运维成本。
 
-  > Q: 不考虑成本的情况下，提高 broker 个数是否是个可行方案？- Topic 增加 partition?
+  > Q: 不考虑成本的情况下，提高 broker 个数是否是个可行方案？- Topic 增加 partition? 
+  > ——没必要，冷数据访问少
 
 目标
 
