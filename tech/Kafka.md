@@ -2533,9 +2533,8 @@ try {
 
 
   -  `事务日志（Transaction Log）` 
-    - 与消费者位移主题类似，事务日志是每个事务的持久化多副本存储。
-    - 事务协调者使用事务日志来保存当前活跃事务的最新状态快照。
-    
+    - 与消费者位移主题类似，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
+    - 每个分区被一个 Cooridinator 管理；每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；——巧妙！
   - `控制消息（Control Message）` 
     - 这些消息是客户端产生的并写入到主题的特殊消息，但对于使用者来说不可见。它们是用来让 broker 告知消费者之前拉取的消息是否被原子性提交。
 
@@ -2551,53 +2550,43 @@ try {
 
 **原理**
 
-- 组件
+1. **Producer --> Tx Coordinator**
 
-  - **Transaction Coordinator**
-  - **Transaction Log**
-    - 是一个内部 Topic，保存事务的最近一次状态 `Ongoing`  `Prepare commit` `Completed`；
-    - 其每个分区被一个 Cooridinator 管理；
-    - 每个 `transactional.id` 哈希映射到 transactional log的一个分区，也就是**每个tid 对应一个 coordinator**；
+   > producer 需要跟 Coordinator 交互的三个场景：
+   >
+   > - `initTransactions`：coordinator 关闭同一 txid 下的其他未完成事务；
+   > - `首次发送数据`：分区与 coordinator 注册；
+   > - `commitTransaction / abortTransaction`：触发两阶段提交
 
-- 流程
+2. **Tx Coordinator --> Tx Log**
 
-  1. **Producer - Tx Coordinator**
+   > Coordinator 将事务状态存到内存、写入Log
 
-     > 三个场景下，producer 需要跟 Coordinator 交互
-     >
-     > - initTransactions：coordinator 关闭同一 txid 下的其他未完成事务；
-     > - 首次发送数据：分区与 coordinator 注册；
-     > - commitTransaction / abortTransaction：触发两阶段提交
+3. **Producer --> Topic**
 
-  2. **Tx Coordinator - Tx Log**
+   > Producer 正常写入主题
 
-     > Coordinator 将事务状态存到内存、写入Log
+4. **Tx Coordinator --> Topic** 写入marker
 
-  3. **Producer - Topic**
+   > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
+   >
+   > - 阶段一：协调者将内部状态置为 `PREPARE_COMMIT` ，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
+   > - 阶段二：协调者 call WriteTxnMarkerReqeust--> 分区Leader，往主题分区写入 transaction commit marker `COMMIT(PID)` or `ABORT(PID)`；之后协调者往事务日志写入 Commit/Aboart 消息。
+   >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
+   >   - 写入 marker 后，协调者标记该事务为 `complete`
 
-     > Producer 正常写入主题
+例子：
 
-  4. **Tx Coordinator - Topic** 
+- 成功commit：- 注意step8 写入commit marker到事务日志、以及相关主题.
+  ![systems-with-successful-committed-transaction](../img/kafka/kafka-txn-flow.png)
 
-     > 2PC 两阶段提交 https://www.jianshu.com/p/f77ade3f41fd
-     >
-     > - 阶段一：协调者将内部状态置为 `PREPARE_COMMIT` ，并将该状态更新到事务日志。（完成后则保证事务将被提交）；
-     > - 阶段二：协调者 call WriteTxnMarkerReqeust--> 分区Leader，往主题分区写入 transaction commit marker `COMMIT(PID)` or `ABORT(PID)`；之后协调者往事务日志写入 Commit/Aboart 消息。
-     >   - 如果消费者配置 `isolation.level = read_committed`，则必须有此 marker 才能看到对应的消息；没有marker则会被过滤掉。
-     >   - 写入 marker 后，协调者标记该事务为 `complete`
+- Abort: - 例如客户端重启后，重新请求txn id；coordinator 发现原本有进行中的事务，会增加txn epoch，并取消原事务，写入abort marker。
 
-  例子：
+  > 即便原客户端假死后重连，也不能继续事务了，因为epoch已增加。
+  >
+  > 原客户端如果继续produce后续事件，会收到 ProducerFencedException, try to use an old epoch with the transactionalId
 
-  - 成功commit：- 注意step8 写入commit marker到事务日志、以及相关主题.
-    ![systems-with-successful-committed-transaction](../img/kafka/kafka-txn-flow.png)
-
-  - Abort: - 例如客户端重启后，重新请求txn id；coordinator 发现原本有进行中的事务，会增加txn epoch，并取消原事务，写入abort marker。
-
-    > 即便原客户端假死后重连，也不能继续事务了，因为epoch已增加。
-    >
-    > 原客户端如果继续produce后续事件，会收到 ProducerFencedException, try to use an old epoch with the transactionalId
-
-    ![system-failure-with-transactions](../img/kafka/kafka-txn-abort.png)
+  ![system-failure-with-transactions](../img/kafka/kafka-txn-abort.png)
 
 - Coordinator Failover
 
