@@ -2536,25 +2536,15 @@ Q：提案 被半数 Acceptor 接收后，如何发布给其他 Acceptor？
 
 实现
 
-- Canal
+- `Canal`：基于 MySQL binlog
 
-  - 基于 MySQL binlog
+- `Redhat Debezium`：基于 Kafka Connect
 
-- Redhat Debezium
+- `Zendesk Maxwell`：基于 MySQL binlog
 
-  - 基于 Kafka Connect
+- `Airbnb SpinalTrap`：基于 MySQL binlog
 
-- Zendesk Maxwell
-
-  - 基于 MySQL binlog
-
-- Airbnb SpinalTrap
-
-  - 基于 MySQL binlog
-
-- Eventuate-Tram
-
-  - 学习用
+- `Eventuate-Tram`：学习用
 
   
 
@@ -3332,6 +3322,19 @@ Aka. 序列化
 
 
 **7. 消息查询**
+
+- 思路：构建索引、跳表节约空间
+- **按 Offset 查询**
+  - offset天然顺序递增，只需二分查找即可；引入跳表，节约索引空间。
+- **按 Timestamp 查询**
+  - 索引：timestamp -> offset
+  - 时间也是递增，同样二分查找。
+- **按 ID 查询**
+  - 方案一：客户端通过 SnowFlake 生成ID，查询时反解析出timestamp、转换为按时间查询。
+  - 方案二：基于哈希表、B+树、红黑树构造ID -> offset 索引。
+- **复杂查询**
+  - 方案一：第三方引擎 Kafka + Hive / ES / Trino 
+  - 方案二：消费数据 + 过滤。——性能低，成本也低。
 
 
 
