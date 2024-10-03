@@ -3340,6 +3340,12 @@ Aka. 序列化
 
 **8. Schema**
 
+- Schema Register 
+  - 独立部署，或集成到Broker内核
+  - 可存储到db，或内部topic
+- Schema格式设计
+  - Name, Type, Length
+
 
 
 **9. WebSocket**
