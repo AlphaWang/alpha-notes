@@ -19,7 +19,7 @@
 - Contract Discontinued
   --> **Thanks for Your Support; Let's Keep in Touch**
 - Urgent Help Needed for Shanghai Office
-  --> * **Seeking for Your Expert Advice Please, Peter :)**
+  --> **Seeking for Your Expert Advice Please, Peter :)**
 - Fill out HR Survey
   --> **Please Fill out HR Survey to Improve Your Team**
 - Re: Re: Re: Preparations for the Department Meeting
@@ -505,7 +505,167 @@ Emphasis:
 
 
 
+# | Professionally Say
 
+https://howtoprofessionallysay.akashrajpurohit.com/ 
+
+- *不要复杂化，不要跑题； You are overcomplicating this*
+
+  > Being mindful of timelines. Let’s **concentrate on the initial scope.**
+
+- *不想参加会议； That meeting sounds like a waste of my time*
+
+  > I’m unable to add value to this meeting but I would be happy to review the minutes.
+
+- *不用找我；I don’t need to be included on this.*
+
+  > I do not feel as though I am able to add any value to this conversation. Please remove me from this thread and feel free to loop me back in in the future should my involvement be required.
+
+- *我早说过； I told you so*
+
+  > As per my prediction, this outcome does not come as a surprise.
+  >
+  > As Indicated prior
+  > The information has not changed since the last time it was communicated.
+  > There seems to be a disconnect here as this information has already been provided.
+
+- *坏主意； That sounds like a horrible idea*
+
+  > Are we confident that this is the best solution or are we still exploring alternatives?
+
+- *烦请回答所有问题； Can you answer all of the questions I asked and not just pick and choose one*
+
+  > Are you able to provide some clarity around the other questions previously asked?
+
+- *读了我的邮件没； Did you even read my email?*
+
+  > Reattaching my email to provide further clarity
+  > --> I’ll provide an update when I have one
+  > --> I have included my initial email below which contains all of the details you are looking for.
+
+- *别打扰我； Stop bothering me*
+
+  > You have not heard from me because further information is not available at this time, once I have an update I’ll be sure to loop 
+
+- *稍后再聊； I don’t want to talk to you right now!*
+
+  > I am currently tied up with something but I will connect with you once I am free.
+
+- *这是你的职责； Do your job!*
+
+  > It is my understanding that you are the appropriate person to contact in regards to this. But if there’s is someone better equipped for this let me know.
+
+- *这不是我负责； That’s not my job*
+
+  > This falls outside of my responsibilities, but I would be happy to connect you with someone who can help.
+  > --> I’m not the correct person to assist with this, but I am happy to connect you with XX who will be able to help.
+  > --> I recommend directing this issue to XX as they have the proper expertise to best assist you.
+
+- 这不是我的职责 Does taking on all this extra work come with extra pay?
+
+  > With my role expanding is there a plan to review my title and compensation to better reflect these additional responsibilities?
+  >
+  > --> This falls out of my job description, but if the opportunity for a role expansion becomes available I would be happy to discuss reworking my contract to better align with these new responsibilities.
+  >
+  > --> As my role has organically evolved, can we schedule time to review my overall compensation and discuss whether or not it is still aligned with my current role and responsibilities?
+  >
+  > --> Will these tasks be part of my job long-term? If so, is there an opportunity to reevaluate my job description, title, and overall compensation to more accurately reflect these additional responsibilities?
+
+- *别让我干你的活；Stop trying to make me do your work!*
+
+  > I am not able to offer you additional support in completing your workload.
+  > --> It is my understanding that this is your responsibility. If that is not the case please let me know.
+
+- *找我前先自己尝试解决；Try problem solving on your own before you come to me*
+
+  > I encourage you to brainstorm possible solutions prior to looping me in for additional support.
+
+- *Can you do your job so I don’t have to?*
+
+  > Please let me know when your deliverables have been completed.
+
+- *你自己修改；If further changes are required do them yourself.*
+
+  > If further edits are required, I have attached a version of the document that you can apply your edits directly into.
+
+- *给我太多任务了； Stop assigning me so many tasks if you want any of them to get done*
+
+  > As my workload is quite heavy, can you help me understand what I should reprioritize to accommodate this new task?
+
+- *确认时间线 Stop promising unrealistic timelines.*
+
+  > Can you walk me through your thinking on these timelines? I have some hesitations with the dates shared.
+
+- *不回我邮件； Answer my emails*
+
+  > If there’s a better way to get in contact with you, please let me know, as I am hoping to have this resolved as soon as possible.
+
+- *不懂你在说啥； I have absolutely no idea what you are talking about*
+
+  > Can you help me better understand what exactly is it that you require on my end?
+
+- *不要管这么细； Stop micromanaging*
+
+  > I am confident in my ability to complete this project, and will be sure to reach out, if or when I require your input. 
+
+- *催进度；Please hurry and get this done!* 
+
+  > It is important that we have this completed, in order to meet our targeted deadlines, which are quickly approaching.
+
+- *Stay in your own lane*
+
+  > Thank you for your input. I’ll keep that in mind as I move forward with decisions that fall within my responsibilities.
+
+- *没空帮你； I’m not doing your job for you*
+
+  > I do not have the capacity to take this on in addition to my own workload, but I’m happy to support where it makes sense.
+
+- *没必要开会； We do not need to have a meeting about this* 
+
+  > Being respectful of everyone’s time, let’s discuss this through email until we have a more defined agenda.
+  > --> Being respectful of everyone’s time, can we communicate about this via email moving forward?
+
+- *别偷我的工作成果； Did you just take credit for my work?* 
+
+  > It is great to see my ideas being exposed to a wider audience, and I would have appreciated the opportunity to have been included in the delivery.
+
+- *自己查去； Google that yourself*
+
+  > The internet is a great resource for these types of questions, and I am available to clarify elements that you are not able to find online.
+
+- *你说得不靠谱；What you are saying does not make sense* 
+
+  > We seem to have a different understanding on this. Can you elaborate further on your thought process here?
+
+- *我忘了回邮件；I totally forgot about your email* 
+
+  > Thank you for your patience,
+
+- *你漏看邮件了吗；Check your inbox, I already sent this to you!*
+
+  > I previously sent you an email regarding that, but please let me know if something went wrong in transit.
+
+- *需要更多信息；I’m going to need a whole lot of more information if you want me to do this*
+
+  > Please let me know when further details become available, as I require more information to successfully complete this task.
+
+- *下班别找我；Stop calling me before my workday even starts*
+
+  > If you need to contact me, please note that my working hours being at 8 am and 6 pm. Communications received prior to this won’t be seen.
+
+- *我不关心，随你便；I couldn’t care less*
+
+  > I will defer to your judgment on this as I am not passionate either way and I trust your expertise.
+
+- *我早警告过，现在你自己解决；I told you so and now this is your problem*
+
+  > I did previously note that this was a likely outcome. How do you plan to resolve this?
+
+- *别让我猜；I can’t read your mind. Be more clear on what you want.*
+
+  > In order to successfully complete this I will need further details on what is required.
+
+- 
 
 
 
