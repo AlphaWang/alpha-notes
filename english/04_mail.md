@@ -515,7 +515,8 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *不想参加会议； That meeting sounds like a waste of my time*
 
-  > I’m unable to add value to this meeting but I would be happy to review the minutes.
+  > - I’m unable to add value to this meeting but I would be happy to review the minutes.
+  > - Would you be open to replacing our frequent communications with a monthly touch base where we can discuss all updates during that time?
 
 - *不用找我；I don’t need to be included on this.*
 
@@ -523,15 +524,20 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *我早说过； I told you so*
 
-  > As per my prediction, this outcome does not come as a surprise.
+  > - As per my prediction, this outcome does not come as a surprise.
   >
-  > As Indicated prior
-  > The information has not changed since the last time it was communicated.
-  > There seems to be a disconnect here as this information has already been provided.
+  > - As Indicated prior
+  > - The information has not changed since the last time it was communicated.
+  > - There seems to be a disconnect here as this information has already been provided.
+
+- 你该早点说；Maybe if you communicated that with us sooner we wouldn’t be in this mess.
+
+  > In the future it is important to share information like this with the team sooner so we might mitigate these sort of issues.
 
 - *坏主意； That sounds like a horrible idea*
 
-  > Are we confident that this is the best solution or are we still exploring alternatives?
+  > - Are we confident that this is the best solution or are we still exploring alternatives?
+  > - I am not in agreement with this idea and have hesitations moving forward.
 
 - *烦请回答所有问题； Can you answer all of the questions I asked and not just pick and choose one*
 
@@ -539,9 +545,9 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *读了我的邮件没； Did you even read my email?*
 
-  > Reattaching my email to provide further clarity
-  > --> I’ll provide an update when I have one
-  > --> I have included my initial email below which contains all of the details you are looking for.
+  > - Reattaching my email to provide further clarity
+  > - I’ll provide an update when I have one
+  > - I have included my initial email below which contains all of the details you are looking for.
 
 - *别打扰我； Stop bothering me*
 
@@ -551,30 +557,43 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
   > I am currently tied up with something but I will connect with you once I am free.
 
+- *信息不足；You are wasting my time.*
+
+  > Being respectful of time let’s regroup when more details become available.
+
+- 没人知道；Nobody has a clue.
+
+  > I failed to find any knowledge keeper for this.
+
+- 你不礼貌；The way you speak to me is disrespectful. 
+
+  > I encourage you to reevaluate the way you are speaking to me, as the disrespect you are currently displaying towards me is not welcomed nor will it be tolerated.
+
 - *这是你的职责； Do your job!*
 
   > It is my understanding that you are the appropriate person to contact in regards to this. But if there’s is someone better equipped for this let me know.
 
 - *这不是我负责； That’s not my job*
 
-  > This falls outside of my responsibilities, but I would be happy to connect you with someone who can help.
-  > --> I’m not the correct person to assist with this, but I am happy to connect you with XX who will be able to help.
-  > --> I recommend directing this issue to XX as they have the proper expertise to best assist you.
+  > - This falls outside of my responsibilities, but I would be happy to connect you with someone who can help.
+  > - I’m not the correct person to assist with this, but I am happy to connect you with XX who will be able to help.
+  > - I recommend directing this issue to XX as they have the proper expertise to best assist you.
 
 - 这不是我的职责 Does taking on all this extra work come with extra pay?
 
-  > With my role expanding is there a plan to review my title and compensation to better reflect these additional responsibilities?
-  >
-  > --> This falls out of my job description, but if the opportunity for a role expansion becomes available I would be happy to discuss reworking my contract to better align with these new responsibilities.
-  >
-  > --> As my role has organically evolved, can we schedule time to review my overall compensation and discuss whether or not it is still aligned with my current role and responsibilities?
-  >
-  > --> Will these tasks be part of my job long-term? If so, is there an opportunity to reevaluate my job description, title, and overall compensation to more accurately reflect these additional responsibilities?
+  > - With my role expanding is there a plan to review my title and compensation to better reflect these additional responsibilities?
+  > - This falls out of my job description, but if the opportunity for a role expansion becomes available I would be happy to discuss reworking my contract to better align with these new responsibilities.
+  > - As my role has organically evolved, can we schedule time to review my overall compensation and discuss whether or not it is still aligned with my current role and responsibilities?
+  > - Will these tasks be part of my job long-term? If so, is there an opportunity to reevaluate my job description, title, and overall compensation to more accurately reflect these additional responsibilities?
 
 - *别让我干你的活；Stop trying to make me do your work!*
 
-  > I am not able to offer you additional support in completing your workload.
-  > --> It is my understanding that this is your responsibility. If that is not the case please let me know.
+  > - I am not able to offer you additional support in completing your workload.
+  > - It is my understanding that this is your responsibility. If that is not the case please let me know.
+
+- 你没干活吗，整天都干啥呢；If I’m doing your job for you, then what are you doing all day?
+
+  > Is there a higher priority task that is consuming all of your capacity at the moment?
 
 - *找我前先自己尝试解决；Try problem solving on your own before you come to me*
 
@@ -584,13 +603,28 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
   > Please let me know when your deliverables have been completed.
 
-- *你自己修改；If further changes are required do them yourself.*
+- *你自己做；If further changes are required do them yourself.*
 
-  > If further edits are required, I have attached a version of the document that you can apply your edits directly into.
+  > - If further edits are required, I have attached a version of the document that you can apply your edits directly into.
+  > - I cannot assist. However, I am confident in your ability to find a solution here.
+  > - This task has to be prioritized, and I encourage you to take the lead on it.
+
+- *你非要按你的来，那你自己做；If you want it done your way then just do it yourself.*
+
+  > As you seem to have a very clear vision for the execution of this, I encourage you to take the lead here and I’m happy to support you where necessary.
 
 - *给我太多任务了； Stop assigning me so many tasks if you want any of them to get done*
 
-  > As my workload is quite heavy, can you help me understand what I should reprioritize to accommodate this new task?
+  > - As my workload is quite heavy, can you help me understand what I should reprioritize to accommodate this new task?
+  > - I am unable to take that on at the moment as my current workload is quite heavy. Is there someone else who can assist with this?
+
+- *你不是领导别给我派活；You are not my boss, stop trying to assign me work.*
+
+  > Have you connected with XX in regards to me taking this on? As it has not been communicated to me that I’ll be working on this.  
+
+- 我太多任务，需要你帮忙；I am burning out with this workload and your lack of support.
+
+  > My productivity is being impacted by the overwhelming workload I am currently assigned. Is there any support you or the team can offer?
 
 - *确认时间线 Stop promising unrealistic timelines.*
 
@@ -606,7 +640,8 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *不要管这么细； Stop micromanaging*
 
-  > I am confident in my ability to complete this project, and will be sure to reach out, if or when I require your input. 
+  > - I am confident in my ability to complete this project, and will be sure to reach out, if or when I require your input. 
+  > - Though I appreciate your attention to this, I feel as though I could be more productive if I had an opportunity to work independently here.
 
 - *催进度；Please hurry and get this done!* 
 
@@ -622,8 +657,12 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *没必要开会； We do not need to have a meeting about this* 
 
-  > Being respectful of everyone’s time, let’s discuss this through email until we have a more defined agenda.
-  > --> Being respectful of everyone’s time, can we communicate about this via email moving forward?
+  > - Being respectful of everyone’s time, let’s discuss this through email until we have a more defined agenda.
+  > - Being respectful of everyone’s time, can we communicate about this via email moving forward?
+
+- *别安排太多会议；If you have me scheduled in meetings all day, when do you expect me to get this work done?* 
+
+  > My calendar is currently heavily scheduled with meetings. To ensure appropriate time is available to get this done, I can sit out of lower priority meetings this week or extend the deadline on this project. Please let me know which is preferred?
 
 - *别偷我的工作成果； Did you just take credit for my work?* 
 
@@ -636,6 +675,10 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 - *你说得不靠谱；What you are saying does not make sense* 
 
   > We seem to have a different understanding on this. Can you elaborate further on your thought process here?
+
+- 我不信你；I don’t believe you.
+
+  > I’m not confident that the information you have provided is correct.
 
 - *我忘了回邮件；I totally forgot about your email* 
 
@@ -651,7 +694,8 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 
 - *下班别找我；Stop calling me before my workday even starts*
 
-  > If you need to contact me, please note that my working hours being at 8 am and 6 pm. Communications received prior to this won’t be seen.
+  > - If you need to contact me, please note that my working hours being at 8 am and 6 pm. Communications received prior to this won’t be seen. 
+  > - I’m unable to attend after working hours. 
 
 - *我不关心，随你便；I couldn’t care less*
 
@@ -664,6 +708,42 @@ https://howtoprofessionallysay.akashrajpurohit.com/
 - *别让我猜；I can’t read your mind. Be more clear on what you want.*
 
   > In order to successfully complete this I will need further details on what is required.
+
+- *要求培训 I’ve not been properly trained on this* 
+
+  > Is training available in order for me to successfully complete this?
+
+面试
+
+- *公司真的关心员工吗；Does the company actually care about the employees?*
+
+  > Are there resources and boundaries in place to support the physical and mental health of employees?
+
+- 工资多少；How much does this role pay?
+
+  > Can you share what the overall compensation looks like for this role? 
+
+- 晋升；Are promotions based on performance or politics?
+
+  > Is there an opportunity for growth within the company, and if so what is the main metric for promotion? 
+
+- 加班吗；Do you have a culture that expects employees to put in over 40 hours each week?
+
+  > - Is it common within the company for employees to exceed 40 working hours per week?
+  > - What is the expectation for being available outside of working hours?
+
+- 领导咋样；Is the manager of this role a micromanager?
+
+  > How involved is the reporting manager with this role?
+
+- 要求涨工资；I deserve a raise.
+
+  > - Given my contributions to the company’s success along with a current market analysis of my role. I am setting up time to discuss a salary review.
+  >
+  > - There is a notable discrepancy between my current salary and the going market rate for the comparable roles.
+  > - As my role has expanded since joining the company, I would like to review my compensation so that it better reflects my evolved responsibilities.
+  > - I was hoping to be in the X to Y salary range for this position.
+  > - I understand there are budget restrictions that limit your ability to increase my salary. However, I would like to understand if additional vacation days, benefits, bonus, and other overall compensation items can be offered.
 
 - 
 
