@@ -4,13 +4,51 @@
 
 # | 基础
 
+Plan
+
+- AI for everyone: https://www.coursera.org/learn/ai-for-everyone/ 
+  https://www.bilibili.com/video/BV1yC4y127uj/
+- Generative AI for everyone: https://www.coursera.org/learn/generative-ai-for-everyone
+- Supervised Machine Learning: Regression and Classification: https://www.coursera.org/learn/machine-learning 
+- Deep Learning Specialization https://www.coursera.org/specializations/deep-learning
+- Machine Learning in Production https://www.coursera.org/learn/introduction-to-machine-learning-in-production 
+- Practical Time Series Analysis https://www.coursera.org/learn/practical-time-series-analysis 
+
+演进
+
+- `ANI`: artificial narrow intelligence. E.g. smart speaker, self-driving car.
+- `Generative AI`: E.g. ChatGPT, Bard, Midjourney. 
+- `AGI`: Artificial general intelligence. Do anything a human can do. 
+
+
+
+## ML
+
+- **Supervised Learning:**Input -> Output
+  - Spam Filtering: email -> spam? 
+  - Speech Recognition: audio -> text transcripts
+  - Machine translation: English -> Chinese
+  - Online advertising: ad, user info -> click?
+  - Self-driving car: image, radar info -> position of other cars. 
+  - Visual inspection: image of phone -> defect? 
+  - Chatbot: sequence of words -> the next word.
+
 
 
 ## LLM
 
 Large Language Model
 
+- LLMs are built by using supervised learning to repeatedly predict the next word. 
 - 流程：Prompt --> LLM --> Completion
+
+
+
+## Gerative AI
+
+
+
+
 
 
 
@@ -122,6 +160,12 @@ Large Language Model
   - **Memory** 
 
     - 记住对话上下文
+
+
+
+# | 应用
+
+
 
 
 
