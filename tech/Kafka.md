@@ -1188,18 +1188,16 @@ try {
 
 节点列表
 
->Kafka
->
 >- `brokers`
->  - `ids/xx` 对应每个Broker，包括其地址、版本号、启动时间
->  - `seqid`
+> - `ids/xx` 对应每个Broker，包括其地址、版本号、启动时间
+> - `seqid`
 >  -  `topics/x/partitions/0/state` 分区信息，包括分区Leader、 所有 ISR 的 Broker ID
->- `consumers`
+> - `consumers`
 >  - `consumer-group/ids/{consumer_id}` 消费者信息
->  - `/consumer/consumer-group/owners/topic-x/p-x` 分区消费关系信息
+> - `/consumer/consumer-group/owners/topic-x/p-x` 分区消费关系信息
 >  - `/consumers/consumer-group/offsets/topic-x/p-x` 位移信息
->- `controller`
->- `controller_epoch`
+> - `controller`
+> - `controller_epoch`
 >- `cluster`
 >- `config`
 >- `admin`
